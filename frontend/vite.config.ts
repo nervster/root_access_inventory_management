@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // API http port from backend/RootAccess.Inventory.Api/Properties/launchSettings.json
-      '/api': 'http://localhost:5030',
+      // Go API port (backend/cmd/api, PORT defaults to 8080)
+      '/api': 'http://localhost:8080',
     },
   },
 })
