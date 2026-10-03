@@ -1,20 +1,77 @@
+# Local development services.
+#   docker compose up -d                 → Postgres, Valkey, LocalStack (run Go and Vite on your Mac)
+#   docker compose --profile app up -d   → also builds and runs the backend + frontend containers
+name: nms
+
 services:
   postgres:
     image: postgres:17
-    container_name: root_access_inventory_db
     environment:
-      POSTGRES_USER: inventory
-      POSTGRES_DB: inventory
-      POSTGRES_PASSWORD: inventory_dev # dev-only password
+      POSTGRES_USER: nms
+      POSTGRES_DB: nms
+      POSTGRES_PASSWORD: nms_dev # dev-only password
     ports:
-      - "5433:5432"
+      - "5433:5432" # 5432 is taken by Homebrew Postgres 15
     volumes:
-      - inventory_pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U inventory -d inventory"]
+      test: ["CMD-SHELL", "pg_isready -U nms -d nms"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  # Cache (Redis-compatible, open-source fork of Redis).
+  valkey:
+    image: valkey/valkey:9.1-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local stand-in for AWS S3 (plant photos) and SQS (background jobs). All AWS calls go to http://localhost:4566.
+  # Needs a free LocalStack account: put LOCALSTACK_AUTH_TOKEN in .env (see .env.example).
+  localstack:
+    image: localstack/localstack:2026.09
+    environment:
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
+      SERVICES: s3,sqs
+    ports:
+      - "4566:4566"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ── App containers (same images as production) ──────────────────────────
+  backend:
+    profiles: [app]
+    build: ./backend
+    environment:
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  frontend:
+    profiles: [app]
+    build: ./frontend
+    environment:
+      API_UPSTREAM: http://backend:8080
+    ports:
+      - "8081:8080"
+    depends_on:
+      - backend
+
 volumes:
-  inventory_pgdata:
+  postgres_data:
+  valkey_data:
