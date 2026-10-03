@@ -54,6 +54,7 @@ services:
     build: ./backend
     environment:
       PORT: "8080"
+      DATABASE_URL: postgres://nms:nms_dev@postgres:5432/nms?sslmode=disable # dev-only password
     ports:
       - "8080:8080"
     depends_on:
