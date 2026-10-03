@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/RootAccess.Inventory.Api/RootAccess.Inventory.Api.csproj" />
+    <Project Path="backend/RootAccess.Inventory.Tests/RootAccess.Inventory.Tests.csproj" />
+  </Folder>
+</Solution>
