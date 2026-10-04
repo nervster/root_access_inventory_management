@@ -77,7 +77,10 @@ services:
 
   frontend:
     profiles: [app]
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY} # from the git-ignored .env
     environment:
       API_UPSTREAM: http://backend:8080
     ports:

@@ -33,6 +33,8 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
   - `CLERK_SECRET_KEY`: Clerk dashboard → API Keys. Also add the session token claims in Clerk
     (Sessions → Customize session token): `{"email": "{{user.primary_email_address}}", "name": "{{user.full_name}}"}`
   - `PLATFORM_ADMIN_EMAILS`: your sign-in email, so you can create nurseries (`/api/platform/...`)
+  - `VITE_CLERK_PUBLISHABLE_KEY`: Clerk publishable key (`pk_test_…`), only for building the web container
+- `frontend/.env.development.local` (git-ignored) with `VITE_CLERK_PUBLISHABLE_KEY=pk_test_…` for `npm run dev`
   - `LOCALSTACK_AUTH_TOKEN`: a free [LocalStack](https://app.localstack.cloud) account, for the local S3/SQS stand-in
 
 ## Local development

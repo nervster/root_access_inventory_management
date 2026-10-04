@@ -27,8 +27,8 @@ online. Root Access HTX is the first nursery.
 - [x] Config, Postgres connection, migrations (pgx, sqlc, goose; migrations run at API startup)
 - [x] Organizations, users, memberships, invitations; Clerk sign-in; tenant isolation (Row-Level Security); permissions
 - [x] Platform admin: create/suspend nurseries, fix memberships, user lookup; no access to business data (API; admins listed in `PLATFORM_ADMIN_EMAILS`)
-- [ ] Web app: sign-in, accept invitations, nursery switcher, Team page, settings, Platform section
-      (a working React version exists on the earlier .NET branch and can be reused)
+- [x] Web app: sign-in, accept invitations, nursery switcher, Team page, settings, Platform section
+      (ported from the earlier .NET branch to the Go API)
 - [ ] CI: GitHub Actions running build and tests
 
 ### 2. Inventory

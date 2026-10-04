@@ -6,6 +6,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Vite builds the Clerk publishable key (public, pk_…) into the JavaScript.
+ARG VITE_CLERK_PUBLISHABLE_KEY
+RUN test -n "$VITE_CLERK_PUBLISHABLE_KEY" || (echo "Pass --build-arg VITE_CLERK_PUBLISHABLE_KEY=pk_..." && exit 1)
 RUN npm run build
 
 # 2. Serve them with nginx (runs as non-root, listens on 8080).

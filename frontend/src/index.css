@@ -1,13 +1,11 @@
-:root {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
-  color-scheme: light dark;
-}
+@import "tailwindcss";
 
-body {
-  margin: 0;
-}
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
 
-main {
-  padding: 16px;
+  body {
+    @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
+  }
 }

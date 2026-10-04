@@ -10,6 +10,28 @@ func TestLoadRequiresClerkSecretKey(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsInvalidPlatformAdminEmail(t *testing.T) {
+	t.Setenv("CLERK_SECRET_KEY", "sk_test_example")
+	t.Setenv("PLATFORM_ADMIN_EMAILS", "admin@example.com, admin2example.com")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() accepted admin2example.com, want an error")
+	}
+}
+
+func TestLoadPlatformAdminEmails(t *testing.T) {
+	t.Setenv("CLERK_SECRET_KEY", "sk_test_example")
+	t.Setenv("PLATFORM_ADMIN_EMAILS", " a@example.com, ,b@example.com ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.PlatformAdminEmails) != 2 || cfg.PlatformAdminEmails[0] != "a@example.com" || cfg.PlatformAdminEmails[1] != "b@example.com" {
+		t.Errorf("PlatformAdminEmails = %q, want [a@example.com b@example.com]", cfg.PlatformAdminEmails)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("CLERK_SECRET_KEY", "sk_test_example")
 	t.Setenv("PORT", "")

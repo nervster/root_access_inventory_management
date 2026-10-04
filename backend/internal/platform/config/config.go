@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/mail"
 	"os"
 	"strings"
 
@@ -51,11 +52,20 @@ func Load() (Config, error) {
 		SMTPUsername:   os.Getenv("SMTP_USERNAME"),
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		EmailFrom:      getEnv("EMAIL_FROM", "NMS <no-reply@localhost>"),
-
-		PlatformAdminEmails: strings.Split(os.Getenv("PLATFORM_ADMIN_EMAILS"), ","),
 	}
 	if cfg.ClerkSecretKey == "" {
 		return Config{}, errors.New("CLERK_SECRET_KEY is required (locally: add it to the repo's .env)")
+	}
+
+	// A typo here would silently lock the admin out, so refuse to start instead.
+	for _, email := range strings.Split(os.Getenv("PLATFORM_ADMIN_EMAILS"), ",") {
+		if email = strings.TrimSpace(email); email == "" {
+			continue
+		}
+		if address, err := mail.ParseAddress(email); err != nil || address.Address != email {
+			return Config{}, fmt.Errorf("PLATFORM_ADMIN_EMAILS: %q is not an email address", email)
+		}
+		cfg.PlatformAdminEmails = append(cfg.PlatformAdminEmails, email)
 	}
 	return cfg, nil
 }
