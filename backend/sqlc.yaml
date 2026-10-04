@@ -1,14 +1,16 @@
-# sqlc turns the SQL in internal/db/queries into typed Go functions in internal/db.
+# sqlc turns the SQL in internal/db/queries into typed Go functions in internal/db/dbgen (never edit those).
 # After changing a query or migration, run from backend/:  go tool sqlc generate
 version: "2"
 sql:
   - engine: postgresql
     schema: internal/db/migrations
-    queries: internal/db/queries
+    # One folder per domain. sqlc doesn't search subfolders, so add each new folder here.
+    queries:
+      - internal/db/queries/accounts
     gen:
       go:
-        package: db
-        out: internal/db
+        package: dbgen
+        out: internal/db/dbgen
         sql_package: pgx/v5
         emit_empty_slices: true
         emit_pointers_for_null_types: true # nullable columns become pointers (*string), nil = NULL

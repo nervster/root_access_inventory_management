@@ -3,22 +3,22 @@ package db_test
 import (
 	"testing"
 
-	"github.com/nervster/root_access_inventory_management/backend/internal/db"
+	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbtest"
 )
 
 func TestUpsertUser(t *testing.T) {
-	q := db.New(dbtest.Tx(t))
+	q := dbgen.New(dbtest.Tx(t))
 	ctx := t.Context()
 	name := "Ann"
 
-	created, err := q.UpsertUser(ctx, db.UpsertUserParams{ExternalID: "user_test", Email: "ann@example.com", DisplayName: &name})
+	created, err := q.UpsertUser(ctx, dbgen.UpsertUserParams{ExternalID: "user_test", Email: "ann@example.com", DisplayName: &name})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Signing in again with a new email and no name updates the email and keeps the name.
-	updated, err := q.UpsertUser(ctx, db.UpsertUserParams{ExternalID: "user_test", Email: "ann@new.example.com"})
+	updated, err := q.UpsertUser(ctx, dbgen.UpsertUserParams{ExternalID: "user_test", Email: "ann@new.example.com"})
 	if err != nil {
 		t.Fatal(err)
 	}
