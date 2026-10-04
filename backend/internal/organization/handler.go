@@ -15,9 +15,11 @@ import (
 )
 
 // Routes adds the organization routes to signedIn, a group behind auth.RequireUser.
-func Routes(signedIn *gin.RouterGroup, store *Store) {
-	h := handler{store: store}
+func Routes(signedIn *gin.RouterGroup, store *Store, deliverer Deliverer) {
+	h := handler{store: store, deliverer: deliverer}
 	signedIn.GET("/me", h.me)
+	signedIn.POST("/me/invitations/:invitationId/accept", h.acceptInvitation)
+	signedIn.POST("/me/invitations/:invitationId/decline", h.declineInvitation)
 
 	org := signedIn.Group("/orgs/:orgId", RequireMember(store))
 	org.GET("", RequirePermission(OrganizationView), h.getOrganization)
@@ -25,19 +27,28 @@ func Routes(signedIn *gin.RouterGroup, store *Store) {
 	org.GET("/members", RequirePermission(TeamView), h.listMembers)
 	org.PATCH("/members/:memberId", RequirePermission(RolesManage), h.changeRole)
 	org.DELETE("/members/:memberId", h.removeMember) // anyone may leave; removing others is checked inside
+
+	// Inviting is limited further to roles the inviter may manage (CanManageRole).
+	invitations := org.Group("/invitations", RequirePermission(TeamManage))
+	invitations.GET("", h.listInvitations)
+	invitations.POST("", h.createInvitation)
+	invitations.POST("/:invitationId/resend", h.resendInvitation)
+	invitations.DELETE("/:invitationId", h.revokeInvitation)
 }
 
 type handler struct {
-	store *Store
+	store     *Store
+	deliverer Deliverer
 }
 
 // --- GET /api/me ---
 
 type meResponse struct {
-	ID          int64                `json:"id"`
-	Email       string               `json:"email"`
-	DisplayName *string              `json:"displayName"`
-	Memberships []membershipResponse `json:"memberships"`
+	ID                 int64                       `json:"id"`
+	Email              string                      `json:"email"`
+	DisplayName        *string                     `json:"displayName"`
+	Memberships        []membershipResponse        `json:"memberships"`
+	PendingInvitations []pendingInvitationResponse `json:"pendingInvitations"`
 }
 
 // membershipResponse includes the permissions the role grants, so the web app can show or hide actions.
@@ -52,12 +63,32 @@ type membershipResponse struct {
 
 func (h handler) me(c *gin.Context) {
 	user := auth.CurrentUser(c)
-	rows, err := h.store.MembershipsForUser(c.Request.Context(), user.ID)
+	memberships, err := h.memberships(c, user.ID)
+	if err != nil {
+		failInternal(c, err)
+		return
+	}
+	rows, err := h.store.PendingInvitationsFor(c.Request.Context(), user.Email)
 	if err != nil {
 		failInternal(c, err)
 		return
 	}
 
+	invitations := make([]pendingInvitationResponse, len(rows))
+	for i, row := range rows {
+		invitations[i] = pendingInvitationResponse(row)
+	}
+	c.JSON(http.StatusOK, meResponse{
+		ID: user.ID, Email: user.Email, DisplayName: user.DisplayName,
+		Memberships: memberships, PendingInvitations: invitations,
+	})
+}
+
+func (h handler) memberships(c *gin.Context, userID int64) ([]membershipResponse, error) {
+	rows, err := h.store.MembershipsForUser(c.Request.Context(), userID)
+	if err != nil {
+		return nil, err
+	}
 	memberships := make([]membershipResponse, len(rows))
 	for i, row := range rows {
 		memberships[i] = membershipResponse{
@@ -69,7 +100,7 @@ func (h handler) me(c *gin.Context) {
 			Permissions:      PermissionsFor(row.Role),
 		}
 	}
-	c.JSON(http.StatusOK, meResponse{ID: user.ID, Email: user.Email, DisplayName: user.DisplayName, Memberships: memberships})
+	return memberships, nil
 }
 
 // --- GET and PATCH /api/orgs/:orgId ---

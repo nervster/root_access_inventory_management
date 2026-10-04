@@ -23,6 +23,9 @@ type nursery struct {
 	org   dbgen.Organization
 	users map[string]dbgen.User // "owner", "admin", "staff", "viewer", "outsider"
 	ids   map[string]int64      // membership IDs by the same names
+
+	signUp *fakeSignUp // stands in for Clerk
+	mail   *fakeMail   // stands in for SMTP
 }
 
 func newNursery(t *testing.T) *nursery {
@@ -36,7 +39,10 @@ func newNursery(t *testing.T) *nursery {
 		t.Fatal(err)
 	}
 
-	n := &nursery{t: t, db: tx, org: org, users: map[string]dbgen.User{}, ids: map[string]int64{}}
+	n := &nursery{
+		t: t, db: tx, org: org, users: map[string]dbgen.User{}, ids: map[string]int64{},
+		signUp: &fakeSignUp{registered: map[string]bool{}}, mail: &fakeMail{},
+	}
 	for _, name := range []string{"owner", "admin", "staff", "viewer", "outsider"} {
 		user, err := q.UpsertUser(ctx, dbgen.UpsertUserParams{ExternalID: "user_" + name, Email: name + "@example.com"})
 		if err != nil {
@@ -64,7 +70,7 @@ func (n *nursery) request(as, method, path, body string) *httptest.ResponseRecor
 		auth.SetCurrentUser(c, n.users[as])
 		c.Next()
 	})
-	Routes(signedIn, NewStore(n.db))
+	Routes(signedIn, NewStore(n.db), n.deliverer())
 
 	path = strings.ReplaceAll(path, "{org}", fmt.Sprint(n.org.ID))
 	for name, id := range n.ids {

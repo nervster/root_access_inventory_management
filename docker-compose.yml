@@ -1,5 +1,5 @@
 # Local development services.
-#   docker compose up -d                 → Postgres, Valkey, LocalStack (run Go and Vite on your Mac)
+#   docker compose up -d                 → Postgres, Valkey, LocalStack, Mailpit (run Go and Vite on your Mac)
 #   docker compose --profile app up -d   → also builds and runs the backend + frontend containers
 name: nms
 
@@ -48,6 +48,13 @@ services:
       timeout: 5s
       retries: 20
 
+  # Catches all email the app sends (SMTP on :1025) and shows it at http://localhost:8025. Nothing is delivered.
+  mailpit:
+    image: axllent/mailpit:v1.31.4
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   # ── App containers (same images as production) ──────────────────────────
   backend:
     profiles: [app]
@@ -57,6 +64,7 @@ services:
       DATABASE_URL: postgres://nms:nms_dev@postgres:5432/nms?sslmode=disable # dev-only password
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY} # from the git-ignored .env
       APP_URL: http://localhost:8081 # the web container below
+      SMTP_ADDR: mailpit:1025
     ports:
       - "8080:8080"
     depends_on:
@@ -64,6 +72,8 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+      mailpit:
+        condition: service_started
 
   frontend:
     profiles: [app]

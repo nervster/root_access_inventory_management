@@ -36,11 +36,12 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
 
 ## Local development
 ```sh
-docker compose up -d                       # Postgres :5433, Valkey :6379, LocalStack :4566
+docker compose up -d                       # Postgres :5433, Valkey :6379, LocalStack :4566, Mailpit :8025
 cd backend && make run                     # API on :8080 (`make` lists all backend commands)
 cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api to :8080
 ```
-Open http://localhost:5173. Health check: `GET /api/health`. Signed-in user: `GET /api/me`
+Open http://localhost:5173. Health check: `GET /api/health`. Email the app sends (e.g. invitations) lands in
+Mailpit at http://localhost:8025, never in real inboxes. Signed-in user: `GET /api/me`
 (send the Clerk session token as `Authorization: Bearer <token>`).
 
 The API runs database migrations when it starts. To change the schema or queries (from `backend/`):

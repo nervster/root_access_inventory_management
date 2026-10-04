@@ -18,6 +18,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/email"
 )
 
 func main() {
@@ -48,9 +49,16 @@ func run() error {
 		return err
 	}
 
+	deliverer := organization.Deliverer{
+		SignUp: auth.NewClerkUsers(cfg.ClerkSecretKey),
+		Email:  email.SMTP{Addr: cfg.SMTPAddr, From: cfg.EmailFrom, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword},
+		AppURL: cfg.AppURL,
+	}
+	router := newRouter(auth.Clerk(cfg.ClerkSecretKey, []string{cfg.AppURL}), auth.NewStore(pool), organization.NewStore(pool), deliverer)
+
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           newRouter(auth.Clerk(cfg.ClerkSecretKey, []string{cfg.AppURL}), auth.NewStore(pool), organization.NewStore(pool)),
+		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -79,7 +87,7 @@ func run() error {
 
 // newRouter builds the HTTP routes. authenticate verifies session tokens: Clerk when running,
 // a stand-in in tests. It's separate from run so tests can use it.
-func newRouter(authenticate gin.HandlerFunc, users *auth.Store, orgs *organization.Store) *gin.Engine {
+func newRouter(authenticate gin.HandlerFunc, users *auth.Store, orgs *organization.Store, deliverer organization.Deliverer) *gin.Engine {
 	router := gin.Default()
 
 	api := router.Group("/api")
@@ -89,7 +97,7 @@ func newRouter(authenticate gin.HandlerFunc, users *auth.Store, orgs *organizati
 
 	// Everything in this group needs a signed-in user.
 	signedIn := api.Group("", authenticate, auth.RequireUser(users))
-	organization.Routes(signedIn, orgs)
+	organization.Routes(signedIn, orgs, deliverer)
 
 	return router
 }

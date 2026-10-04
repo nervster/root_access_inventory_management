@@ -25,7 +25,7 @@ online. Root Access HTX is the first nursery.
 ### 1. Foundation (in progress)
 - [x] Scaffold: Go API (Gin) and React app, each with a production Dockerfile; Compose with Postgres, Valkey, LocalStack
 - [x] Config, Postgres connection, migrations (pgx, sqlc, goose; migrations run at API startup)
-- [ ] Organizations, users, memberships, invitations; Clerk sign-in; tenant isolation; permissions
+- [x] Organizations, users, memberships, invitations; Clerk sign-in; tenant isolation (Row-Level Security); permissions
 - [ ] Platform admin: create/suspend nurseries, fix memberships, user lookup; no access to business data
 - [ ] Web app: sign-in, accept invitations, nursery switcher, Team page, settings, Platform section
       (a working React version exists on the earlier .NET branch and can be reused)

@@ -15,7 +15,7 @@ import (
 // and no database (these tests never reach it).
 func testRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	return newRouter(func(c *gin.Context) { c.Next() }, auth.NewStore(nil), organization.NewStore(nil))
+	return newRouter(func(c *gin.Context) { c.Next() }, auth.NewStore(nil), organization.NewStore(nil), organization.Deliverer{})
 }
 
 func TestHealth(t *testing.T) {
