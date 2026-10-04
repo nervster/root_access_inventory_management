@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -27,6 +28,9 @@ type Config struct {
 	SMTPUsername string
 	SMTPPassword string
 	EmailFrom    string
+
+	// PlatformAdminEmails may create and suspend nurseries (comma-separated in PLATFORM_ADMIN_EMAILS).
+	PlatformAdminEmails []string
 }
 
 // Load reads settings from environment variables. For local development it first loads .env
@@ -47,6 +51,8 @@ func Load() (Config, error) {
 		SMTPUsername:   os.Getenv("SMTP_USERNAME"),
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		EmailFrom:      getEnv("EMAIL_FROM", "NMS <no-reply@localhost>"),
+
+		PlatformAdminEmails: strings.Split(os.Getenv("PLATFORM_ADMIN_EMAILS"), ","),
 	}
 	if cfg.ClerkSecretKey == "" {
 		return Config{}, errors.New("CLERK_SECRET_KEY is required (locally: add it to the repo's .env)")

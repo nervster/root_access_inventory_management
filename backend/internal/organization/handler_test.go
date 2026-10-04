@@ -21,7 +21,7 @@ type nursery struct {
 	t     *testing.T
 	db    db.Conn
 	org   dbgen.Organization
-	users map[string]dbgen.User // "owner", "admin", "staff", "viewer", "outsider"
+	users map[string]dbgen.User // "owner", "admin", "staff", "viewer", "outsider", "platform" (a platform admin)
 	ids   map[string]int64      // membership IDs by the same names
 
 	signUp *fakeSignUp // stands in for Clerk
@@ -43,13 +43,13 @@ func newNursery(t *testing.T) *nursery {
 		t: t, db: tx, org: org, users: map[string]dbgen.User{}, ids: map[string]int64{},
 		signUp: &fakeSignUp{registered: map[string]bool{}}, mail: &fakeMail{},
 	}
-	for _, name := range []string{"owner", "admin", "staff", "viewer", "outsider"} {
+	for _, name := range []string{"owner", "admin", "staff", "viewer", "outsider", "platform"} {
 		user, err := q.UpsertUser(ctx, dbgen.UpsertUserParams{ExternalID: "user_" + name, Email: name + "@example.com"})
 		if err != nil {
 			t.Fatal(err)
 		}
 		n.users[name] = user
-		if name == "outsider" {
+		if name == "outsider" || name == "platform" { // not members
 			continue
 		}
 		membership, err := q.CreateMembership(ctx, dbgen.CreateMembershipParams{OrganizationID: org.ID, UserID: user.ID, Role: dbgen.OrgRole(name)})
@@ -67,10 +67,12 @@ func (n *nursery) request(as, method, path, body string) *httptest.ResponseRecor
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	signedIn := router.Group("/api", func(c *gin.Context) {
-		auth.SetCurrentUser(c, n.users[as])
+		auth.SetCurrentUser(c, n.users[as], as == "platform")
 		c.Next()
 	})
+	admins := auth.NewPlatformAdmins([]string{n.users["platform"].Email})
 	Routes(signedIn, NewStore(n.db), n.deliverer())
+	PlatformRoutes(signedIn, NewStore(n.db), n.deliverer(), admins)
 
 	path = strings.ReplaceAll(path, "{org}", fmt.Sprint(n.org.ID))
 	for name, id := range n.ids {

@@ -6,16 +6,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
-	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 )
 
 // testRouter is the real router with authentication that never verifies anyone,
-// and no database (these tests never reach it).
+// and no database or other dependencies (these tests never reach them).
 func testRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	return newRouter(func(c *gin.Context) { c.Next() }, auth.NewStore(nil), organization.NewStore(nil), organization.Deliverer{})
+	return newRouter(dependencies{authenticate: func(c *gin.Context) { c.Next() }})
 }
 
 func TestHealth(t *testing.T) {

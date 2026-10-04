@@ -37,8 +37,9 @@ func Routes(signedIn *gin.RouterGroup, store *Store, deliverer Deliverer) {
 }
 
 type handler struct {
-	store     *Store
-	deliverer Deliverer
+	store          *Store
+	deliverer      Deliverer
+	platformAdmins auth.PlatformAdmins // only used by the platform routes
 }
 
 // --- GET /api/me ---
@@ -47,6 +48,7 @@ type meResponse struct {
 	ID                 int64                       `json:"id"`
 	Email              string                      `json:"email"`
 	DisplayName        *string                     `json:"displayName"`
+	IsPlatformAdmin    bool                        `json:"isPlatformAdmin"`
 	Memberships        []membershipResponse        `json:"memberships"`
 	PendingInvitations []pendingInvitationResponse `json:"pendingInvitations"`
 }
@@ -79,7 +81,7 @@ func (h handler) me(c *gin.Context) {
 		invitations[i] = pendingInvitationResponse(row)
 	}
 	c.JSON(http.StatusOK, meResponse{
-		ID: user.ID, Email: user.Email, DisplayName: user.DisplayName,
+		ID: user.ID, Email: user.Email, DisplayName: user.DisplayName, IsPlatformAdmin: auth.IsPlatformAdmin(c),
 		Memberships: memberships, PendingInvitations: invitations,
 	})
 }

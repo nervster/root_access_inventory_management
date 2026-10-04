@@ -54,7 +54,13 @@ func run() error {
 		Email:  email.SMTP{Addr: cfg.SMTPAddr, From: cfg.EmailFrom, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword},
 		AppURL: cfg.AppURL,
 	}
-	router := newRouter(auth.Clerk(cfg.ClerkSecretKey, []string{cfg.AppURL}), auth.NewStore(pool), organization.NewStore(pool), deliverer)
+	router := newRouter(dependencies{
+		authenticate:   auth.Clerk(cfg.ClerkSecretKey, []string{cfg.AppURL}),
+		users:          auth.NewStore(pool),
+		platformAdmins: auth.NewPlatformAdmins(cfg.PlatformAdminEmails),
+		orgs:           organization.NewStore(pool),
+		deliverer:      deliverer,
+	})
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -85,9 +91,17 @@ func run() error {
 	return nil
 }
 
-// newRouter builds the HTTP routes. authenticate verifies session tokens: Clerk when running,
-// a stand-in in tests. It's separate from run so tests can use it.
-func newRouter(authenticate gin.HandlerFunc, users *auth.Store, orgs *organization.Store, deliverer organization.Deliverer) *gin.Engine {
+// dependencies are what the routes need, built in run (or by tests).
+type dependencies struct {
+	authenticate   gin.HandlerFunc // verifies session tokens: Clerk when running, a stand-in in tests
+	users          *auth.Store
+	platformAdmins auth.PlatformAdmins
+	orgs           *organization.Store
+	deliverer      organization.Deliverer
+}
+
+// newRouter builds the HTTP routes. It's separate from run so tests can use it.
+func newRouter(d dependencies) *gin.Engine {
 	router := gin.Default()
 
 	api := router.Group("/api")
@@ -96,8 +110,9 @@ func newRouter(authenticate gin.HandlerFunc, users *auth.Store, orgs *organizati
 	})
 
 	// Everything in this group needs a signed-in user.
-	signedIn := api.Group("", authenticate, auth.RequireUser(users))
-	organization.Routes(signedIn, orgs, deliverer)
+	signedIn := api.Group("", d.authenticate, auth.RequireUser(d.users, d.platformAdmins))
+	organization.Routes(signedIn, d.orgs, d.deliverer)
+	organization.PlatformRoutes(signedIn, d.orgs, d.deliverer, d.platformAdmins)
 
 	return router
 }

@@ -32,6 +32,7 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
 - `cp .env.example .env`, then fill it in (it's git-ignored; the Go API reads it on startup):
   - `CLERK_SECRET_KEY`: Clerk dashboard → API Keys. Also add the session token claims in Clerk
     (Sessions → Customize session token): `{"email": "{{user.primary_email_address}}", "name": "{{user.full_name}}"}`
+  - `PLATFORM_ADMIN_EMAILS`: your sign-in email, so you can create nurseries (`/api/platform/...`)
   - `LOCALSTACK_AUTH_TOKEN`: a free [LocalStack](https://app.localstack.cloud) account, for the local S3/SQS stand-in
 
 ## Local development

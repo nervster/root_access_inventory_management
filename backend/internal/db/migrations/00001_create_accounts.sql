@@ -42,7 +42,7 @@ CREATE TABLE invitations (
     organization_id    bigint      NOT NULL REFERENCES organizations (id) ON DELETE CASCADE,
     email              text        NOT NULL, -- lower-cased
     role               org_role    NOT NULL,
-    invited_by_user_id bigint REFERENCES users (id) ON DELETE SET NULL, -- null when a platform admin invited
+    invited_by_user_id bigint REFERENCES users (id) ON DELETE SET NULL, -- a member or platform admin; null if deleted
     created_at         timestamptz NOT NULL DEFAULT now(),
     expires_at         timestamptz NOT NULL,
     accepted_at        timestamptz,
