@@ -11,7 +11,7 @@ online. Root Access HTX is the first nursery.
 | Data | PostgreSQL (main database), Valkey (cache), AWS S3 (plant photos), AWS SQS (background jobs) |
 | Local dev | Docker Compose: Postgres, Valkey, LocalStack (S3 + SQS). Go and Vite run on the host |
 | Production | Two containers (API, web) on Kubernetes, one domain: the ingress routes `/api` to the API |
-| Tenancy | One database, `organization_id` on every tenant-owned row, enforced in one place so no query can forget it |
+| Tenancy | One database, `organization_id` on every nursery-owned row. Postgres Row-Level Security keeps nurseries apart: nursery work runs as role `nms_tenant` via `db.InTenant`, and a test fails if a table with `organization_id` lacks RLS. Shared reference data (e.g. plant categories) has no `organization_id` and is read-only to nurseries |
 | Sign-in | Clerk handles identity only (email + password/code, Google). Invite-only (Restricted sign-up mode) |
 | Access | Roles (Owner, Admin, Staff, Viewer) map to permissions; endpoints check permissions. Only Owners see financials |
 | Onboarding | Platform admin creates each nursery and invites its first Owner. Self-serve signup and billing come later |

@@ -7,3 +7,7 @@ ON CONFLICT (external_id) DO UPDATE
 SET email        = EXCLUDED.email,
     display_name = COALESCE(EXCLUDED.display_name, users.display_name)
 RETURNING *;
+
+-- name: GetUserByExternalID :one
+SELECT * FROM users
+WHERE external_id = @external_id;

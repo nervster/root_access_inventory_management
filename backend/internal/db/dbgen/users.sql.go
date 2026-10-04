@@ -9,6 +9,24 @@ import (
 	"context"
 )
 
+const getUserByExternalID = `-- name: GetUserByExternalID :one
+SELECT id, external_id, email, display_name, created_at FROM users
+WHERE external_id = $1
+`
+
+func (q *Queries) GetUserByExternalID(ctx context.Context, externalID string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByExternalID, externalID)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.ExternalID,
+		&i.Email,
+		&i.DisplayName,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const upsertUser = `-- name: UpsertUser :one
 INSERT INTO users (external_id, email, display_name)
 VALUES ($1, $2, $3)

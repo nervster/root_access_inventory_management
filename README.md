@@ -29,8 +29,10 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
 ## Prerequisites
 - Go 1.27+ ([go.dev/dl](https://go.dev/dl/), macOS ARM64 `.pkg`)
 - Node 22+, Docker Desktop
-- A free [LocalStack](https://app.localstack.cloud) account for the local S3/SQS stand-in:
-  `cp .env.example .env` and set `LOCALSTACK_AUTH_TOKEN`
+- `cp .env.example .env`, then fill it in (it's git-ignored; the Go API reads it on startup):
+  - `CLERK_SECRET_KEY`: Clerk dashboard → API Keys. Also add the session token claims in Clerk
+    (Sessions → Customize session token): `{"email": "{{user.primary_email_address}}", "name": "{{user.full_name}}"}`
+  - `LOCALSTACK_AUTH_TOKEN`: a free [LocalStack](https://app.localstack.cloud) account, for the local S3/SQS stand-in
 
 ## Local development
 ```sh
@@ -38,7 +40,8 @@ docker compose up -d                       # Postgres :5433, Valkey :6379, Local
 cd backend && make run                     # API on :8080 (`make` lists all backend commands)
 cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api to :8080
 ```
-Open http://localhost:5173. Health check: `GET /api/health`.
+Open http://localhost:5173. Health check: `GET /api/health`. Signed-in user: `GET /api/me`
+(send the Clerk session token as `Authorization: Bearer <token>`).
 
 The API runs database migrations when it starts. To change the schema or queries (from `backend/`):
 ```sh
