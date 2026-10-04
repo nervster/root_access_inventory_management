@@ -35,16 +35,17 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
 ## Local development
 ```sh
 docker compose up -d                       # Postgres :5433, Valkey :6379, LocalStack :4566
-cd backend && go run ./cmd/api             # API on :8080
+cd backend && make run                     # API on :8080 (`make` lists all backend commands)
 cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api to :8080
 ```
 Open http://localhost:5173. Health check: `GET /api/health`.
 
-The API runs database migrations when it starts. To change the schema or queries:
+The API runs database migrations when it starts. To change the schema or queries (from `backend/`):
 ```sh
-cd backend
-# add internal/db/migrations/0000N_<what>.sql (with -- +goose Up / Down) and/or edit internal/db/queries/*.sql
-go tool sqlc generate                      # regenerate internal/db/dbgen
+make migration name=create_plants          # new numbered file in internal/db/migrations; fill in Up and Down
+# edit SQL in internal/db/queries/<domain>/ (new folder? add it to sqlc.yaml)
+make generate                              # regenerate internal/db/dbgen
+make migrate-status                        # what has run locally; make migrate-down rolls back the last one
 ```
 
 Run the production containers locally (web on :8081, API on :8080):
@@ -54,5 +55,5 @@ docker compose --profile app up -d --build
 
 ## Tests
 ```sh
-cd backend && go test ./...                # needs `docker compose up -d`; uses a separate nms_test database
+cd backend && make test                    # needs `docker compose up -d`; uses a separate nms_test database
 ```
