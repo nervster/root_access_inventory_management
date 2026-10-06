@@ -1,0 +1,103 @@
+# Checks every pull request into staging or main, and those branches after a merge.
+name: CI
+
+on:
+  pull_request:
+    branches: [staging, main]
+  push:
+    branches: [staging, main]
+
+permissions:
+  contents: read
+
+# A newer push to the same PR cancels the older, still-running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    # The same Postgres and Mailpit as docker-compose.yml, on the same ports, so tests run unchanged.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: nms
+          POSTGRES_DB: nms
+          POSTGRES_PASSWORD: nms_dev # CI-only database, thrown away after the job
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U nms -d nms"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mailpit:
+        image: axllent/mailpit:v1.31.4
+        ports:
+          - 1025:1025
+          - 8025:8025
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Formatting (gofmt)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "Run gofmt -w on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Generated queries match the SQL (sqlc)
+        run: go tool sqlc diff
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+  frontend:
+    name: Frontend (React)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type-check and build
+        run: npm run build
+
+  images:
+    name: Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build API image
+        run: docker build backend
+
+      - name: Build web image
+        # The real publishable key is only needed to sign in; any value builds.
+        run: docker build --build-arg VITE_CLERK_PUBLISHABLE_KEY=pk_test_ci frontend
