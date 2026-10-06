@@ -64,3 +64,5 @@ docker compose --profile app up -d --build
 ```sh
 cd backend && make test                    # needs `docker compose up -d`; uses a separate nms_test database
 ```
+GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the backend checks and tests, the
+frontend lint and build, and both Docker builds on every pull request into `staging` or `main`.

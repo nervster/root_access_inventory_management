@@ -69,8 +69,10 @@ func createDatabase(ctx context.Context, url string) error {
 	defer conn.Close(ctx)
 
 	_, err = conn.Exec(ctx, "CREATE DATABASE "+pgx.Identifier{name}.Sanitize())
+	// Test packages run in parallel, so another one may have just created it. Postgres reports
+	// that as duplicate_database (42P04), or as unique_violation (23505) when both ran at once.
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "42P04" { // duplicate_database: it already exists
+	if errors.As(err, &pgErr) && (pgErr.Code == "42P04" || pgErr.Code == "23505") {
 		return nil
 	}
 	return err
