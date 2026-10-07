@@ -261,6 +261,17 @@ type PlantName struct {
 	CreatedAt      time.Time
 }
 
+type PlantPhoto struct {
+	ID             int64
+	OrganizationID int64
+	PlantID        int64
+	StorageKey     string
+	TakenAt        time.Time
+	Caption        *string
+	UploadedBy     *int64
+	CreatedAt      time.Time
+}
+
 type PotChange struct {
 	ID             int64
 	OrganizationID int64
@@ -291,6 +302,8 @@ type Product struct {
 	Title          string
 	Description    *string
 	CreatedAt      time.Time
+	ProductType    *string
+	Tags           []string
 }
 
 type ProductVariant struct {

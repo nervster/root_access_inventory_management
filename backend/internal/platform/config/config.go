@@ -32,6 +32,12 @@ type Config struct {
 
 	// PlatformAdminEmails may create and suspend nurseries (comma-separated in PLATFORM_ADMIN_EMAILS).
 	PlatformAdminEmails []string
+
+	// Photo storage: S3, or LocalStack when S3_ENDPOINT is set (locally, http://localhost:4566).
+	S3Bucket         string
+	AWSRegion        string
+	S3Endpoint       string
+	S3PublicEndpoint string // what browsers use in signed links, if different from S3_ENDPOINT
 }
 
 // Load reads settings from environment variables. For local development it first loads .env
@@ -52,6 +58,11 @@ func Load() (Config, error) {
 		SMTPUsername:   os.Getenv("SMTP_USERNAME"),
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		EmailFrom:      getEnv("EMAIL_FROM", "NMS <no-reply@localhost>"),
+
+		S3Bucket:         getEnv("S3_BUCKET", "nms-photos"),
+		AWSRegion:        getEnv("AWS_REGION", "us-east-1"),
+		S3Endpoint:       os.Getenv("S3_ENDPOINT"),
+		S3PublicEndpoint: os.Getenv("S3_PUBLIC_ENDPOINT"),
 	}
 	if cfg.ClerkSecretKey == "" {
 		return Config{}, errors.New("CLERK_SECRET_KEY is required (locally: add it to the repo's .env)")

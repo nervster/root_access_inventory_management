@@ -97,7 +97,7 @@ func (q *Queries) EnsureProduct(ctx context.Context, arg EnsureProductParams) (i
 }
 
 const getProduct = `-- name: GetProduct :one
-SELECT pr.id, pr.organization_id, pr.plant_name_id, pr.variegation_id, pr.title, pr.description, pr.created_at, pn.full_name AS plant_name, v.name AS variegation
+SELECT pr.id, pr.organization_id, pr.plant_name_id, pr.variegation_id, pr.title, pr.description, pr.created_at, pr.product_type, pr.tags, pn.full_name AS plant_name, v.name AS variegation
 FROM products pr
 JOIN plant_names pn ON pn.id = pr.plant_name_id
 LEFT JOIN variegations v ON v.id = pr.variegation_id
@@ -117,6 +117,8 @@ type GetProductRow struct {
 	Title          string
 	Description    *string
 	CreatedAt      time.Time
+	ProductType    *string
+	Tags           []string
 	PlantName      string
 	Variegation    *string
 }
@@ -132,6 +134,8 @@ func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (GetProd
 		&i.Title,
 		&i.Description,
 		&i.CreatedAt,
+		&i.ProductType,
+		&i.Tags,
 		&i.PlantName,
 		&i.Variegation,
 	)
@@ -139,7 +143,7 @@ func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (GetProd
 }
 
 const listProducts = `-- name: ListProducts :many
-SELECT pr.id, pr.organization_id, pr.plant_name_id, pr.variegation_id, pr.title, pr.description, pr.created_at, pn.full_name AS plant_name, v.name AS variegation
+SELECT pr.id, pr.organization_id, pr.plant_name_id, pr.variegation_id, pr.title, pr.description, pr.created_at, pr.product_type, pr.tags, pn.full_name AS plant_name, v.name AS variegation
 FROM products pr
 JOIN plant_names pn ON pn.id = pr.plant_name_id
 LEFT JOIN variegations v ON v.id = pr.variegation_id
@@ -156,6 +160,8 @@ type ListProductsRow struct {
 	Title          string
 	Description    *string
 	CreatedAt      time.Time
+	ProductType    *string
+	Tags           []string
 	PlantName      string
 	Variegation    *string
 }
@@ -178,6 +184,8 @@ func (q *Queries) ListProducts(ctx context.Context, organizationID int64) ([]Lis
 			&i.Title,
 			&i.Description,
 			&i.CreatedAt,
+			&i.ProductType,
+			&i.Tags,
 			&i.PlantName,
 			&i.Variegation,
 		); err != nil {
@@ -468,23 +476,30 @@ func (q *Queries) UnmarkForSale(ctx context.Context, arg UnmarkForSaleParams) ([
 
 const updateProduct = `-- name: UpdateProduct :one
 UPDATE products
-SET title       = coalesce($1, title),
-    description = coalesce($2, description)
-WHERE organization_id = $3 AND id = $4
-RETURNING id, organization_id, plant_name_id, variegation_id, title, description, created_at
+SET title        = coalesce($1, title),
+    description  = coalesce($2, description),
+    product_type = coalesce($3, product_type),
+    tags         = coalesce($4::text[], tags)
+WHERE organization_id = $5 AND id = $6
+RETURNING id, organization_id, plant_name_id, variegation_id, title, description, created_at, product_type, tags
 `
 
 type UpdateProductParams struct {
 	Title          *string
 	Description    *string
+	ProductType    *string
+	Tags           []string
 	OrganizationID int64
 	ID             int64
 }
 
+// Changes only the fields that are given (NULL keeps the current value; an empty list clears the tags).
 func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (Product, error) {
 	row := q.db.QueryRow(ctx, updateProduct,
 		arg.Title,
 		arg.Description,
+		arg.ProductType,
+		arg.Tags,
 		arg.OrganizationID,
 		arg.ID,
 	)
@@ -497,6 +512,8 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 		&i.Title,
 		&i.Description,
 		&i.CreatedAt,
+		&i.ProductType,
+		&i.Tags,
 	)
 	return i, err
 }

@@ -160,10 +160,22 @@ func TestPricesAndDetails(t *testing.T) {
 		t.Errorf("variant = %+v, want $45.00 with its SKU unchanged", v)
 	}
 
-	n.expect("owner", "PATCH", fmt.Sprintf("/api/orgs/{org}/products/%d", product.ID), `{"title":"Dragon Scale","description":"Silvery, scale-like leaves."}`, 200)
-	if p := n.product("Dragon Scale"); *p.Description != "Silvery, scale-like leaves." {
-		t.Errorf("description = %v", p.Description)
+	productPath := fmt.Sprintf("/api/orgs/{org}/products/%d", product.ID)
+	n.expect("owner", "PATCH", productPath,
+		`{"title":"Dragon Scale","description":"Silvery, scale-like leaves.","productType":" Houseplant ","tags":["Aroid"," Rare ","aroid",""]}`, 200)
+	if p := n.product("Dragon Scale"); *p.Description != "Silvery, scale-like leaves." || *p.ProductType != "Houseplant" || strings.Join(p.Tags, ",") != "Aroid,Rare" {
+		t.Errorf("product = %+v, want the description, type Houseplant, and tags Aroid, Rare (trimmed, no repeats)", p)
 	}
+	n.expect("owner", "PATCH", productPath, `{"description":"Updated."}`, 200) // leaving tags out keeps them
+	if p := n.product("Dragon Scale"); strings.Join(p.Tags, ",") != "Aroid,Rare" {
+		t.Errorf("tags = %v after an update without tags, want them kept", p.Tags)
+	}
+	n.expect("owner", "PATCH", productPath, `{"tags":[]}`, 200)
+	if p := n.product("Dragon Scale"); len(p.Tags) != 0 || p.Tags == nil {
+		t.Errorf("tags = %#v, want an empty list after clearing", p.Tags)
+	}
+	n.expect("owner", "PATCH", productPath, fmt.Sprintf(`{"tags":[%q]}`, strings.Repeat("x", 256)), 400)
+	n.expect("staff", "PATCH", productPath, `{"tags":["Mine"]}`, 403)
 
 	// A price can be removed only once nothing is for sale at it; then the product leaves the list.
 	path := fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", product.ID, n.small.ID)

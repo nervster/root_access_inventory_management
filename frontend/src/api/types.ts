@@ -250,7 +250,21 @@ export interface ProductDto {
   variegation: string | null
   title: string
   description: string | null
+  /** E.g. Houseplant. */
+  productType: string | null
+  /** E.g. Aroid, Rare: for Shopify collections and search. */
+  tags: string[]
   createdAt: string
   /** Smallest pot first. */
   variants: VariantDto[]
+}
+
+export interface PhotoDto {
+  id: number
+  /** A signed link, valid for an hour. */
+  viewUrl: string
+  takenAt: string
+  caption: string | null
+  /** Email of who added it. */
+  uploadedBy: string | null
 }

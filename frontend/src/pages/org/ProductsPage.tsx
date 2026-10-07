@@ -63,14 +63,24 @@ function ProductCard({ orgId, product, canSell }: { orgId: number; product: Prod
           product={product}
           pending={actions.update.isPending}
           error={actions.update.error}
-          onSave={(title, description) => actions.update.mutate({ id: product.id, title, description }, { onSuccess: () => setEditingDetails(false) })}
+          onSave={(details) => actions.update.mutate({ id: product.id, ...details }, { onSuccess: () => setEditingDetails(false) })}
           onCancel={() => setEditingDetails(false)}
         />
       ) : (
         <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">
             <h2 className="font-semibold">{product.title}</h2>
-            <p className="text-sm text-stone-500">{stock} for sale</p>
+            <p className="text-sm text-stone-500">
+              {product.productType && <>{product.productType} · </>}
+              {stock} for sale
+            </p>
+            {product.tags.length > 0 && (
+              <p className="mt-1 flex flex-wrap gap-1">
+                {product.tags.map((tag) => (
+                  <Badge key={tag}>{tag}</Badge>
+                ))}
+              </p>
+            )}
             {product.description ? (
               <p className="mt-1 text-sm">{product.description}</p>
             ) : (
@@ -207,17 +217,19 @@ function ProductDetailsForm({
   product: ProductDto
   pending: boolean
   error: unknown
-  onSave: (title: string, description: string) => void
+  onSave: (details: { title: string; description: string; productType: string; tags: string[] }) => void
   onCancel: () => void
 }) {
   const [title, setTitle] = useState(product.title)
   const [description, setDescription] = useState(product.description ?? '')
+  const [productType, setProductType] = useState(product.productType ?? '')
+  const [tags, setTags] = useState(product.tags.join(', '))
   return (
     <form
       className="mb-3 space-y-2"
       onSubmit={(event) => {
         event.preventDefault()
-        onSave(title, description)
+        onSave({ title, description, productType, tags: tags.split(',').map((t) => t.trim()).filter(Boolean) })
       }}
     >
       <Field label="Title" hint="What customers see.">
@@ -232,6 +244,14 @@ function ProductDetailsForm({
           className="block w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/30 focus:outline-none dark:border-stone-700 dark:bg-stone-950"
         />
       </Field>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Field label="Product type" hint="E.g. Houseplant.">
+          <Input maxLength={255} value={productType} onChange={(e) => setProductType(e.target.value)} />
+        </Field>
+        <Field label="Tags" hint="Separate with commas, e.g. Aroid, Rare.">
+          <Input value={tags} onChange={(e) => setTags(e.target.value)} />
+        </Field>
+      </div>
       <ErrorBanner error={error} />
       <div className="flex gap-2">
         <Button type="submit" disabled={pending}>

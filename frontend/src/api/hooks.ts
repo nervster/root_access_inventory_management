@@ -17,6 +17,7 @@ import type {
   PotSizeDto,
   BatchDto,
   BatchWithPlantsDto,
+  PhotoDto,
   PlantNameDto,
   PlantWithHistoryDto,
   ProductDto,
@@ -185,6 +186,7 @@ export const inventoryKeys = {
   variegations: (orgId: number) => ['orgs', orgId, 'variegations'] as const,
   plant: (orgId: number, barcode: string) => ['orgs', orgId, 'inventory', 'plants', barcode] as const,
   products: (orgId: number) => ['orgs', orgId, 'inventory', 'products'] as const,
+  plantPhotos: (orgId: number, barcode: string) => ['orgs', orgId, 'inventory', 'plants', barcode, 'photos'] as const,
 }
 
 export function useDashboard(orgId: number) {
@@ -347,7 +349,7 @@ export function useProductActions(orgId: number) {
   const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.all(orgId) })
   return {
     update: useMutation({
-      mutationFn: ({ id, ...body }: { id: number; title?: string; description?: string }) =>
+      mutationFn: ({ id, ...body }: { id: number; title?: string; description?: string; productType?: string; tags?: string[] }) =>
         api<ProductDto>(`/orgs/${orgId}/products/${id}`, { method: 'PATCH', json: body }),
       onSuccess,
     }),
@@ -359,6 +361,45 @@ export function useProductActions(orgId: number) {
     removePrice: useMutation({
       mutationFn: ({ productId, potSizeId }: { productId: number; potSizeId: number }) =>
         api<void>(`/orgs/${orgId}/products/${productId}/variants/${potSizeId}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+  }
+}
+
+export function usePlantPhotos(orgId: number, barcode: string) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.plantPhotos(orgId, barcode),
+    queryFn: () => api<PhotoDto[]>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}/photos`),
+    staleTime: 30 * 60_000, // view links last an hour
+  })
+}
+
+/**
+ * Adding and deleting a plant's photos. Adding takes three steps so the file goes straight from the
+ * phone to storage: get an upload link from the API, PUT the file there, then record it.
+ */
+export function usePlantPhotoActions(orgId: number, barcode: string) {
+  const api = useApi()
+  const client = useQueryClient()
+  const path = `/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}/photos`
+  const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.plantPhotos(orgId, barcode) })
+  return {
+    add: useMutation({
+      mutationFn: async ({ photo, caption, takenAt }: { photo: Blob; caption?: string; takenAt?: string }) => {
+        const link = await api<{ uploadUrl: string; contentType: string; key: string }>(`${path}/upload-link`, {
+          method: 'POST',
+          json: { contentType: 'image/jpeg' },
+        })
+        // Straight to storage: no API session token here, the link itself grants the upload.
+        const upload = await fetch(link.uploadUrl, { method: 'PUT', headers: { 'Content-Type': link.contentType }, body: photo })
+        if (!upload.ok) throw new Error(`The photo didn't upload (${upload.status}). Try again.`)
+        return api<PhotoDto>(path, { method: 'POST', json: { key: link.key, caption, takenAt } })
+      },
+      onSuccess,
+    }),
+    remove: useMutation({
+      mutationFn: (photoId: number) => api<void>(`/orgs/${orgId}/photos/${photoId}`, { method: 'DELETE' }),
       onSuccess,
     }),
   }

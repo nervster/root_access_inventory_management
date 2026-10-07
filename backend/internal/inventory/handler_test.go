@@ -15,6 +15,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbtest"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
 )
 
 // nursery is a test organization with an Owner, Staff, and Viewer, plus a member of another nursery.
@@ -24,6 +25,8 @@ type nursery struct {
 	org   dbgen.Organization
 	other dbgen.Organization    // a second nursery
 	users map[string]dbgen.User // "owner", "staff", "viewer" (this nursery), "rival" (Owner of other)
+
+	photos *fakeStorage // stands in for S3
 }
 
 func newNursery(t *testing.T) *nursery {
@@ -32,7 +35,7 @@ func newNursery(t *testing.T) *nursery {
 	q := dbgen.New(tx)
 	ctx := t.Context()
 
-	n := &nursery{t: t, db: tx, users: map[string]dbgen.User{}}
+	n := &nursery{t: t, db: tx, users: map[string]dbgen.User{}, photos: &fakeStorage{files: map[string]storage.FileInfo{}}}
 	for i, slug := range []string{"inventory-test", "inventory-rival"} {
 		org, err := q.CreateOrganization(ctx, dbgen.CreateOrganizationParams{Name: slug, Slug: slug, TimeZone: "America/Chicago"})
 		if err != nil {
@@ -76,7 +79,7 @@ func (n *nursery) expect(as, method, path, body string, wantStatus int) *httptes
 		auth.SetCurrentUser(c, n.users[as], false)
 		c.Next()
 	})
-	Routes(signedIn, organization.NewStore(n.db), NewStore(n.db))
+	Routes(signedIn, organization.NewStore(n.db), NewStore(n.db), n.photos)
 
 	orgID := n.org.ID
 	if as == "rival" {

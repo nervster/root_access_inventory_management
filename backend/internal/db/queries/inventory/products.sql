@@ -30,9 +30,12 @@ LEFT JOIN variegations v ON v.id = pr.variegation_id
 WHERE pr.organization_id = @organization_id AND pr.id = @id;
 
 -- name: UpdateProduct :one
+-- Changes only the fields that are given (NULL keeps the current value; an empty list clears the tags).
 UPDATE products
-SET title       = coalesce(sqlc.narg(title), title),
-    description = coalesce(sqlc.narg(description), description)
+SET title        = coalesce(sqlc.narg(title), title),
+    description  = coalesce(sqlc.narg(description), description),
+    product_type = coalesce(sqlc.narg(product_type), product_type),
+    tags         = coalesce(sqlc.narg(tags)::text[], tags)
 WHERE organization_id = @organization_id AND id = @id
 RETURNING *;
 

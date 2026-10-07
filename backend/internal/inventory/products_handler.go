@@ -21,6 +21,8 @@ type productResponse struct {
 	Variegation   *string           `json:"variegation"`
 	Title         string            `json:"title"`
 	Description   *string           `json:"description"`
+	ProductType   *string           `json:"productType"` // e.g. Houseplant
+	Tags          []string          `json:"tags"`        // e.g. Aroid, Rare: Shopify collections and search
 	CreatedAt     time.Time         `json:"createdAt"`
 	Variants      []variantResponse `json:"variants"` // smallest pot first
 }
@@ -37,7 +39,8 @@ type variantResponse struct {
 func newProductResponse(p ProductWithVariants) productResponse {
 	response := productResponse{
 		ID: p.ID, PlantNameID: p.PlantNameID, PlantName: p.PlantName, VariegationID: p.VariegationID, Variegation: p.Variegation,
-		Title: p.Title, Description: p.Description, CreatedAt: p.CreatedAt, Variants: make([]variantResponse, len(p.Variants)),
+		Title: p.Title, Description: p.Description, ProductType: p.ProductType, Tags: p.Tags, CreatedAt: p.CreatedAt,
+		Variants: make([]variantResponse, len(p.Variants)),
 	}
 	for i, v := range p.Variants {
 		response.Variants[i] = variantResponse{ID: v.ID, PotSizeID: v.PotSizeID, PotSize: v.PotSize, SKU: v.Sku, PriceCents: v.PriceCents, Stock: v.Stock}
@@ -82,9 +85,16 @@ func (h handler) respondWithProduct(c *gin.Context, productID int64, status int)
 }
 
 type productRequest struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
+	Title       *string  `json:"title"`
+	Description *string  `json:"description"`
+	ProductType *string  `json:"productType"`
+	Tags        []string `json:"tags"` // leave out to keep; [] clears
 }
+
+const (
+	maxTags      = 50
+	maxTagLength = 255 // Shopify's limit
+)
 
 // validate trims the title and description and checks their length; it returns a message for the
 // client, or "" when they're fine.
@@ -102,6 +112,32 @@ func (r *productRequest) validate() string {
 			return "description must be at most 5000 characters"
 		}
 		r.Description = &description
+	}
+	if r.ProductType != nil {
+		productType := strings.TrimSpace(*r.ProductType)
+		if len(productType) > 255 {
+			return "productType must be at most 255 characters"
+		}
+		r.ProductType = &productType
+	}
+	if r.Tags != nil {
+		tags := make([]string, 0, len(r.Tags)) // not nil: an empty list clears the tags
+		seen := map[string]bool{}
+		for _, tag := range r.Tags {
+			tag = strings.TrimSpace(tag)
+			if tag == "" || seen[strings.ToLower(tag)] {
+				continue
+			}
+			if len(tag) > maxTagLength {
+				return "each tag must be at most 255 characters"
+			}
+			seen[strings.ToLower(tag)] = true
+			tags = append(tags, tag)
+		}
+		if len(tags) > maxTags {
+			return "at most 50 tags"
+		}
+		r.Tags = tags
 	}
 	return ""
 }
@@ -123,7 +159,8 @@ func (h handler) updateProduct(c *gin.Context) {
 	}
 
 	err := h.store.UpdateProduct(c.Request.Context(), dbgen.UpdateProductParams{
-		OrganizationID: organization.CurrentAccess(c).OrganizationID, ID: productID, Title: req.Title, Description: req.Description,
+		OrganizationID: organization.CurrentAccess(c).OrganizationID, ID: productID,
+		Title: req.Title, Description: req.Description, ProductType: req.ProductType, Tags: req.Tags,
 	})
 	switch {
 	case errors.Is(err, ErrNotFound):

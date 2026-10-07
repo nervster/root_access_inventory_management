@@ -4,6 +4,7 @@ import { usePlant } from '../../api/hooks'
 import { PLANT_STATUS_LABELS } from '../../api/types'
 import { NotFound } from '../../components/Guards'
 import { PlantActions } from '../../components/PlantActions'
+import { PlantPhotos } from '../../components/PlantPhotos'
 import { Badge, Card, ErrorBanner, Loading, PageHeader } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 
@@ -57,6 +58,10 @@ export function PlantPage() {
           <PlantActions orgId={orgId} barcodes={[p.barcode]} />
         </Card>
       )}
+
+      <Card title="Photos">
+        <PlantPhotos orgId={orgId} barcode={p.barcode} />
+      </Card>
 
       <Card title="Pot history">
         <ol className="space-y-3 border-l-2 border-stone-200 pl-4 dark:border-stone-800">

@@ -14,8 +14,8 @@ import (
 
 // Routes adds the inventory routes to signedIn, a group behind auth.RequireUser. They live inside
 // a nursery (/api/orgs/:orgId/…), so members only, and each checks an inventory permission.
-func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
-	h := handler{store: store}
+func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, photos PhotoStorage) {
+	h := handler{store: store, photos: photos}
 	view := organization.RequirePermission(organization.InventoryView)
 	edit := organization.RequirePermission(organization.InventoryEdit)
 	sell := organization.RequirePermission(organization.ListingsManage) // products, prices, what's for sale
@@ -39,6 +39,11 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 	org.GET("/plants", view, h.listPlants)
 	org.GET("/plants/by-barcode/:barcode", view, h.getPlantByBarcode)
 
+	org.GET("/plants/by-barcode/:barcode/photos", view, h.listPlantPhotos)
+	org.POST("/plants/by-barcode/:barcode/photos/upload-link", edit, h.photoUploadLink)
+	org.POST("/plants/by-barcode/:barcode/photos", edit, h.addPlantPhoto)
+	org.DELETE("/photos/:photoId", edit, h.deletePlantPhoto)
+
 	org.POST("/repot", edit, h.repot)
 	org.POST("/plants/discard", edit, h.discardPlants)
 
@@ -52,7 +57,8 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 }
 
 type handler struct {
-	store *Store
+	store  *Store
+	photos PhotoStorage
 }
 
 // --- /api/orgs/:orgId/pot-sizes ---
