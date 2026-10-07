@@ -198,6 +198,13 @@ type Batch struct {
 	CreatedAt      time.Time
 }
 
+type InventoryCounter struct {
+	OrganizationID  int64
+	BarcodePrefix   string
+	NextPlantNumber int64
+	NextBatchNumber int64
+}
+
 type Invitation struct {
 	ID              int64
 	OrganizationID  int64

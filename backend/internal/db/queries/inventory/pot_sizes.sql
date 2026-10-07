@@ -31,3 +31,6 @@ WHERE organization_id = @organization_id AND id = @id;
 -- name: DeletePotSize :execrows
 DELETE FROM pot_sizes
 WHERE organization_id = @organization_id AND id = @id;
+-- name: GetPotSize :one
+SELECT * FROM pot_sizes
+WHERE organization_id = @organization_id AND id = @id;

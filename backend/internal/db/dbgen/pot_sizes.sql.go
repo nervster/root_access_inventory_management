@@ -68,6 +68,33 @@ func (q *Queries) DeletePotSize(ctx context.Context, arg DeletePotSizeParams) (i
 	return result.RowsAffected(), nil
 }
 
+const getPotSize = `-- name: GetPotSize :one
+SELECT id, organization_id, name, diameter_inches, height_inches, sort_order, sellable, description, created_at FROM pot_sizes
+WHERE organization_id = $1 AND id = $2
+`
+
+type GetPotSizeParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+func (q *Queries) GetPotSize(ctx context.Context, arg GetPotSizeParams) (PotSize, error) {
+	row := q.db.QueryRow(ctx, getPotSize, arg.OrganizationID, arg.ID)
+	var i PotSize
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.DiameterInches,
+		&i.HeightInches,
+		&i.SortOrder,
+		&i.Sellable,
+		&i.Description,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listPotSizes = `-- name: ListPotSizes :many
 
 SELECT id, organization_id, name, diameter_inches, height_inches, sort_order, sellable, description, created_at FROM pot_sizes

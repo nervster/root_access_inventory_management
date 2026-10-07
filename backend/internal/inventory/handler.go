@@ -25,6 +25,16 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 	org.PUT("/pot-sizes/order", edit, h.reorderPotSizes)
 	org.PATCH("/pot-sizes/:potSizeId", edit, h.updatePotSize)
 	org.DELETE("/pot-sizes/:potSizeId", edit, h.deletePotSize)
+
+	org.GET("/plant-names", view, h.searchPlantNames)
+	org.GET("/variegations", view, h.listVariegations)
+
+	org.GET("/batches", view, h.listBatches)
+	org.POST("/batches", edit, h.createBatch)
+	org.GET("/batches/:batchId", view, h.getBatch)
+
+	org.GET("/plants", view, h.listPlants)
+	org.GET("/plants/by-barcode/:barcode", view, h.getPlantByBarcode)
 }
 
 type handler struct {
