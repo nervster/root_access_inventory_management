@@ -14,6 +14,12 @@ import type {
   PlatformOrganizationDto,
   PlatformUserDto,
   PotSizeDto,
+  BatchDto,
+  BatchWithPlantsDto,
+  PlantNameDto,
+  RepotResult,
+  SaleResult,
+  VariegationDto,
 } from './types'
 
 export const queryKeys = {
@@ -166,8 +172,14 @@ export function usePlatformUsers(email: string) {
 // ── Inventory ───────────────────────────────────────────────────────────────
 
 export const inventoryKeys = {
-  dashboard: (orgId: number) => ['orgs', orgId, 'dashboard'] as const,
-  potSizes: (orgId: number) => ['orgs', orgId, 'pot-sizes'] as const,
+  /** Everything inventory-related in a nursery: invalidate this after any plant changes. */
+  all: (orgId: number) => ['orgs', orgId, 'inventory'] as const,
+  dashboard: (orgId: number) => ['orgs', orgId, 'inventory', 'dashboard'] as const,
+  potSizes: (orgId: number) => ['orgs', orgId, 'inventory', 'pot-sizes'] as const,
+  batches: (orgId: number) => ['orgs', orgId, 'inventory', 'batches'] as const,
+  batch: (orgId: number, batchId: number) => ['orgs', orgId, 'inventory', 'batches', batchId] as const,
+  plantNames: (orgId: number, search: string) => ['orgs', orgId, 'plant-names', search] as const,
+  variegations: (orgId: number) => ['orgs', orgId, 'variegations'] as const,
 }
 
 export function useDashboard(orgId: number) {
@@ -212,6 +224,74 @@ export function usePotSizeActions(orgId: number) {
     }),
     remove: useMutation({
       mutationFn: (id: number) => api<void>(`/orgs/${orgId}/pot-sizes/${id}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+  }
+}
+
+export function useBatches(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.batches(orgId), queryFn: () => api<BatchDto[]>(`/orgs/${orgId}/batches`) })
+}
+
+export function useBatch(orgId: number, batchId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.batch(orgId, batchId),
+    queryFn: () => api<BatchWithPlantsDto>(`/orgs/${orgId}/batches/${batchId}`),
+  })
+}
+
+/** Plant names containing search (2+ characters), from the shared list and the nursery's own. */
+export function usePlantNames(orgId: number, search: string) {
+  const api = useApi()
+  const term = search.trim()
+  return useQuery({
+    queryKey: inventoryKeys.plantNames(orgId, term),
+    queryFn: () => api<PlantNameDto[]>(`/orgs/${orgId}/plant-names?search=${encodeURIComponent(term)}`),
+    enabled: term.length >= 2,
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useVariegations(orgId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.variegations(orgId),
+    queryFn: () => api<VariegationDto[]>(`/orgs/${orgId}/variegations`),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export interface ReceiveBatchInput {
+  plantNameId: number
+  variegationId?: number
+  potSizeId: number
+  quantity: number
+  receivedOn: string
+  source?: string
+  notes?: string
+  unitCostCents?: number
+}
+
+/** Receiving batches, repotting, and marking for sale: each refreshes everything inventory shows. */
+export function usePlantActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.all(orgId) })
+  return {
+    receiveBatch: useMutation({
+      mutationFn: (body: ReceiveBatchInput) => api<BatchWithPlantsDto>(`/orgs/${orgId}/batches`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    repot: useMutation({
+      mutationFn: (body: { potSizeId: number; batchId?: number; barcodes?: string[] }) =>
+        api<RepotResult>(`/orgs/${orgId}/repot`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    markForSale: useMutation({
+      mutationFn: (body: { batchId?: number; barcodes?: string[] }) =>
+        api<SaleResult>(`/orgs/${orgId}/plants/mark-for-sale`, { method: 'POST', json: body }),
       onSuccess,
     }),
   }

@@ -131,3 +131,77 @@ export interface DashboardDto {
   /** Smallest first: the growth pipeline. */
   potSizes: { id: number; name: string; sellable: boolean; growing: number; forSale: number }[]
 }
+
+export type PlantStatus = 'growing' | 'for_sale' | 'sold' | 'discarded'
+export const PLANT_STATUS_LABELS: Record<PlantStatus, string> = { growing: 'Growing', for_sale: 'For sale', sold: 'Sold', discarded: 'Discarded' }
+
+export interface PlantNameDto {
+  id: number
+  rank: 'family' | 'genus' | 'species' | 'cultivar'
+  /** Alocasia baginda 'Dragon Scale' */
+  fullName: string
+  /** E.g. the trade name it's sold under. */
+  notes: string | null
+  shared: boolean
+}
+
+export interface VariegationDto {
+  id: number
+  name: string
+  notes: string | null
+  shared: boolean
+}
+
+export interface BatchDto {
+  id: number
+  /** B-0007 */
+  code: string
+  plantNameId: number
+  plantName: string
+  variegationId: number | null
+  variegation: string | null
+  source: string | null
+  /** 2026-10-06 */
+  receivedOn: string
+  /** Only present for roles that see financials. */
+  unitCostCents?: number | null
+  notes: string | null
+  createdAt: string
+  plantCounts: { growing: number; forSale: number; sold: number; discarded: number }
+}
+
+export interface PlantDto {
+  id: number
+  /** RAH-000123 */
+  barcode: string
+  batchId: number
+  batchCode: string
+  plantNameId: number
+  plantName: string
+  variegationId: number | null
+  variegation: string | null
+  potSizeId: number
+  potSize: string
+  status: PlantStatus
+  notes: string | null
+  createdAt: string
+  discardedAt: string | null
+  discardReason: string | null
+}
+
+export interface BatchWithPlantsDto {
+  batch: BatchDto
+  plants: PlantDto[]
+}
+
+export interface RepotResult {
+  moved: number
+  /** Already in that pot. */
+  unchanged: number
+}
+
+export interface SaleResult {
+  marked: number
+  alreadyForSale: number
+  skipped: { unsellablePot: number; noPrice: number }
+}

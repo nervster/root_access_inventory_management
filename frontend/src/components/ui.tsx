@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
+import { Link, type LinkProps } from 'react-router'
 import { errorMessage } from '../api/client'
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost'
@@ -11,13 +12,15 @@ const variants: Record<Variant, string> = {
   ghost: 'text-stone-700 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800',
 }
 
+const buttonClasses = 'inline-flex min-h-10 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed'
+
 export function Button({ variant = 'primary', className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  return (
-    <button
-      className={`inline-flex min-h-10 items-center justify-center rounded-lg px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed ${variants[variant]} ${className}`}
-      {...props}
-    />
-  )
+  return <button className={`${buttonClasses} ${variants[variant]} ${className}`} {...props} />
+}
+
+/** A link that looks like a button (for navigation; Button is for actions). */
+export function LinkButton({ variant = 'primary', className = '', ...props }: LinkProps & { variant?: Variant }) {
+  return <Link className={`${buttonClasses} ${variants[variant]} ${className}`} {...props} />
 }
 
 export function Card({ title, actions, children }: { title?: string; actions?: ReactNode; children: ReactNode }) {

@@ -29,7 +29,13 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatTile label="Growing" value={d.plants.growing} />
-        <StatTile label="Ready to mark for sale" value={d.readyToMark} hint="Priced and in a sellable pot" attention={d.readyToMark > 0} />
+        <StatTile
+          label="Ready to mark for sale"
+          value={d.readyToMark}
+          hint="Priced and in a sellable pot"
+          attention={d.readyToMark > 0}
+          to={`/orgs/${orgId}/batches`}
+        />
         <StatTile label="Needs a price" value={d.needsPrice} hint="In a sellable pot, no price yet" attention={d.needsPrice > 0} />
         <StatTile label="Received" value={d.last30Days.received} hint="Last 30 days" />
         <StatTile label="Discarded" value={d.last30Days.discarded} hint="Last 30 days" />
@@ -49,17 +55,23 @@ export function DashboardPage() {
   )
 }
 
-function StatTile({ label, value, hint, attention }: { label: string; value: number; hint?: string; attention?: boolean }) {
-  return (
-    <div
-      className={`rounded-xl border bg-white p-3 shadow-sm dark:bg-stone-900 ${
-        attention ? 'border-amber-300 dark:border-amber-800' : 'border-stone-200 dark:border-stone-800'
-      }`}
-    >
+function StatTile({ label, value, hint, attention, to }: { label: string; value: number; hint?: string; attention?: boolean; to?: string }) {
+  const className = `block rounded-xl border bg-white p-3 shadow-sm dark:bg-stone-900 ${
+    attention ? 'border-amber-300 dark:border-amber-800' : 'border-stone-200 dark:border-stone-800'
+  } ${to ? 'hover:border-emerald-600' : ''}`
+  const content = (
+    <>
       <p className="text-sm text-stone-600 dark:text-stone-400">{label}</p>
       <p className="mt-1 text-2xl font-semibold">{formatCount(value)}</p>
       {hint && <p className="mt-0.5 text-xs text-stone-500">{hint}</p>}
-    </div>
+    </>
+  )
+  return to ? (
+    <Link to={to} className={className}>
+      {content}
+    </Link>
+  ) : (
+    <div className={className}>{content}</div>
   )
 }
 

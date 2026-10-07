@@ -2,7 +2,7 @@ import type { ComponentType, SVGProps } from 'react'
 import { NavLink } from 'react-router'
 import { can } from '../api/roles'
 import { Permissions, type MembershipDto, type Permission } from '../api/types'
-import { DashboardIcon, MoreIcon, PotIcon, SettingsIcon, TeamIcon } from './icons'
+import { BatchesIcon, DashboardIcon, MoreIcon, PotIcon, SettingsIcon, TeamIcon } from './icons'
 
 interface NavItem {
   label: string
@@ -16,6 +16,7 @@ interface NavItem {
 /** The nursery's pages, in order. Phones show the first four in the bottom bar and the rest under More. */
 const items: NavItem[] = [
   { label: 'Dashboard', path: '', icon: DashboardIcon, permission: Permissions.InventoryView },
+  { label: 'Batches', path: 'batches', icon: BatchesIcon, permission: Permissions.InventoryView },
   { label: 'Pot sizes', path: 'pot-sizes', icon: PotIcon, permission: Permissions.InventoryView },
   { label: 'Team', path: 'team', icon: TeamIcon, permission: Permissions.TeamView },
   { label: 'Settings', path: 'settings', icon: SettingsIcon, permission: Permissions.OrganizationManage },

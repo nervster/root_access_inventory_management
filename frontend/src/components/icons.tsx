@@ -58,3 +58,13 @@ export function MoreIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   )
 }
+
+export function BatchesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="4" width="18" height="5" rx="1.5" />
+      <path d="M5 9v9.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V9" />
+      <path d="M10 13h4" />
+    </Icon>
+  )
+}

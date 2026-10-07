@@ -16,3 +16,12 @@ export function formatMoney(cents: number) {
 export function formatCount(value: number) {
   return new Intl.NumberFormat('en-US', { notation: value >= 10_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value)
 }
+
+/**
+ * A calendar date from the API ("2026-10-06") → "Oct 6, 2026". Parsed as a local date: new Date("2026-10-06")
+ * would mean midnight UTC, which is still Oct 5 in the Americas.
+ */
+export function formatDay(day: string) {
+  const [year, month, date] = day.split('-').map(Number)
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(year, month - 1, date))
+}
