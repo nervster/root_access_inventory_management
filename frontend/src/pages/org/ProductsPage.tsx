@@ -3,6 +3,7 @@ import { useParams } from 'react-router'
 import { useMembership, useProductActions, useProducts } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, type ProductDto, type VariantDto } from '../../api/types'
+import { ProductImagePicker, ProductImageStrip } from '../../components/ProductImages'
 import { Badge, Button, Card, ErrorBanner, Field, Input, Loading, Notice, PageHeader } from '../../components/ui'
 import { dollarsToCents, formatMoney } from '../../lib/format'
 
@@ -54,6 +55,7 @@ function ProductCard({ orgId, product, canSell }: { orgId: number; product: Prod
   const actions = useProductActions(orgId)
   const [editingPot, setEditingPot] = useState<number | null>(null)
   const [editingDetails, setEditingDetails] = useState(false)
+  const [choosingImages, setChoosingImages] = useState(false)
   const stock = product.variants.reduce((sum, v) => sum + v.stock, 0)
 
   return (
@@ -88,11 +90,22 @@ function ProductCard({ orgId, product, canSell }: { orgId: number; product: Prod
             )}
           </div>
           {canSell && (
-            <Button variant="ghost" onClick={() => setEditingDetails(true)}>
-              Edit details
-            </Button>
+            <div className="flex gap-1">
+              <Button variant="ghost" onClick={() => setChoosingImages(true)}>
+                Choose images
+              </Button>
+              <Button variant="ghost" onClick={() => setEditingDetails(true)}>
+                Edit details
+              </Button>
+            </div>
           )}
         </div>
+      )}
+
+      {choosingImages ? (
+        <ProductImagePicker orgId={orgId} product={product} onDone={() => setChoosingImages(false)} />
+      ) : (
+        <ProductImageStrip product={product} />
       )}
 
       <ErrorBanner error={actions.removePrice.error} />

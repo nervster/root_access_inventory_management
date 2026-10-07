@@ -17,11 +17,12 @@ var (
 	ErrVariantHasStock = errors.New("plants are for sale in that pot size")
 )
 
-// ProductWithVariants is a product with its variants (one per priced pot size), smallest pot
-// first, each with its live stock.
+// ProductWithVariants is a product with its variants (one per pot size it's sold in), smallest pot
+// first, each with its live stock, and its images in order.
 type ProductWithVariants struct {
 	dbgen.ListProductsRow
 	Variants []dbgen.ListVariantsWithStockRow
+	Images   []dbgen.ListProductPhotosRow
 }
 
 // Products lists orgID's products by title, with their variants and stock.
@@ -35,13 +36,21 @@ func (s *Store) Products(ctx context.Context, orgID int64) (products []ProductWi
 		if err != nil {
 			return err
 		}
-		byProduct := map[int64][]dbgen.ListVariantsWithStockRow{}
+		images, err := q.ListProductPhotos(ctx, dbgen.ListProductPhotosParams{OrganizationID: orgID})
+		if err != nil {
+			return err
+		}
+		variantsOf := map[int64][]dbgen.ListVariantsWithStockRow{}
 		for _, v := range variants {
-			byProduct[v.ProductID] = append(byProduct[v.ProductID], v)
+			variantsOf[v.ProductID] = append(variantsOf[v.ProductID], v)
+		}
+		imagesOf := map[int64][]dbgen.ListProductPhotosRow{}
+		for _, image := range images {
+			imagesOf[image.ProductID] = append(imagesOf[image.ProductID], image)
 		}
 		products = make([]ProductWithVariants, len(rows))
 		for i, row := range rows {
-			products[i] = ProductWithVariants{ListProductsRow: row, Variants: byProduct[row.ID]}
+			products[i] = ProductWithVariants{ListProductsRow: row, Variants: variantsOf[row.ID], Images: imagesOf[row.ID]}
 		}
 		return nil
 	})
@@ -56,7 +65,11 @@ func (s *Store) Product(ctx context.Context, orgID, productID int64) (product Pr
 			return translate(err)
 		}
 		variants, err := q.ListVariantsWithStock(ctx, dbgen.ListVariantsWithStockParams{OrganizationID: orgID, ProductID: &productID})
-		product = ProductWithVariants{ListProductsRow: dbgen.ListProductsRow(row), Variants: variants}
+		if err != nil {
+			return err
+		}
+		images, err := q.ListProductPhotos(ctx, dbgen.ListProductPhotosParams{OrganizationID: orgID, ProductID: &productID})
+		product = ProductWithVariants{ListProductsRow: dbgen.ListProductsRow(row), Variants: variants, Images: images}
 		return err
 	})
 	return product, err
@@ -260,4 +273,57 @@ func (s *Store) UnmarkForSale(ctx context.Context, orgID int64, barcodes []strin
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+// --- Product images: chosen, in order, from photos of the product's plants ---
+
+const maxProductImages = 20
+
+var ErrPhotoNotEligible = errors.New("images must be photos of this product's plants, each listed once")
+
+// ProductPhotoCandidates lists the photos that can be the product's images (photos of plants with
+// its name and variegation), newest first. It fails with ErrNotFound.
+func (s *Store) ProductPhotoCandidates(ctx context.Context, orgID, productID int64) (photos []dbgen.ProductPhotoCandidatesRow, err error) {
+	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		if _, err := q.GetProduct(ctx, dbgen.GetProductParams{OrganizationID: orgID, ID: productID}); err != nil {
+			return translate(err)
+		}
+		photos, err = q.ProductPhotoCandidates(ctx, dbgen.ProductPhotoCandidatesParams{OrganizationID: orgID, ProductID: productID})
+		return err
+	})
+	return photos, err
+}
+
+// SetProductPhotos makes photoIDs the product's images, in that order (the first is the main one).
+// It fails with ErrNotFound (the product) or ErrPhotoNotEligible.
+func (s *Store) SetProductPhotos(ctx context.Context, orgID, productID int64, photoIDs []int64) error {
+	seen := map[int64]bool{}
+	for _, id := range photoIDs {
+		if seen[id] {
+			return ErrPhotoNotEligible
+		}
+		seen[id] = true
+	}
+	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		if _, err := q.GetProduct(ctx, dbgen.GetProductParams{OrganizationID: orgID, ID: productID}); err != nil {
+			return translate(err)
+		}
+		eligible, err := q.CountEligibleProductPhotos(ctx, dbgen.CountEligibleProductPhotosParams{OrganizationID: orgID, ProductID: productID, PhotoIds: photoIDs})
+		if err != nil {
+			return err
+		}
+		if int(eligible) != len(photoIDs) {
+			return ErrPhotoNotEligible
+		}
+		if err := q.ClearProductPhotos(ctx, dbgen.ClearProductPhotosParams{OrganizationID: orgID, ProductID: productID}); err != nil {
+			return err
+		}
+		for position, photoID := range photoIDs {
+			err := q.AddProductPhoto(ctx, dbgen.AddProductPhotoParams{OrganizationID: orgID, ProductID: productID, PhotoID: photoID, Position: int32(position)})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

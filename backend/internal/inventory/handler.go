@@ -51,6 +51,8 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, p
 	org.GET("/products/:productId", view, h.getProduct)
 	org.PATCH("/products/:productId", sell, h.updateProduct)
 	org.PATCH("/products/:productId/variants/:potSizeId", sell, h.updateVariant)
+	org.GET("/products/:productId/photo-candidates", view, h.photoCandidates)
+	org.PUT("/products/:productId/photos", sell, h.setProductPhotos)
 	org.DELETE("/products/:productId/variants/:potSizeId", sell, h.deleteVariant)
 	org.POST("/plants/mark-for-sale", sell, h.markForSale)
 	org.POST("/plants/unmark-for-sale", sell, h.unmarkForSale)

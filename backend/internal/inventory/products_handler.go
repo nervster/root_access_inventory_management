@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -25,6 +26,12 @@ type productResponse struct {
 	Tags          []string          `json:"tags"`        // e.g. Aroid, Rare: Shopify collections and search
 	CreatedAt     time.Time         `json:"createdAt"`
 	Variants      []variantResponse `json:"variants"` // smallest pot first
+	Images        []imageResponse   `json:"images"`   // in order; the first is the main image
+}
+
+type imageResponse struct {
+	PhotoID int64  `json:"photoId"`
+	ViewURL string `json:"viewUrl"` // valid for an hour
 }
 
 type variantResponse struct {
@@ -36,7 +43,7 @@ type variantResponse struct {
 	Stock      int64  `json:"stock"`      // plants for sale right now
 }
 
-func newProductResponse(p ProductWithVariants) productResponse {
+func (h handler) newProductResponse(ctx context.Context, p ProductWithVariants) (productResponse, error) {
 	response := productResponse{
 		ID: p.ID, PlantNameID: p.PlantNameID, PlantName: p.PlantName, VariegationID: p.VariegationID, Variegation: p.Variegation,
 		Title: p.Title, Description: p.Description, ProductType: p.ProductType, Tags: p.Tags, CreatedAt: p.CreatedAt,
@@ -45,7 +52,15 @@ func newProductResponse(p ProductWithVariants) productResponse {
 	for i, v := range p.Variants {
 		response.Variants[i] = variantResponse{ID: v.ID, PotSizeID: v.PotSizeID, PotSize: v.PotSize, SKU: v.Sku, PriceCents: v.PriceCents, Stock: v.Stock}
 	}
-	return response
+	response.Images = make([]imageResponse, len(p.Images))
+	for i, image := range p.Images {
+		viewURL, err := h.photos.ViewURL(ctx, image.StorageKey)
+		if err != nil {
+			return productResponse{}, err
+		}
+		response.Images[i] = imageResponse{PhotoID: image.PhotoID, ViewURL: viewURL}
+	}
+	return response, nil
 }
 
 // --- /products ---
@@ -58,7 +73,10 @@ func (h handler) listProducts(c *gin.Context) {
 	}
 	response := make([]productResponse, len(products))
 	for i, p := range products {
-		response[i] = newProductResponse(p)
+		if response[i], err = h.newProductResponse(c.Request.Context(), p); err != nil {
+			web.FailInternal(c, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, response)
 }
@@ -80,7 +98,12 @@ func (h handler) respondWithProduct(c *gin.Context, productID int64, status int)
 	case err != nil:
 		web.FailInternal(c, err)
 	default:
-		c.JSON(status, newProductResponse(product))
+		response, err := h.newProductResponse(c.Request.Context(), product)
+		if err != nil {
+			web.FailInternal(c, err)
+			return
+		}
+		c.JSON(status, response)
 	}
 }
 
@@ -326,5 +349,77 @@ func (h handler) unmarkForSale(c *gin.Context) {
 		web.FailInternal(c, err)
 	default:
 		c.JSON(http.StatusOK, gin.H{"unmarked": unmarked})
+	}
+}
+
+// --- /products/:productId/photos: the product's images ---
+
+type photoCandidateResponse struct {
+	ID      int64     `json:"id"`
+	ViewURL string    `json:"viewUrl"`
+	TakenAt time.Time `json:"takenAt"`
+	Caption *string   `json:"caption"`
+	Barcode string    `json:"barcode"` // the plant in the photo
+	Chosen  bool      `json:"chosen"`  // already one of the product's images
+}
+
+// photoCandidates handles GET /products/:productId/photo-candidates: photos of the product's plants.
+func (h handler) photoCandidates(c *gin.Context) {
+	productID, ok := web.IDParam(c, "productId")
+	if !ok {
+		web.Fail(c, http.StatusNotFound, "product not found")
+		return
+	}
+	ctx := c.Request.Context()
+	photos, err := h.store.ProductPhotoCandidates(ctx, organization.CurrentAccess(c).OrganizationID, productID)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		web.Fail(c, http.StatusNotFound, "product not found")
+		return
+	case err != nil:
+		web.FailInternal(c, err)
+		return
+	}
+	response := make([]photoCandidateResponse, len(photos))
+	for i, p := range photos {
+		viewURL, err := h.photos.ViewURL(ctx, p.StorageKey)
+		if err != nil {
+			web.FailInternal(c, err)
+			return
+		}
+		response[i] = photoCandidateResponse{ID: p.ID, ViewURL: viewURL, TakenAt: p.TakenAt, Caption: p.Caption, Barcode: p.Barcode, Chosen: p.Chosen}
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// setProductPhotos handles PUT /products/:productId/photos {photoIds}: the images, in order.
+func (h handler) setProductPhotos(c *gin.Context) {
+	productID, ok := web.IDParam(c, "productId")
+	if !ok {
+		web.Fail(c, http.StatusNotFound, "product not found")
+		return
+	}
+	var req struct {
+		PhotoIDs []int64 `json:"photoIds"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.PhotoIDs == nil {
+		web.Fail(c, http.StatusBadRequest, "send photoIds: the images in order ([] for none)")
+		return
+	}
+	if len(req.PhotoIDs) > maxProductImages {
+		web.Fail(c, http.StatusBadRequest, "at most 20 images")
+		return
+	}
+
+	err := h.store.SetProductPhotos(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, productID, req.PhotoIDs)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		web.Fail(c, http.StatusNotFound, "product not found")
+	case errors.Is(err, ErrPhotoNotEligible):
+		web.Fail(c, http.StatusBadRequest, ErrPhotoNotEligible.Error())
+	case err != nil:
+		web.FailInternal(c, err)
+	default:
+		h.respondWithProduct(c, productID, http.StatusOK)
 	}
 }

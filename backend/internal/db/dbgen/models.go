@@ -306,6 +306,13 @@ type Product struct {
 	Tags           []string
 }
 
+type ProductPhoto struct {
+	OrganizationID int64
+	ProductID      int64
+	PhotoID        int64
+	Position       int32
+}
+
 type ProductVariant struct {
 	ID             int64
 	OrganizationID int64

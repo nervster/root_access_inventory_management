@@ -257,6 +257,20 @@ export interface ProductDto {
   createdAt: string
   /** Smallest pot first. */
   variants: VariantDto[]
+  /** In order; the first is the main image. */
+  images: { photoId: number; viewUrl: string }[]
+}
+
+/** A photo that can be one of a product's images: of a plant with its name and variegation. */
+export interface PhotoCandidateDto {
+  id: number
+  viewUrl: string
+  takenAt: string
+  caption: string | null
+  /** The plant in the photo. */
+  barcode: string
+  /** Already one of the product's images. */
+  chosen: boolean
 }
 
 export interface PhotoDto {

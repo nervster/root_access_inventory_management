@@ -17,6 +17,7 @@ import type {
   PotSizeDto,
   BatchDto,
   BatchWithPlantsDto,
+  PhotoCandidateDto,
   PhotoDto,
   PlantNameDto,
   PlantWithHistoryDto,
@@ -363,6 +364,12 @@ export function useProductActions(orgId: number) {
         api<void>(`/orgs/${orgId}/products/${productId}/variants/${potSizeId}`, { method: 'DELETE' }),
       onSuccess,
     }),
+    /** Replaces the product's images with photoIds, in order. */
+    setImages: useMutation({
+      mutationFn: ({ productId, photoIds }: { productId: number; photoIds: number[] }) =>
+        api<ProductDto>(`/orgs/${orgId}/products/${productId}/photos`, { method: 'PUT', json: { photoIds } }),
+      onSuccess,
+    }),
   }
 }
 
@@ -403,4 +410,14 @@ export function usePlantPhotoActions(orgId: number, barcode: string) {
       onSuccess,
     }),
   }
+}
+
+/** Photos of a product's plants that can be its images (only fetched while choosing). */
+export function useProductPhotoCandidates(orgId: number, productId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: [...inventoryKeys.products(orgId), productId, 'photo-candidates'],
+    queryFn: () => api<PhotoCandidateDto[]>(`/orgs/${orgId}/products/${productId}/photo-candidates`),
+    enabled,
+  })
 }
