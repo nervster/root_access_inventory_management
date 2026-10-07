@@ -112,6 +112,8 @@ type plantResponse struct {
 	Status        dbgen.PlantStatus `json:"status"`
 	Notes         *string           `json:"notes"`
 	CreatedAt     time.Time         `json:"createdAt"`
+	DiscardedAt   *time.Time        `json:"discardedAt"`
+	DiscardReason *string           `json:"discardReason"`
 }
 
 func newPlantResponse(p PlantDetails) plantResponse {
@@ -119,6 +121,7 @@ func newPlantResponse(p PlantDetails) plantResponse {
 		ID: p.ID, Barcode: p.Barcode, BatchID: p.BatchID, BatchCode: p.BatchCode,
 		PlantNameID: p.PlantNameID, PlantName: p.PlantName, VariegationID: p.VariegationID, Variegation: p.Variegation,
 		PotSizeID: p.PotSizeID, PotSize: p.PotSize, Status: p.Status, Notes: p.Notes, CreatedAt: p.CreatedAt,
+		DiscardedAt: p.DiscardedAt, DiscardReason: p.DiscardReason,
 	}
 }
 

@@ -44,3 +44,41 @@ JOIN pot_sizes to_ps ON to_ps.id = pc.to_pot_size_id
 LEFT JOIN users u ON u.id = pc.changed_by
 WHERE pc.organization_id = @organization_id AND pc.plant_id = @plant_id
 ORDER BY pc.changed_at, pc.id;
+
+-- name: GetPlantStatuses :many
+-- The barcode and status of each listed plant that exists (to report unknown or finished ones).
+SELECT barcode, status FROM plants
+WHERE organization_id = @organization_id AND barcode = ANY(@barcodes::text[]);
+
+-- name: MovePlantsToPot :many
+-- Moves growing and for-sale plants (a whole batch, or the listed barcodes) into @to_pot_size_id and
+-- records each move in their pot history. Plants already in that pot aren't touched. A for-sale
+-- plant moved into a pot that can't be sold goes back to growing. Returns the moved plants' IDs.
+WITH chosen AS (
+    SELECT id, pot_size_id AS from_pot_size_id
+    FROM plants
+    WHERE organization_id = @organization_id
+      AND status IN ('growing', 'for_sale')
+      AND pot_size_id <> @to_pot_size_id
+      AND (sqlc.narg(batch_id)::bigint IS NULL OR batch_id = sqlc.narg(batch_id))
+      AND (sqlc.narg(barcodes)::text[] IS NULL OR barcode = ANY(sqlc.narg(barcodes)::text[]))
+    FOR UPDATE
+), moved AS (
+    UPDATE plants p
+    SET pot_size_id = @to_pot_size_id,
+        status      = CASE WHEN p.status = 'for_sale' AND NOT @to_pot_sellable::boolean THEN 'growing'::plant_status ELSE p.status END,
+        updated_at  = now()
+    FROM chosen
+    WHERE p.id = chosen.id
+    RETURNING p.id, chosen.from_pot_size_id
+)
+INSERT INTO pot_changes (organization_id, plant_id, from_pot_size_id, to_pot_size_id, changed_by)
+SELECT @organization_id, moved.id, moved.from_pot_size_id, @to_pot_size_id, @changed_by
+FROM moved
+RETURNING plant_id;
+
+-- name: DiscardPlants :many
+UPDATE plants
+SET status = 'discarded', discarded_at = now(), discard_reason = @reason, updated_at = now()
+WHERE organization_id = @organization_id AND barcode = ANY(@barcodes::text[]) AND status IN ('growing', 'for_sale')
+RETURNING barcode;

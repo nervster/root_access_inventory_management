@@ -35,6 +35,9 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 
 	org.GET("/plants", view, h.listPlants)
 	org.GET("/plants/by-barcode/:barcode", view, h.getPlantByBarcode)
+
+	org.POST("/repot", edit, h.repot)
+	org.POST("/plants/discard", edit, h.discardPlants)
 }
 
 type handler struct {

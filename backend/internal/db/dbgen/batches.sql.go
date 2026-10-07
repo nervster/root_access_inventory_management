@@ -62,7 +62,7 @@ INSERT INTO plants (organization_id, barcode, batch_id, plant_name_id, variegati
 SELECT $1, $2::text || '-' || lpad(n::text, 6, '0'), $3, $4, $5, $6
 FROM generate_series($7::bigint, $8::bigint) AS n
 ORDER BY n
-RETURNING id, organization_id, barcode, batch_id, plant_name_id, variegation_id, pot_size_id, status, notes, created_at, updated_at
+RETURNING id, organization_id, barcode, batch_id, plant_name_id, variegation_id, pot_size_id, status, notes, created_at, updated_at, discarded_at, discard_reason
 `
 
 type CreateBatchPlantsParams struct {
@@ -107,6 +107,8 @@ func (q *Queries) CreateBatchPlants(ctx context.Context, arg CreateBatchPlantsPa
 			&i.Notes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DiscardedAt,
+			&i.DiscardReason,
 		); err != nil {
 			return nil, err
 		}

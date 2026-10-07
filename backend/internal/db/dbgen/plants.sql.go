@@ -10,8 +10,41 @@ import (
 	"time"
 )
 
+const discardPlants = `-- name: DiscardPlants :many
+UPDATE plants
+SET status = 'discarded', discarded_at = now(), discard_reason = $1, updated_at = now()
+WHERE organization_id = $2 AND barcode = ANY($3::text[]) AND status IN ('growing', 'for_sale')
+RETURNING barcode
+`
+
+type DiscardPlantsParams struct {
+	Reason         *string
+	OrganizationID int64
+	Barcodes       []string
+}
+
+func (q *Queries) DiscardPlants(ctx context.Context, arg DiscardPlantsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, discardPlants, arg.Reason, arg.OrganizationID, arg.Barcodes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var barcode string
+		if err := rows.Scan(&barcode); err != nil {
+			return nil, err
+		}
+		items = append(items, barcode)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPlantByBarcode = `-- name: GetPlantByBarcode :one
-SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at,
+SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at, p.discarded_at, p.discard_reason,
        b.code AS batch_code,
        pn.full_name AS plant_name,
        v.name AS variegation,
@@ -41,6 +74,8 @@ type GetPlantByBarcodeRow struct {
 	Notes          *string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DiscardedAt    *time.Time
+	DiscardReason  *string
 	BatchCode      string
 	PlantName      string
 	Variegation    *string
@@ -62,6 +97,8 @@ func (q *Queries) GetPlantByBarcode(ctx context.Context, arg GetPlantByBarcodePa
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DiscardedAt,
+		&i.DiscardReason,
 		&i.BatchCode,
 		&i.PlantName,
 		&i.Variegation,
@@ -70,9 +107,45 @@ func (q *Queries) GetPlantByBarcode(ctx context.Context, arg GetPlantByBarcodePa
 	return i, err
 }
 
+const getPlantStatuses = `-- name: GetPlantStatuses :many
+SELECT barcode, status FROM plants
+WHERE organization_id = $1 AND barcode = ANY($2::text[])
+`
+
+type GetPlantStatusesParams struct {
+	OrganizationID int64
+	Barcodes       []string
+}
+
+type GetPlantStatusesRow struct {
+	Barcode string
+	Status  PlantStatus
+}
+
+// The barcode and status of each listed plant that exists (to report unknown or finished ones).
+func (q *Queries) GetPlantStatuses(ctx context.Context, arg GetPlantStatusesParams) ([]GetPlantStatusesRow, error) {
+	rows, err := q.db.Query(ctx, getPlantStatuses, arg.OrganizationID, arg.Barcodes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPlantStatusesRow{}
+	for rows.Next() {
+		var i GetPlantStatusesRow
+		if err := rows.Scan(&i.Barcode, &i.Status); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlants = `-- name: ListPlants :many
 
-SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at,
+SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at, p.discarded_at, p.discard_reason,
        b.code AS batch_code,
        pn.full_name AS plant_name,
        v.name AS variegation,
@@ -109,6 +182,8 @@ type ListPlantsRow struct {
 	Notes          *string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DiscardedAt    *time.Time
+	DiscardReason  *string
 	BatchCode      string
 	PlantName      string
 	Variegation    *string
@@ -143,6 +218,8 @@ func (q *Queries) ListPlants(ctx context.Context, arg ListPlantsParams) ([]ListP
 			&i.Notes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DiscardedAt,
+			&i.DiscardReason,
 			&i.BatchCode,
 			&i.PlantName,
 			&i.Variegation,
@@ -208,6 +285,70 @@ func (q *Queries) ListPotChanges(ctx context.Context, arg ListPotChangesParams) 
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const movePlantsToPot = `-- name: MovePlantsToPot :many
+WITH chosen AS (
+    SELECT id, pot_size_id AS from_pot_size_id
+    FROM plants
+    WHERE organization_id = $1
+      AND status IN ('growing', 'for_sale')
+      AND pot_size_id <> $2
+      AND ($4::bigint IS NULL OR batch_id = $4)
+      AND ($5::text[] IS NULL OR barcode = ANY($5::text[]))
+    FOR UPDATE
+), moved AS (
+    UPDATE plants p
+    SET pot_size_id = $2,
+        status      = CASE WHEN p.status = 'for_sale' AND NOT $6::boolean THEN 'growing'::plant_status ELSE p.status END,
+        updated_at  = now()
+    FROM chosen
+    WHERE p.id = chosen.id
+    RETURNING p.id, chosen.from_pot_size_id
+)
+INSERT INTO pot_changes (organization_id, plant_id, from_pot_size_id, to_pot_size_id, changed_by)
+SELECT $1, moved.id, moved.from_pot_size_id, $2, $3
+FROM moved
+RETURNING plant_id
+`
+
+type MovePlantsToPotParams struct {
+	OrganizationID int64
+	ToPotSizeID    int64
+	ChangedBy      *int64
+	BatchID        *int64
+	Barcodes       []string
+	ToPotSellable  bool
+}
+
+// Moves growing and for-sale plants (a whole batch, or the listed barcodes) into @to_pot_size_id and
+// records each move in their pot history. Plants already in that pot aren't touched. A for-sale
+// plant moved into a pot that can't be sold goes back to growing. Returns the moved plants' IDs.
+func (q *Queries) MovePlantsToPot(ctx context.Context, arg MovePlantsToPotParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, movePlantsToPot,
+		arg.OrganizationID,
+		arg.ToPotSizeID,
+		arg.ChangedBy,
+		arg.BatchID,
+		arg.Barcodes,
+		arg.ToPotSellable,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var plant_id int64
+		if err := rows.Scan(&plant_id); err != nil {
+			return nil, err
+		}
+		items = append(items, plant_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

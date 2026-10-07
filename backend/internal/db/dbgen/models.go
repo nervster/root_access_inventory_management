@@ -246,6 +246,8 @@ type Plant struct {
 	Notes          *string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	DiscardedAt    *time.Time
+	DiscardReason  *string
 }
 
 type PlantName struct {
