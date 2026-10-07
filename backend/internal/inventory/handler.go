@@ -18,6 +18,7 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 	h := handler{store: store}
 	view := organization.RequirePermission(organization.InventoryView)
 	edit := organization.RequirePermission(organization.InventoryEdit)
+	sell := organization.RequirePermission(organization.ListingsManage) // products, prices, what's for sale
 
 	org := signedIn.Group("/orgs/:orgId", organization.RequireMember(orgs))
 	org.GET("/pot-sizes", view, h.listPotSizes)
@@ -38,6 +39,15 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 
 	org.POST("/repot", edit, h.repot)
 	org.POST("/plants/discard", edit, h.discardPlants)
+
+	org.GET("/products", view, h.listProducts)
+	org.POST("/products", sell, h.createProduct)
+	org.GET("/products/:productId", view, h.getProduct)
+	org.PATCH("/products/:productId", sell, h.updateProduct)
+	org.PUT("/products/:productId/variants/:potSizeId", sell, h.setVariant)
+	org.DELETE("/products/:productId/variants/:potSizeId", sell, h.deleteVariant)
+	org.POST("/plants/mark-for-sale", sell, h.markForSale)
+	org.POST("/plants/unmark-for-sale", sell, h.unmarkForSale)
 }
 
 type handler struct {
