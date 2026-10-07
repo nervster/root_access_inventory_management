@@ -4,7 +4,8 @@ import { NotFound, RequireMembership, RequirePlatformAdmin, RequireSignIn } from
 import { Layout } from './components/Layout'
 import { AuthPage } from './pages/AuthPage'
 import { HomePage } from './pages/HomePage'
-import { OrgOverviewPage } from './pages/org/OrgOverviewPage'
+import { DashboardPage } from './pages/org/DashboardPage'
+import { PotSizesPage } from './pages/org/PotSizesPage'
 import { SettingsPage } from './pages/org/SettingsPage'
 import { TeamPage } from './pages/org/TeamPage'
 import { OrganizationDetailPage } from './pages/platform/OrganizationDetailPage'
@@ -36,7 +37,8 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="orgs/:orgId" element={<RequireMembership />}>
-            <Route index element={<OrgOverviewPage />} />
+            <Route index element={<DashboardPage />} />
+            <Route path="pot-sizes" element={<PotSizesPage />} />
             <Route path="team" element={<TeamPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

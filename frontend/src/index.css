@@ -9,3 +9,16 @@
     @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
   }
 }
+
+/* Chart colors, checked for color-blind separation and contrast against the cards (white / stone-900).
+   Dark mode gets its own steps of the same hues, not an automatic flip. */
+:root {
+  --viz-growing: #2a78d6;
+  --viz-for-sale: #eb6834;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --viz-growing: #3987e5;
+    --viz-for-sale: #d95926;
+  }
+}

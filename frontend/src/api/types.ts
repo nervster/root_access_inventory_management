@@ -106,3 +106,28 @@ export interface PlatformUserDto {
   createdAt: string
   memberships: { organizationId: number; organizationName: string; role: OrgRole }[]
 }
+
+// ── Inventory (backend/internal/inventory) ──────────────────────────────────
+
+export interface PotSizeDto {
+  id: number
+  name: string
+  diameterInches: number | null
+  heightInches: number | null
+  sortOrder: number
+  sellable: boolean
+  description: string | null
+}
+
+export interface DashboardDto {
+  plants: { growing: number; forSale: number; sold: number; discarded: number }
+  last30Days: { received: number; discarded: number }
+  /** The prices of everything for sale right now. */
+  forSaleValueCents: number
+  /** Growing, in a sellable pot, priced: could be marked for sale now. */
+  readyToMark: number
+  /** Growing, in a sellable pot, with no price for its plant and pot size yet. */
+  needsPrice: number
+  /** Smallest first: the growth pipeline. */
+  potSizes: { id: number; name: string; sellable: boolean; growing: number; forSale: number }[]
+}

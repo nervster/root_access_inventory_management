@@ -21,6 +21,8 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 	sell := organization.RequirePermission(organization.ListingsManage) // products, prices, what's for sale
 
 	org := signedIn.Group("/orgs/:orgId", organization.RequireMember(orgs))
+	org.GET("/dashboard", view, h.dashboard)
+
 	org.GET("/pot-sizes", view, h.listPotSizes)
 	org.POST("/pot-sizes", edit, h.createPotSize)
 	org.PUT("/pot-sizes/order", edit, h.reorderPotSizes)

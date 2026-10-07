@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/
 import { useApi } from './client'
 import type {
   CreateOrganizationResponse,
+  DashboardDto,
   InvitationDto,
   MeResponse,
   MemberDto,
@@ -12,6 +13,7 @@ import type {
   PlatformOrganizationDetailDto,
   PlatformOrganizationDto,
   PlatformUserDto,
+  PotSizeDto,
 } from './types'
 
 export const queryKeys = {
@@ -159,4 +161,58 @@ export function usePlatformUsers(email: string) {
     queryKey: queryKeys.platformUsers(email),
     queryFn: () => api<PlatformUserDto[]>(`/platform/users?email=${encodeURIComponent(email)}`),
   })
+}
+
+// ── Inventory ───────────────────────────────────────────────────────────────
+
+export const inventoryKeys = {
+  dashboard: (orgId: number) => ['orgs', orgId, 'dashboard'] as const,
+  potSizes: (orgId: number) => ['orgs', orgId, 'pot-sizes'] as const,
+}
+
+export function useDashboard(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.dashboard(orgId), queryFn: () => api<DashboardDto>(`/orgs/${orgId}/dashboard`) })
+}
+
+export function usePotSizes(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.potSizes(orgId), queryFn: () => api<PotSizeDto[]>(`/orgs/${orgId}/pot-sizes`) })
+}
+
+export interface PotSizeInput {
+  name?: string
+  diameterInches?: number
+  heightInches?: number
+  sellable?: boolean
+  description?: string
+}
+
+export function usePotSizeActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const onSuccess = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: inventoryKeys.potSizes(orgId) }),
+      client.invalidateQueries({ queryKey: inventoryKeys.dashboard(orgId) }),
+    ])
+  return {
+    create: useMutation({
+      mutationFn: (body: PotSizeInput) => api<PotSizeDto>(`/orgs/${orgId}/pot-sizes`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: PotSizeInput & { id: number }) =>
+        api<PotSizeDto>(`/orgs/${orgId}/pot-sizes/${id}`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+    reorder: useMutation({
+      mutationFn: (ids: number[]) => api<PotSizeDto[]>(`/orgs/${orgId}/pot-sizes/order`, { method: 'PUT', json: { ids } }),
+      onSuccess,
+    }),
+    remove: useMutation({
+      mutationFn: (id: number) => api<void>(`/orgs/${orgId}/pot-sizes/${id}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+  }
 }
