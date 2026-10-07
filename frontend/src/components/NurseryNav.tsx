@@ -2,7 +2,7 @@ import type { ComponentType, SVGProps } from 'react'
 import { NavLink } from 'react-router'
 import { can } from '../api/roles'
 import { Permissions, type MembershipDto, type Permission } from '../api/types'
-import { BatchesIcon, DashboardIcon, MoreIcon, PotIcon, SettingsIcon, TeamIcon } from './icons'
+import { BatchesIcon, DashboardIcon, MoreIcon, PotIcon, ScanIcon, SettingsIcon, TeamIcon } from './icons'
 
 interface NavItem {
   label: string
@@ -11,12 +11,15 @@ interface NavItem {
   icon: ComponentType<SVGProps<SVGSVGElement>>
   /** Shown only to members whose role has this permission. */
   permission: Permission
+  /** The phone bar's highlighted middle button. */
+  primary?: boolean
 }
 
 /** The nursery's pages, in order. Phones show the first four in the bottom bar and the rest under More. */
 const items: NavItem[] = [
   { label: 'Dashboard', path: '', icon: DashboardIcon, permission: Permissions.InventoryView },
   { label: 'Batches', path: 'batches', icon: BatchesIcon, permission: Permissions.InventoryView },
+  { label: 'Scan', path: 'scan', icon: ScanIcon, permission: Permissions.InventoryView, primary: true },
   { label: 'Pot sizes', path: 'pot-sizes', icon: PotIcon, permission: Permissions.InventoryView },
   { label: 'Team', path: 'team', icon: TeamIcon, permission: Permissions.TeamView },
   { label: 'Settings', path: 'settings', icon: SettingsIcon, permission: Permissions.OrganizationManage },
@@ -70,12 +73,21 @@ export function NurseryBottomBar({ membership }: { membership: MembershipDto }) 
       aria-label="Nursery"
       className="fixed inset-x-0 bottom-0 z-10 flex border-t border-stone-200 bg-white pb-[env(safe-area-inset-bottom)] sm:hidden dark:border-stone-800 dark:bg-stone-900"
     >
-      {inBar.map((item) => (
-        <NavLink key={item.label} to={href(membership.organizationId, item)} end={item.path === ''} className={itemClass}>
-          <item.icon className="size-6" />
-          {item.label}
-        </NavLink>
-      ))}
+      {inBar.map((item) =>
+        item.primary ? (
+          <NavLink key={item.label} to={href(membership.organizationId, item)} className={itemClass}>
+            <span className="-mt-5 flex size-12 items-center justify-center rounded-full bg-emerald-700 text-white shadow-md ring-4 ring-white dark:ring-stone-900">
+              <item.icon className="size-6" />
+            </span>
+            {item.label}
+          </NavLink>
+        ) : (
+          <NavLink key={item.label} to={href(membership.organizationId, item)} end={item.path === ''} className={itemClass}>
+            <item.icon className="size-6" />
+            {item.label}
+          </NavLink>
+        ),
+      )}
       {inMore.length > 0 && (
         <details className="relative flex flex-1">
           <summary className="flex min-h-14 flex-1 cursor-pointer list-none flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-stone-500 dark:text-stone-400">

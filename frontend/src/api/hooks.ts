@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { useApi } from './client'
 import type {
   CreateOrganizationResponse,
@@ -17,6 +18,7 @@ import type {
   BatchDto,
   BatchWithPlantsDto,
   PlantNameDto,
+  PlantWithHistoryDto,
   RepotResult,
   SaleResult,
   VariegationDto,
@@ -180,6 +182,7 @@ export const inventoryKeys = {
   batch: (orgId: number, batchId: number) => ['orgs', orgId, 'inventory', 'batches', batchId] as const,
   plantNames: (orgId: number, search: string) => ['orgs', orgId, 'plant-names', search] as const,
   variegations: (orgId: number) => ['orgs', orgId, 'variegations'] as const,
+  plant: (orgId: number, barcode: string) => ['orgs', orgId, 'inventory', 'plants', barcode] as const,
 }
 
 export function useDashboard(orgId: number) {
@@ -294,5 +297,38 @@ export function usePlantActions(orgId: number) {
         api<SaleResult>(`/orgs/${orgId}/plants/mark-for-sale`, { method: 'POST', json: body }),
       onSuccess,
     }),
+    unmarkForSale: useMutation({
+      mutationFn: (barcodes: string[]) =>
+        api<{ unmarked: number }>(`/orgs/${orgId}/plants/unmark-for-sale`, { method: 'POST', json: { barcodes } }),
+      onSuccess,
+    }),
+    discard: useMutation({
+      mutationFn: (body: { barcodes: string[]; reason?: string }) =>
+        api<{ discarded: number }>(`/orgs/${orgId}/plants/discard`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
   }
+}
+
+/** Looks up a plant by its barcode (for the plant page). */
+export function usePlant(orgId: number, barcode: string) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.plant(orgId, barcode),
+    queryFn: () => api<PlantWithHistoryDto>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}`),
+  })
+}
+
+/** Returns a function that looks up a plant by barcode, using the cache when possible (for scanning). */
+export function useLookupPlant(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useCallback(
+    (barcode: string) =>
+      client.fetchQuery({
+        queryKey: inventoryKeys.plant(orgId, barcode),
+        queryFn: () => api<PlantWithHistoryDto>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}`),
+      }),
+    [api, client, orgId],
+  )
 }

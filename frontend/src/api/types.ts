@@ -205,3 +205,17 @@ export interface SaleResult {
   alreadyForSale: number
   skipped: { unsellablePot: number; noPrice: number }
 }
+
+export interface PotChangeDto {
+  changedAt: string
+  /** null for the plant's first pot. */
+  fromPotSize: string | null
+  toPotSize: string
+  /** Email of who moved it. */
+  changedBy: string | null
+}
+
+export interface PlantWithHistoryDto extends PlantDto {
+  /** Oldest first. */
+  potHistory: PotChangeDto[]
+}

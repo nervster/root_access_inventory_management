@@ -8,7 +8,9 @@ import { BatchPage } from './pages/org/BatchPage'
 import { BatchesPage } from './pages/org/BatchesPage'
 import { DashboardPage } from './pages/org/DashboardPage'
 import { LabelsPage } from './pages/org/LabelsPage'
+import { PlantPage } from './pages/org/PlantPage'
 import { ReceiveBatchPage } from './pages/org/ReceiveBatchPage'
+import { ScanPage } from './pages/org/ScanPage'
 import { PotSizesPage } from './pages/org/PotSizesPage'
 import { SettingsPage } from './pages/org/SettingsPage'
 import { TeamPage } from './pages/org/TeamPage'
@@ -47,6 +49,8 @@ export default function App() {
             <Route path="batches" element={<BatchesPage />} />
             <Route path="batches/new" element={<ReceiveBatchPage />} />
             <Route path="batches/:batchId" element={<BatchPage />} />
+            <Route path="scan" element={<ScanPage />} />
+            <Route path="plants/:barcode" element={<PlantPage />} />
             <Route path="pot-sizes" element={<PotSizesPage />} />
             <Route path="team" element={<TeamPage />} />
             <Route path="settings" element={<SettingsPage />} />
