@@ -43,6 +43,8 @@ type Repot struct {
 type RepotResult struct {
 	Moved     int
 	Unchanged int
+	// SKUs created because for-sale plants moved into a pot they weren't sold in before.
+	NewVariants []NewVariant
 }
 
 // RepotPlants moves plants into a new pot size and records each move in the plant's pot history.
@@ -84,7 +86,10 @@ func (s *Store) RepotPlants(ctx context.Context, orgID int64, r Repot) (result R
 			return fmt.Errorf("move plants: %w", err)
 		}
 		result = RepotResult{Moved: len(moved), Unchanged: chosen - len(moved)}
-		return nil
+
+		// For-sale plants that moved stay for sale, so their new pot needs a SKU to count in stock.
+		result.NewVariants, err = createMissingVariants(ctx, q, orgID, r.BatchID, barcodes, []string{string(dbgen.PlantStatusForSale)})
+		return err
 	})
 	return result, err
 }

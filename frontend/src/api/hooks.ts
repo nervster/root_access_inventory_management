@@ -19,6 +19,7 @@ import type {
   BatchWithPlantsDto,
   PlantNameDto,
   PlantWithHistoryDto,
+  ProductDto,
   RepotResult,
   SaleResult,
   VariegationDto,
@@ -183,6 +184,7 @@ export const inventoryKeys = {
   plantNames: (orgId: number, search: string) => ['orgs', orgId, 'plant-names', search] as const,
   variegations: (orgId: number) => ['orgs', orgId, 'variegations'] as const,
   plant: (orgId: number, barcode: string) => ['orgs', orgId, 'inventory', 'plants', barcode] as const,
+  products: (orgId: number) => ['orgs', orgId, 'inventory', 'products'] as const,
 }
 
 export function useDashboard(orgId: number) {
@@ -331,4 +333,33 @@ export function useLookupPlant(orgId: number) {
       }),
     [api, client, orgId],
   )
+}
+
+export function useProducts(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.products(orgId), queryFn: () => api<ProductDto[]>(`/orgs/${orgId}/products`) })
+}
+
+/** Product details and prices. Products and SKUs themselves are created by marking plants for sale. */
+export function useProductActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.all(orgId) })
+  return {
+    update: useMutation({
+      mutationFn: ({ id, ...body }: { id: number; title?: string; description?: string }) =>
+        api<ProductDto>(`/orgs/${orgId}/products/${id}`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+    updateVariant: useMutation({
+      mutationFn: ({ productId, potSizeId, ...body }: { productId: number; potSizeId: number; sku?: string; priceCents?: number }) =>
+        api<ProductDto>(`/orgs/${orgId}/products/${productId}/variants/${potSizeId}`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+    removePrice: useMutation({
+      mutationFn: ({ productId, potSizeId }: { productId: number; potSizeId: number }) =>
+        api<void>(`/orgs/${orgId}/products/${productId}/variants/${potSizeId}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+  }
 }

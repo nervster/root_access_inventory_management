@@ -77,3 +77,12 @@ export function ScanIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   )
 }
+
+export function ProductsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M3.5 12.2V5a1.5 1.5 0 0 1 1.5-1.5h7.2a1.5 1.5 0 0 1 1.06.44l7.3 7.3a1.5 1.5 0 0 1 0 2.12l-7.2 7.2a1.5 1.5 0 0 1-2.12 0l-7.3-7.3a1.5 1.5 0 0 1-.44-1.06Z" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+    </Icon>
+  )
+}

@@ -52,15 +52,15 @@ func TestRepotBatchThenExceptions(t *testing.T) {
 	n := newRepotNursery(t)
 
 	// The whole batch moves up to the Small Cup.
-	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200); got != (repotResponse{Moved: 5}) {
+	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200); got.Moved != 5 || got.Unchanged != 0 {
 		t.Errorf("repotting the batch: %+v, want 5 moved", got)
 	}
-	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200); got != (repotResponse{Unchanged: 5}) {
+	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200); got.Moved != 0 || got.Unchanged != 5 {
 		t.Errorf("repotting it again: %+v, want all 5 unchanged", got)
 	}
 
 	// Two plants grew faster: scanned (one twice, one in lower case) into the Medium Cup.
-	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000004","it-000005","IT-000005"]}`, n.medium.ID), 200); got != (repotResponse{Moved: 2}) {
+	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000004","it-000005","IT-000005"]}`, n.medium.ID), 200); got.Moved != 2 || got.Unchanged != 0 {
 		t.Errorf("repotting 2 plants: %+v, want 2 moved", got)
 	}
 
@@ -95,7 +95,7 @@ func TestDiscardPlants(t *testing.T) {
 	}
 
 	// A batch repot skips it; listing it by barcode is refused, naming it.
-	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200); got != (repotResponse{Moved: 4}) {
+	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200); got.Moved != 4 || got.Unchanged != 0 {
 		t.Errorf("repotting the batch: %+v, want the 4 living plants moved", got)
 	}
 	if _, message := n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000003","IT-999999"]}`, n.medium.ID), 400); !strings.Contains(message, "IT-999999") || !strings.Contains(message, "IT-000003") {

@@ -194,16 +194,27 @@ export interface BatchWithPlantsDto {
   plants: PlantDto[]
 }
 
+/** A SKU created along the way: plants of this kind went on sale in this pot for the first time. */
+export interface NewVariantDto {
+  product: string
+  potSize: string
+  sku: string
+}
+
 export interface RepotResult {
   moved: number
   /** Already in that pot. */
   unchanged: number
+  /** For-sale plants moved into a pot they weren't sold in before get a SKU there. */
+  newVariants: NewVariantDto[]
 }
 
 export interface SaleResult {
   marked: number
   alreadyForSale: number
-  skipped: { unsellablePot: number; noPrice: number }
+  skipped: { unsellablePot: number }
+  /** SKUs created for these plants; they have no price yet. */
+  newVariants: NewVariantDto[]
 }
 
 export interface PotChangeDto {
@@ -218,4 +229,28 @@ export interface PotChangeDto {
 export interface PlantWithHistoryDto extends PlantDto {
   /** Oldest first. */
   potHistory: PotChangeDto[]
+}
+
+export interface VariantDto {
+  id: number
+  potSizeId: number
+  potSize: string
+  sku: string
+  /** null until someone sets it; unpriced SKUs stay off sales channels. */
+  priceCents: number | null
+  /** Plants for sale right now. */
+  stock: number
+}
+
+export interface ProductDto {
+  id: number
+  plantNameId: number
+  plantName: string
+  variegationId: number | null
+  variegation: string | null
+  title: string
+  description: string | null
+  createdAt: string
+  /** Smallest pot first. */
+  variants: VariantDto[]
 }

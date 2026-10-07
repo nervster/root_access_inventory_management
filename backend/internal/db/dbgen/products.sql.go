@@ -10,42 +10,34 @@ import (
 	"time"
 )
 
-const createProduct = `-- name: CreateProduct :one
-
-INSERT INTO products (organization_id, plant_name_id, variegation_id, title, description)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, organization_id, plant_name_id, variegation_id, title, description, created_at
+const createVariant = `-- name: CreateVariant :one
+INSERT INTO product_variants (organization_id, product_id, pot_size_id, sku)
+VALUES ($1, $2, $3, $4)
+RETURNING id, organization_id, product_id, pot_size_id, sku, price_cents, created_at
 `
 
-type CreateProductParams struct {
+type CreateVariantParams struct {
 	OrganizationID int64
-	PlantNameID    int64
-	VariegationID  *int64
-	Title          string
-	Description    *string
+	ProductID      int64
+	PotSizeID      int64
+	Sku            string
 }
 
-// Inside one nursery (run through db.InTenant) --
-//
-// A product is a plant name + variegation (a Shopify product); its variants are one per pot size
-// (Shopify variants), each with a SKU and price. A variant's stock is the number of for-sale plants
-// with the product's name and variegation in the variant's pot size.
-func (q *Queries) CreateProduct(ctx context.Context, arg CreateProductParams) (Product, error) {
-	row := q.db.QueryRow(ctx, createProduct,
+func (q *Queries) CreateVariant(ctx context.Context, arg CreateVariantParams) (ProductVariant, error) {
+	row := q.db.QueryRow(ctx, createVariant,
 		arg.OrganizationID,
-		arg.PlantNameID,
-		arg.VariegationID,
-		arg.Title,
-		arg.Description,
+		arg.ProductID,
+		arg.PotSizeID,
+		arg.Sku,
 	)
-	var i Product
+	var i ProductVariant
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.PlantNameID,
-		&i.VariegationID,
-		&i.Title,
-		&i.Description,
+		&i.ProductID,
+		&i.PotSizeID,
+		&i.Sku,
+		&i.PriceCents,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -68,6 +60,40 @@ func (q *Queries) DeleteVariant(ctx context.Context, arg DeleteVariantParams) (i
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const ensureProduct = `-- name: EnsureProduct :one
+
+INSERT INTO products (organization_id, plant_name_id, variegation_id, title)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (organization_id, plant_name_id, variegation_id) DO UPDATE SET title = products.title
+RETURNING id
+`
+
+type EnsureProductParams struct {
+	OrganizationID int64
+	PlantNameID    int64
+	VariegationID  *int64
+	Title          string
+}
+
+// Inside one nursery (run through db.InTenant) --
+//
+// A product is a plant name + variegation (a Shopify product); its variants are one per pot size
+// (Shopify variants), each with a SKU and a price (NULL until someone sets it). Both are created
+// automatically the first time plants of that kind are marked for sale in that pot. A variant's
+// stock is the number of for-sale plants with the product's name and variegation in its pot size.
+// The product for a plant name + variegation, created with @title if it doesn't exist yet.
+func (q *Queries) EnsureProduct(ctx context.Context, arg EnsureProductParams) (int64, error) {
+	row := q.db.QueryRow(ctx, ensureProduct,
+		arg.OrganizationID,
+		arg.PlantNameID,
+		arg.VariegationID,
+		arg.Title,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getProduct = `-- name: GetProduct :one
@@ -118,6 +144,7 @@ FROM products pr
 JOIN plant_names pn ON pn.id = pr.plant_name_id
 LEFT JOIN variegations v ON v.id = pr.variegation_id
 WHERE pr.organization_id = $1
+  AND EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = pr.id)
 ORDER BY pr.title
 `
 
@@ -133,6 +160,7 @@ type ListProductsRow struct {
 	Variegation    *string
 }
 
+// Products that have been for sale (they have at least one variant), by title.
 func (q *Queries) ListProducts(ctx context.Context, organizationID int64) ([]ListProductsRow, error) {
 	rows, err := q.db.Query(ctx, listProducts, organizationID)
 	if err != nil {
@@ -190,7 +218,7 @@ type ListVariantsWithStockRow struct {
 	ProductID      int64
 	PotSizeID      int64
 	Sku            string
-	PriceCents     int32
+	PriceCents     *int32
 	CreatedAt      time.Time
 	PotSize        string
 	PotSortOrder   int32
@@ -253,8 +281,8 @@ type MarkForSaleParams struct {
 	Barcodes       []string
 }
 
-// Marks the chosen growing plants for sale when they're in a sellable pot and priced (a variant
-// exists for their name, variegation, and pot). Returns the marked barcodes.
+// Marks the chosen growing plants in sellable pots for sale. Run after their variants exist
+// (MissingVariants + CreateVariant); a plant without one is left alone. Returns the marked barcodes.
 func (q *Queries) MarkForSale(ctx context.Context, arg MarkForSaleParams) ([]string, error) {
 	rows, err := q.db.Query(ctx, markForSale, arg.OrganizationID, arg.BatchID, arg.Barcodes)
 	if err != nil {
@@ -275,14 +303,96 @@ func (q *Queries) MarkForSale(ctx context.Context, arg MarkForSaleParams) ([]str
 	return items, nil
 }
 
+const missingVariants = `-- name: MissingVariants :many
+SELECT DISTINCT p.plant_name_id, pn.full_name AS plant_name,
+                p.variegation_id, v.name AS variegation,
+                p.pot_size_id, ps.name AS pot_size
+FROM plants p
+JOIN pot_sizes ps ON ps.id = p.pot_size_id AND ps.sellable
+JOIN plant_names pn ON pn.id = p.plant_name_id
+LEFT JOIN variegations v ON v.id = p.variegation_id
+WHERE p.organization_id = $1
+  AND p.status::text = ANY($2::text[]) -- text: pgx can't send a list of a custom enum
+  AND ($3::bigint IS NULL OR p.batch_id = $3)
+  AND ($4::text[] IS NULL OR p.barcode = ANY($4::text[]))
+  AND NOT EXISTS (SELECT 1 FROM products pr
+                  JOIN product_variants pv ON pv.product_id = pr.id
+                  WHERE pr.organization_id = p.organization_id
+                    AND pr.plant_name_id = p.plant_name_id
+                    AND pr.variegation_id IS NOT DISTINCT FROM p.variegation_id
+                    AND pv.pot_size_id = p.pot_size_id)
+ORDER BY pn.full_name, v.name, ps.name
+`
+
+type MissingVariantsParams struct {
+	OrganizationID int64
+	Statuses       []string
+	BatchID        *int64
+	Barcodes       []string
+}
+
+type MissingVariantsRow struct {
+	PlantNameID   int64
+	PlantName     string
+	VariegationID *int64
+	Variegation   *string
+	PotSizeID     int64
+	PotSize       string
+}
+
+// The plant name + variegation + pot combinations among the chosen plants (a batch, or the listed
+// barcodes, with one of @statuses) in sellable pots that have no variant yet: the SKUs to create
+// when they go on sale, or when for-sale plants move into a pot they weren't sold in before.
+func (q *Queries) MissingVariants(ctx context.Context, arg MissingVariantsParams) ([]MissingVariantsRow, error) {
+	rows, err := q.db.Query(ctx, missingVariants,
+		arg.OrganizationID,
+		arg.Statuses,
+		arg.BatchID,
+		arg.Barcodes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MissingVariantsRow{}
+	for rows.Next() {
+		var i MissingVariantsRow
+		if err := rows.Scan(
+			&i.PlantNameID,
+			&i.PlantName,
+			&i.VariegationID,
+			&i.Variegation,
+			&i.PotSizeID,
+			&i.PotSize,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const sKUTaken = `-- name: SKUTaken :one
+SELECT EXISTS (SELECT 1 FROM product_variants WHERE organization_id = $1 AND sku = $2)
+`
+
+type SKUTakenParams struct {
+	OrganizationID int64
+	Sku            string
+}
+
+func (q *Queries) SKUTaken(ctx context.Context, arg SKUTakenParams) (bool, error) {
+	row := q.db.QueryRow(ctx, sKUTaken, arg.OrganizationID, arg.Sku)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const saleEligibility = `-- name: SaleEligibility :many
-SELECT p.barcode, p.status, ps.sellable AS pot_sellable,
-       EXISTS (SELECT 1 FROM products pr
-               JOIN product_variants pv ON pv.product_id = pr.id
-               WHERE pr.organization_id = p.organization_id
-                 AND pr.plant_name_id = p.plant_name_id
-                 AND pr.variegation_id IS NOT DISTINCT FROM p.variegation_id
-                 AND pv.pot_size_id = p.pot_size_id) AS has_price
+SELECT p.barcode, p.status, ps.sellable AS pot_sellable
 FROM plants p
 JOIN pot_sizes ps ON ps.id = p.pot_size_id
 WHERE p.organization_id = $1
@@ -301,10 +411,9 @@ type SaleEligibilityRow struct {
 	Barcode     string
 	Status      PlantStatus
 	PotSellable bool
-	HasPrice    bool
 }
 
-// For the chosen plants (a batch, or the listed barcodes): whether each can be marked for sale.
+// For the chosen plants (a batch, or the listed barcodes): their status and whether their pot can be sold.
 func (q *Queries) SaleEligibility(ctx context.Context, arg SaleEligibilityParams) ([]SaleEligibilityRow, error) {
 	rows, err := q.db.Query(ctx, saleEligibility, arg.OrganizationID, arg.BatchID, arg.Barcodes)
 	if err != nil {
@@ -314,12 +423,7 @@ func (q *Queries) SaleEligibility(ctx context.Context, arg SaleEligibilityParams
 	items := []SaleEligibilityRow{}
 	for rows.Next() {
 		var i SaleEligibilityRow
-		if err := rows.Scan(
-			&i.Barcode,
-			&i.Status,
-			&i.PotSellable,
-			&i.HasPrice,
-		); err != nil {
+		if err := rows.Scan(&i.Barcode, &i.Status, &i.PotSellable); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -397,30 +501,30 @@ func (q *Queries) UpdateProduct(ctx context.Context, arg UpdateProductParams) (P
 	return i, err
 }
 
-const upsertVariant = `-- name: UpsertVariant :one
-INSERT INTO product_variants (organization_id, product_id, pot_size_id, sku, price_cents)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (product_id, pot_size_id) DO UPDATE
-SET sku = EXCLUDED.sku, price_cents = EXCLUDED.price_cents
+const updateVariant = `-- name: UpdateVariant :one
+UPDATE product_variants
+SET sku         = coalesce($1, sku),
+    price_cents = coalesce($2, price_cents)
+WHERE organization_id = $3 AND product_id = $4 AND pot_size_id = $5
 RETURNING id, organization_id, product_id, pot_size_id, sku, price_cents, created_at
 `
 
-type UpsertVariantParams struct {
+type UpdateVariantParams struct {
+	Sku            *string
+	PriceCents     *int32
 	OrganizationID int64
 	ProductID      int64
 	PotSizeID      int64
-	Sku            string
-	PriceCents     int32
 }
 
-// Sets the SKU and price for one pot size of a product, creating the variant if needed.
-func (q *Queries) UpsertVariant(ctx context.Context, arg UpsertVariantParams) (ProductVariant, error) {
-	row := q.db.QueryRow(ctx, upsertVariant,
+// Changes the SKU and/or price of an existing variant (NULL keeps a value).
+func (q *Queries) UpdateVariant(ctx context.Context, arg UpdateVariantParams) (ProductVariant, error) {
+	row := q.db.QueryRow(ctx, updateVariant,
+		arg.Sku,
+		arg.PriceCents,
 		arg.OrganizationID,
 		arg.ProductID,
 		arg.PotSizeID,
-		arg.Sku,
-		arg.PriceCents,
 	)
 	var i ProductVariant
 	err := row.Scan(

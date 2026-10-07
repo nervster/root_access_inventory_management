@@ -299,7 +299,7 @@ type ProductVariant struct {
 	ProductID      int64
 	PotSizeID      int64
 	Sku            string
-	PriceCents     int32
+	PriceCents     *int32
 	CreatedAt      time.Time
 }
 

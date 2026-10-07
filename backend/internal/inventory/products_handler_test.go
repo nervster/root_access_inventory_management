@@ -8,18 +8,6 @@ import (
 	"testing"
 )
 
-func (n *repotNursery) createProduct(as, body string, wantStatus int) productResponse {
-	n.t.Helper()
-	var product productResponse
-	_ = json.Unmarshal(n.expect(as, "POST", "/api/orgs/{org}/products", body, wantStatus).Body.Bytes(), &product)
-	return product
-}
-
-func (n *repotNursery) setPrice(productID, potSizeID int64, body string, wantStatus int) {
-	n.t.Helper()
-	n.expect("owner", "PUT", fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", productID, potSizeID), body, wantStatus)
-}
-
 func (n *repotNursery) markForSale(body string, wantStatus int) (result saleResponse, errorMessage string) {
 	n.t.Helper()
 	recorder := n.expect("owner", "POST", "/api/orgs/{org}/plants/mark-for-sale", body, wantStatus)
@@ -33,126 +21,176 @@ func (n *repotNursery) markForSale(body string, wantStatus int) (result saleResp
 	return result, errorMessage
 }
 
-// stock returns the product's stock per pot size name, as a viewer sees it.
-func (n *repotNursery) stock(productID int64) map[string]int64 {
+func (n *repotNursery) products() []productResponse {
 	n.t.Helper()
-	var product productResponse
-	_ = json.Unmarshal(n.expect("viewer", "GET", fmt.Sprintf("/api/orgs/{org}/products/%d", productID), "", 200).Body.Bytes(), &product)
+	var products []productResponse
+	_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/products", "", 200).Body.Bytes(), &products)
+	return products
+}
+
+// product returns the product with title, failing the test if there isn't one.
+func (n *repotNursery) product(title string) productResponse {
+	n.t.Helper()
+	for _, p := range n.products() {
+		if p.Title == title {
+			return p
+		}
+	}
+	n.t.Fatalf("no product titled %q in %+v", title, n.products())
+	return productResponse{}
+}
+
+// stock returns a product's stock per pot size name.
+func stock(p productResponse) map[string]int64 {
 	stock := map[string]int64{}
-	for _, v := range product.Variants {
+	for _, v := range p.Variants {
 		stock[v.PotSize] = v.Stock
 	}
 	return stock
 }
 
-func TestProducts(t *testing.T) {
-	n := newRepotNursery(t)
-	dragonScale := n.plantNameID("Alocasia baginda 'Dragon Scale'")
+func (n *repotNursery) setVariant(as string, productID, potSizeID int64, body string, wantStatus int) {
+	n.t.Helper()
+	n.expect(as, "PATCH", fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", productID, potSizeID), body, wantStatus)
+}
 
-	n.createProduct("staff", fmt.Sprintf(`{"plantNameId":%d}`, dragonScale), 403) // pricing is for listings.manage
-	product := n.createProduct("owner", fmt.Sprintf(`{"plantNameId":%d}`, dragonScale), 201)
-	if product.Title != "Alocasia baginda 'Dragon Scale'" || len(product.Variants) != 0 {
-		t.Errorf("product = %+v, want it titled after the plant with no variants yet", product)
-	}
-	n.createProduct("owner", fmt.Sprintf(`{"plantNameId":%d,"title":"Again"}`, dragonScale), 409)
+const dragonScale = "Alocasia baginda 'Dragon Scale'"
 
-	var aurea int64
-	if err := n.db.QueryRow(t.Context(), "SELECT id FROM variegations WHERE name = 'Aurea' AND organization_id IS NULL").Scan(&aurea); err != nil {
-		t.Fatal(err)
+// TestMarkForSaleCreatesProductsAndSKUs: plants go on sale as soon as they're in a sellable pot; the
+// first time a kind of plant is sold in a pot, its product and SKU are created, with no price yet.
+func TestMarkForSaleCreatesProductsAndSKUs(t *testing.T) {
+	n := newRepotNursery(t) // IT-000001 to 5 in the Tissue Culture Cup
+	batch := fmt.Sprintf(`{"batchId":%d}`, n.batch.ID)
+
+	if got, _ := n.markForSale(batch, 200); got.Marked != 0 || got.Skipped.UnsellablePot != 5 || len(got.NewVariants) != 0 {
+		t.Errorf("marking the batch in the TC cup: %+v, want all 5 skipped and no SKUs created", got)
 	}
-	variegated := n.createProduct("owner", fmt.Sprintf(`{"plantNameId":%d,"variegationId":%d}`, dragonScale, aurea), 201)
-	if variegated.Title != "Alocasia baginda 'Dragon Scale' Aurea" {
-		t.Errorf("title = %q, want the variegation added", variegated.Title)
+	if got := n.products(); len(got) != 0 {
+		t.Errorf("products = %+v, want none before anything is for sale", got)
 	}
 
-	// Prices: one per sellable pot size, SKUs unique in the nursery.
-	n.setPrice(product.ID, n.tc.ID, `{"sku":"DS-TC","priceCents":2500}`, 400) // the Tissue Culture Cup can't be sold
-	n.setPrice(product.ID, n.small.ID, `{"sku":"DS-S","priceCents":4500}`, 200)
-	n.setPrice(product.ID, n.small.ID, `{"sku":"DS-S","priceCents":5000}`, 200) // a new price
-	n.setPrice(variegated.ID, n.small.ID, `{"sku":"DS-S","priceCents":9000}`, 409)
-	n.setPrice(product.ID, n.medium.ID, `{"sku":"DS-M","priceCents":-1}`, 400)
-	n.setPrice(product.ID, 999999, `{"sku":"DS-X","priceCents":100}`, 404)
-
-	var products []productResponse
-	_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/products", "", 200).Body.Bytes(), &products)
-	if len(products) != 2 || products[0].ID != product.ID || len(products[0].Variants) != 1 || products[0].Variants[0].PriceCents != 5000 {
-		t.Errorf("products = %+v, want the plain one first with its Small Cup at $50.00", products)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000005"]}`, n.medium.ID), 200)
+	got, _ := n.markForSale(batch, 200)
+	var created []string
+	for _, v := range got.NewVariants {
+		created = append(created, v.PotSize+"="+v.SKU)
 	}
-	var rivals []productResponse
-	_ = json.Unmarshal(n.expect("rival", "GET", "/api/orgs/{org}/products", "", 200).Body.Bytes(), &rivals)
-	if len(rivals) != 0 {
-		t.Errorf("the other nursery sees %+v, want none", rivals)
+	if got.Marked != 5 || strings.Join(created, ",") != "Medium Cup=ABDS-MC,Small Cup=ABDS-SC" {
+		t.Errorf("marking the batch: marked %d, created %v; want 5 marked and SKUs ABDS-MC and ABDS-SC", got.Marked, created)
+	}
+
+	product := n.product(dragonScale)
+	if s := stock(product); s["Small Cup"] != 4 || s["Medium Cup"] != 1 || len(product.Variants) != 2 || product.Variants[0].PriceCents != nil {
+		t.Errorf("product = %+v, want Small Cup (4) and Medium Cup (1), unpriced", product)
+	}
+	if got, _ := n.markForSale(batch, 200); got.AlreadyForSale != 5 || len(got.NewVariants) != 0 {
+		t.Errorf("marking again: %+v, want all 5 already for sale, nothing new", got)
 	}
 }
 
-// TestSellingFollowsThePlants walks a batch from the Tissue Culture Cup to sale, and checks the
-// stock moves with the plants.
-func TestSellingFollowsThePlants(t *testing.T) {
+func TestNewPlantsJoinTheirProduct(t *testing.T) {
 	n := newRepotNursery(t)
-	product := n.createProduct("owner", fmt.Sprintf(`{"plantNameId":%d}`, n.plantNameID("Alocasia baginda 'Dragon Scale'")), 201)
-	n.setPrice(product.ID, n.small.ID, `{"sku":"DS-S","priceCents":4500}`, 200)
-	batch := fmt.Sprintf(`{"batchId":%d}`, n.batch.ID)
-
-	// Still in the Tissue Culture Cup: nothing can be sold yet.
-	if got, _ := n.markForSale(batch, 200); got.Marked != 0 || got.Skipped.UnsellablePot != 5 {
-		t.Errorf("marking the batch in the TC cup: %+v, want all 5 skipped (pot can't be sold)", got)
-	}
-
-	// Grown on: the batch moves to the Small Cup, one plant to the Medium Cup (no price yet).
 	n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200)
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000005"]}`, n.medium.ID), 200)
-	if got, _ := n.markForSale(batch, 200); got.Marked != 4 || got.Skipped.NoPrice != 1 {
-		t.Errorf("marking the batch: %+v, want 4 marked and 1 skipped (no Medium Cup price)", got)
-	}
-	if _, message := n.markForSale(`{"barcodes":["IT-000005"]}`, 400); !strings.Contains(message, "IT-000005") {
-		t.Errorf("error = %q, want it to name IT-000005", message)
-	}
-	n.setPrice(product.ID, n.medium.ID, `{"sku":"DS-M","priceCents":7500}`, 200)
-	if got, _ := n.markForSale(`{"barcodes":["IT-000005"]}`, 200); got.Marked != 1 {
-		t.Errorf("marking IT-000005 once priced: %+v, want 1 marked", got)
-	}
-	if got := n.stock(product.ID); got["Small Cup"] != 4 || got["Medium Cup"] != 1 {
-		t.Errorf("stock = %v, want 4 Small Cup and 1 Medium Cup", got)
-	}
-	if got, _ := n.markForSale(batch, 200); got.Marked != 0 || got.AlreadyForSale != 5 {
-		t.Errorf("marking the batch again: %+v, want all 5 already for sale", got)
-	}
+	n.markForSale(fmt.Sprintf(`{"batchId":%d}`, n.batch.ID), 200)
 
-	// A for-sale plant moved to a bigger pot moves to that pot's stock.
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000004"]}`, n.medium.ID), 200)
-	if got := n.stock(product.ID); got["Small Cup"] != 3 || got["Medium Cup"] != 2 {
-		t.Errorf("after repotting IT-000004: stock = %v, want 3 Small Cup and 2 Medium Cup", got)
+	// A second Dragon Scale batch, straight into the Small Cup: joins the existing SKU.
+	second := n.receiveBatch("staff", fmt.Sprintf(`{"plantNameId":%d,"potSizeId":%d,"quantity":3,"receivedOn":"2026-10-02"}`,
+		n.plantNameID(dragonScale), n.small.ID), 201)
+	if got, _ := n.markForSale(fmt.Sprintf(`{"batchId":%d}`, second.Batch.ID), 200); got.Marked != 3 || len(got.NewVariants) != 0 {
+		t.Errorf("marking the second batch: %+v, want 3 marked into the existing SKU", got)
 	}
+	if s := stock(n.product(dragonScale)); s["Small Cup"] != 8 {
+		t.Errorf("stock = %v, want 8 in the Small Cup", s)
+	}
+}
 
-	// Taking plants off sale, and removing a price only once nothing is for sale at it.
-	var unmarked struct{ Unmarked int }
-	_ = json.Unmarshal(n.expect("owner", "POST", "/api/orgs/{org}/plants/unmark-for-sale", `{"barcodes":["IT-000004","IT-000005"]}`, 200).Body.Bytes(), &unmarked)
-	if unmarked.Unmarked != 2 || n.stock(product.ID)["Medium Cup"] != 0 {
-		t.Errorf("unmarked %d, Medium Cup stock %d; want 2 and 0", unmarked.Unmarked, n.stock(product.ID)["Medium Cup"])
+func TestMarkForSaleByBarcode(t *testing.T) {
+	n := newRepotNursery(t)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000001"]}`, n.small.ID), 200)
+
+	// One plant still in the TC cup: nothing changes, and it's named.
+	if _, message := n.markForSale(`{"barcodes":["IT-000001","IT-000002"]}`, 400); !strings.Contains(message, "IT-000002") {
+		t.Errorf("error = %q, want it to name IT-000002", message)
 	}
-	n.expect("owner", "DELETE", fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", product.ID, n.small.ID), "", 409) // 3 still for sale
-	n.expect("owner", "DELETE", fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", product.ID, n.medium.ID), "", 204)
+	if got := n.products(); len(got) != 0 {
+		t.Errorf("products = %+v, want none: the refused request created nothing", got)
+	}
+	if got, _ := n.markForSale(`{"barcodes":["IT-000001"]}`, 200); got.Marked != 1 || len(got.NewVariants) != 1 {
+		t.Errorf("marking IT-000001: %+v, want 1 marked with a new SKU", got)
+	}
+	n.expect("staff", "POST", "/api/orgs/{org}/plants/mark-for-sale", `{"barcodes":["IT-000001"]}`, 403) // listings.manage
 }
 
 func TestVariegationsAreSeparateProducts(t *testing.T) {
 	n := newRepotNursery(t)
-	dragonScale := n.plantNameID("Alocasia baginda 'Dragon Scale'")
-	product := n.createProduct("owner", fmt.Sprintf(`{"plantNameId":%d}`, dragonScale), 201)
-	n.setPrice(product.ID, n.small.ID, `{"sku":"DS-S","priceCents":4500}`, 200)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200)
+	n.markForSale(fmt.Sprintf(`{"batchId":%d}`, n.batch.ID), 200)
+	plain := n.product(dragonScale)
 
-	// An Aurea batch of the same plant, straight into the Small Cup.
+	// Rename the plain SKU to what the Aurea one would be called, to force a clash.
+	n.setVariant("owner", plain.ID, n.small.ID, `{"sku":"ABDS-AUR-SC"}`, 200)
+
 	var aurea int64
 	if err := n.db.QueryRow(t.Context(), "SELECT id FROM variegations WHERE name = 'Aurea' AND organization_id IS NULL").Scan(&aurea); err != nil {
 		t.Fatal(err)
 	}
-	aureaBatch := n.receiveBatch("staff", fmt.Sprintf(`{"plantNameId":%d,"variegationId":%d,"potSizeId":%d,"quantity":2,"receivedOn":"2026-10-02"}`,
-		dragonScale, aurea, n.small.ID), 201)
-
-	// The plain product's price doesn't apply to the Aurea plants.
-	if got, _ := n.markForSale(fmt.Sprintf(`{"batchId":%d}`, aureaBatch.Batch.ID), 200); got.Marked != 0 || got.Skipped.NoPrice != 2 {
-		t.Errorf("marking the Aurea batch: %+v, want both skipped (no Aurea price)", got)
+	batch := n.receiveBatch("staff", fmt.Sprintf(`{"plantNameId":%d,"variegationId":%d,"potSizeId":%d,"quantity":2,"receivedOn":"2026-10-02"}`,
+		n.plantNameID(dragonScale), aurea, n.small.ID), 201)
+	got, _ := n.markForSale(fmt.Sprintf(`{"batchId":%d}`, batch.Batch.ID), 200)
+	if len(got.NewVariants) != 1 || got.NewVariants[0].Product != dragonScale+" Aurea" || got.NewVariants[0].SKU != "ABDS-AUR-SC-2" {
+		t.Errorf("new variants = %+v, want a separate Aurea product whose SKU avoids the taken ABDS-AUR-SC", got.NewVariants)
 	}
-	if got := n.stock(product.ID); got["Small Cup"] != 0 {
-		t.Errorf("plain Dragon Scale stock = %v, want the Aurea plants not counted", got)
+	if s := stock(n.product(dragonScale)); s["Small Cup"] != 5 {
+		t.Errorf("plain stock = %v, want the Aurea plants not counted", s)
+	}
+}
+
+func TestPricesAndDetails(t *testing.T) {
+	n := newRepotNursery(t)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200)
+	n.markForSale(fmt.Sprintf(`{"batchId":%d}`, n.batch.ID), 200)
+	product := n.product(dragonScale)
+
+	n.setVariant("staff", product.ID, n.small.ID, `{"priceCents":4500}`, 403) // listings.manage
+	n.setVariant("owner", product.ID, n.small.ID, `{"priceCents":4500}`, 200)
+	n.setVariant("owner", product.ID, n.small.ID, `{"priceCents":-1}`, 400)
+	n.setVariant("owner", product.ID, n.medium.ID, `{"priceCents":100}`, 404) // never sold in that pot
+	if v := n.product(dragonScale).Variants[0]; v.PriceCents == nil || *v.PriceCents != 4500 || v.SKU != "ABDS-SC" {
+		t.Errorf("variant = %+v, want $45.00 with its SKU unchanged", v)
+	}
+
+	n.expect("owner", "PATCH", fmt.Sprintf("/api/orgs/{org}/products/%d", product.ID), `{"title":"Dragon Scale","description":"Silvery, scale-like leaves."}`, 200)
+	if p := n.product("Dragon Scale"); *p.Description != "Silvery, scale-like leaves." {
+		t.Errorf("description = %v", p.Description)
+	}
+
+	// A price can be removed only once nothing is for sale at it; then the product leaves the list.
+	path := fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", product.ID, n.small.ID)
+	n.expect("owner", "DELETE", path, "", 409)
+	n.expect("owner", "POST", "/api/orgs/{org}/plants/unmark-for-sale", `{"barcodes":["IT-000001","IT-000002","IT-000003","IT-000004","IT-000005"]}`, 200)
+	n.expect("owner", "DELETE", path, "", 204)
+	if got := n.products(); len(got) != 0 {
+		t.Errorf("products = %+v, want none left", got)
+	}
+
+	var rivals []productResponse
+	_ = json.Unmarshal(n.expect("rival", "GET", "/api/orgs/{org}/products", "", 200).Body.Bytes(), &rivals)
+	if len(rivals) != 0 {
+		t.Errorf("the other nursery sees %+v", rivals)
+	}
+}
+
+func TestStockFollowsThePlants(t *testing.T) {
+	n := newRepotNursery(t)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200)
+	n.markForSale(fmt.Sprintf(`{"batchId":%d}`, n.batch.ID), 200)
+
+	// A for-sale plant moved to a bigger pot moves to that pot's stock, getting a SKU there.
+	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000004"]}`, n.medium.ID), 200); len(got.NewVariants) != 1 || got.NewVariants[0].SKU != "ABDS-MC" {
+		t.Errorf("repot created %+v, want the Medium Cup SKU ABDS-MC", got.NewVariants)
+	}
+	if s := stock(n.product(dragonScale)); s["Small Cup"] != 4 || s["Medium Cup"] != 1 {
+		t.Errorf("stock = %v, want 4 Small Cup and 1 Medium Cup", s)
 	}
 }

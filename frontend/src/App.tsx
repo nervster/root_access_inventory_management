@@ -9,6 +9,7 @@ import { BatchesPage } from './pages/org/BatchesPage'
 import { DashboardPage } from './pages/org/DashboardPage'
 import { LabelsPage } from './pages/org/LabelsPage'
 import { PlantPage } from './pages/org/PlantPage'
+import { ProductsPage } from './pages/org/ProductsPage'
 import { ReceiveBatchPage } from './pages/org/ReceiveBatchPage'
 import { ScanPage } from './pages/org/ScanPage'
 import { PotSizesPage } from './pages/org/PotSizesPage'
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="batches/:batchId" element={<BatchPage />} />
             <Route path="scan" element={<ScanPage />} />
             <Route path="plants/:barcode" element={<PlantPage />} />
+            <Route path="products" element={<ProductsPage />} />
             <Route path="pot-sizes" element={<PotSizesPage />} />
             <Route path="team" element={<TeamPage />} />
             <Route path="settings" element={<SettingsPage />} />

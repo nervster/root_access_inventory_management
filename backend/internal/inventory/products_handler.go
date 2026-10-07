@@ -30,8 +30,8 @@ type variantResponse struct {
 	PotSizeID  int64  `json:"potSizeId"`
 	PotSize    string `json:"potSize"`
 	SKU        string `json:"sku"`
-	PriceCents int32  `json:"priceCents"`
-	Stock      int64  `json:"stock"` // plants for sale right now
+	PriceCents *int32 `json:"priceCents"` // null until someone sets it
+	Stock      int64  `json:"stock"`      // plants for sale right now
 }
 
 func newProductResponse(p ProductWithVariants) productResponse {
@@ -82,10 +82,8 @@ func (h handler) respondWithProduct(c *gin.Context, productID int64, status int)
 }
 
 type productRequest struct {
-	PlantNameID   int64   `json:"plantNameId"`   // create only
-	VariegationID *int64  `json:"variegationId"` // create only
-	Title         *string `json:"title"`
-	Description   *string `json:"description"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
 }
 
 // validate trims the title and description and checks their length; it returns a message for the
@@ -106,37 +104,6 @@ func (r *productRequest) validate() string {
 		r.Description = &description
 	}
 	return ""
-}
-
-func (h handler) createProduct(c *gin.Context) {
-	var req productRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
-		return
-	}
-	if req.PlantNameID == 0 {
-		web.Fail(c, http.StatusBadRequest, "plantNameId is required")
-		return
-	}
-	if message := req.validate(); message != "" {
-		web.Fail(c, http.StatusBadRequest, message)
-		return
-	}
-
-	productID, err := h.store.CreateProduct(c.Request.Context(), organization.CurrentAccess(c).OrganizationID,
-		req.PlantNameID, req.VariegationID, req.Title, req.Description)
-	switch {
-	case errors.Is(err, ErrPlantNameNotFound):
-		web.Fail(c, http.StatusBadRequest, "plant name not found; pick a genus, species, or cultivar")
-	case errors.Is(err, ErrVariegationNotFound):
-		web.Fail(c, http.StatusBadRequest, "variegation not found")
-	case errors.Is(err, ErrProductExists):
-		web.Fail(c, http.StatusConflict, ErrProductExists.Error())
-	case err != nil:
-		web.FailInternal(c, err)
-	default:
-		h.respondWithProduct(c, productID, http.StatusCreated)
-	}
 }
 
 func (h handler) updateProduct(c *gin.Context) {
@@ -171,16 +138,17 @@ func (h handler) updateProduct(c *gin.Context) {
 // --- /products/:productId/variants/:potSizeId ---
 
 type variantRequest struct {
-	SKU        string `json:"sku"`
-	PriceCents *int32 `json:"priceCents"`
+	SKU        *string `json:"sku"`
+	PriceCents *int32  `json:"priceCents"`
 }
 
-// setVariant handles PUT: the SKU and price of a product in one pot size (created if needed).
-func (h handler) setVariant(c *gin.Context) {
+// updateVariant handles PATCH: the SKU and/or price of a product in one pot size. Variants are
+// created by marking plants for sale, so only existing ones can be changed.
+func (h handler) updateVariant(c *gin.Context) {
 	productID, ok1 := web.IDParam(c, "productId")
 	potSizeID, ok2 := web.IDParam(c, "potSizeId")
 	if !ok1 || !ok2 {
-		web.Fail(c, http.StatusNotFound, "product or pot size not found")
+		web.Fail(c, http.StatusNotFound, "variant not found")
 		return
 	}
 	var req variantRequest
@@ -188,24 +156,29 @@ func (h handler) setVariant(c *gin.Context) {
 		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
 		return
 	}
-	sku := strings.TrimSpace(req.SKU)
-	switch {
-	case sku == "" || len(sku) > 64:
-		web.Fail(c, http.StatusBadRequest, "sku must be 1 to 64 characters")
-		return
-	case req.PriceCents == nil || *req.PriceCents < 0:
-		web.Fail(c, http.StatusBadRequest, "priceCents is required and can't be negative")
+	if req.SKU != nil {
+		sku := strings.TrimSpace(*req.SKU)
+		if sku == "" || len(sku) > 64 {
+			web.Fail(c, http.StatusBadRequest, "sku must be 1 to 64 characters")
+			return
+		}
+		req.SKU = &sku
+	}
+	if req.PriceCents != nil && *req.PriceCents < 0 {
+		web.Fail(c, http.StatusBadRequest, "priceCents can't be negative")
 		return
 	}
 
-	err := h.store.SetVariant(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, productID, potSizeID, sku, *req.PriceCents)
+	err := h.store.UpdateVariant(c.Request.Context(), dbgen.UpdateVariantParams{
+		OrganizationID: organization.CurrentAccess(c).OrganizationID,
+		ProductID:      productID,
+		PotSizeID:      potSizeID,
+		Sku:            req.SKU,
+		PriceCents:     req.PriceCents,
+	})
 	switch {
 	case errors.Is(err, ErrNotFound):
-		web.Fail(c, http.StatusNotFound, "product not found")
-	case errors.Is(err, ErrPotSizeNotFound):
-		web.Fail(c, http.StatusNotFound, "pot size not found")
-	case errors.Is(err, ErrPotNotSellable):
-		web.Fail(c, http.StatusBadRequest, ErrPotNotSellable.Error())
+		web.Fail(c, http.StatusNotFound, "variant not found")
 	case errors.Is(err, ErrSKUTaken):
 		web.Fail(c, http.StatusConflict, ErrSKUTaken.Error())
 	case err != nil:
@@ -247,8 +220,14 @@ type saleResponse struct {
 	AlreadyForSale int `json:"alreadyForSale"`
 	Skipped        struct {
 		UnsellablePot int `json:"unsellablePot"` // still in e.g. the Tissue Culture Cup
-		NoPrice       int `json:"noPrice"`       // no variant for their plant and pot size yet
 	} `json:"skipped"`
+	NewVariants []newVariantJSON `json:"newVariants"` // SKUs created along the way, without a price yet
+}
+
+type newVariantJSON struct {
+	Product string `json:"product"`
+	PotSize string `json:"potSize"`
+	SKU     string `json:"sku"`
 }
 
 func (h handler) markForSale(c *gin.Context) {
@@ -283,8 +262,11 @@ func (h handler) markForSale(c *gin.Context) {
 		web.FailInternal(c, err)
 		return
 	}
-	response := saleResponse{Marked: result.Marked, AlreadyForSale: result.AlreadyForSale}
-	response.Skipped.UnsellablePot, response.Skipped.NoPrice = result.UnsellablePot, result.NoPrice
+	response := saleResponse{Marked: result.Marked, AlreadyForSale: result.AlreadyForSale, NewVariants: make([]newVariantJSON, len(result.NewVariants))}
+	response.Skipped.UnsellablePot = result.UnsellablePot
+	for i, v := range result.NewVariants {
+		response.NewVariants[i] = newVariantJSON(v)
+	}
 	c.JSON(http.StatusOK, response)
 }
 

@@ -11,10 +11,10 @@ FROM plants
 WHERE organization_id = @organization_id;
 
 -- name: SaleReadiness :one
--- Growing plants in a sellable pot: priced (could be marked for sale now) or still needing a price,
--- and the total price of everything for sale.
-SELECT count(*) FILTER (WHERE p.status = 'growing' AND pv.id IS NOT NULL) AS ready_to_mark,
-       count(*) FILTER (WHERE p.status = 'growing' AND pv.id IS NULL)     AS needs_price,
+-- Plants in a sellable pot: growing ones that could be marked for sale now, for-sale ones whose SKU
+-- still has no price, and the total price of everything for sale (priced ones only).
+SELECT count(*) FILTER (WHERE p.status = 'growing') AS ready_to_mark,
+       count(*) FILTER (WHERE p.status = 'for_sale' AND pv.price_cents IS NULL) AS needs_price,
        coalesce(sum(pv.price_cents) FILTER (WHERE p.status = 'for_sale'), 0)::bigint AS for_sale_value_cents
 FROM plants p
 JOIN pot_sizes ps ON ps.id = p.pot_size_id AND ps.sellable

@@ -32,11 +32,17 @@ export function DashboardPage() {
         <StatTile
           label="Ready to mark for sale"
           value={d.readyToMark}
-          hint="Priced and in a sellable pot"
+          hint="Growing in a pot that can be sold"
           attention={d.readyToMark > 0}
           to={`/orgs/${orgId}/batches`}
         />
-        <StatTile label="Needs a price" value={d.needsPrice} hint="In a sellable pot, no price yet" attention={d.needsPrice > 0} />
+        <StatTile
+          label="Needs a price"
+          value={d.needsPrice}
+          hint="For sale, but their SKU has no price"
+          attention={d.needsPrice > 0}
+          to={`/orgs/${orgId}/products`}
+        />
         <StatTile label="Received" value={d.last30Days.received} hint="Last 30 days" />
         <StatTile label="Discarded" value={d.last30Days.discarded} hint="Last 30 days" />
       </div>

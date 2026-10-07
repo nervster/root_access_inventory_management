@@ -20,8 +20,9 @@ type repotRequest struct {
 }
 
 type repotResponse struct {
-	Moved     int `json:"moved"`
-	Unchanged int `json:"unchanged"` // already in that pot
+	Moved       int              `json:"moved"`
+	Unchanged   int              `json:"unchanged"`   // already in that pot
+	NewVariants []newVariantJSON `json:"newVariants"` // SKUs created for for-sale plants in a new pot
 }
 
 // repot handles POST /repot: moves a whole batch, or the listed plants, into a new pot size.
@@ -62,7 +63,11 @@ func (h handler) repot(c *gin.Context) {
 		web.FailInternal(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, repotResponse{Moved: result.Moved, Unchanged: result.Unchanged})
+	response := repotResponse{Moved: result.Moved, Unchanged: result.Unchanged, NewVariants: make([]newVariantJSON, len(result.NewVariants))}
+	for i, v := range result.NewVariants {
+		response.NewVariants[i] = newVariantJSON(v)
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 type discardRequest struct {

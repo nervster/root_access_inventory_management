@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useMembership, usePlantActions, usePotSizes } from '../api/hooks'
 import { can } from '../api/roles'
 import { Permissions } from '../api/types'
+import type { NewVariantDto } from '../api/types'
+import { NewVariants } from './NewVariants'
 import { Button, ErrorBanner, Input, Notice, Select } from './ui'
 
 /**
@@ -17,6 +19,7 @@ export function PlantActions({ orgId, barcodes, onDone }: { orgId: number; barco
   const [discarding, setDiscarding] = useState(false)
   const [reason, setReason] = useState('')
   const [done, setDone] = useState<string | null>(null)
+  const [newVariants, setNewVariants] = useState<NewVariantDto[]>([])
 
   const canEdit = can(membership, Permissions.InventoryEdit)
   const canSell = can(membership, Permissions.ListingsManage)
@@ -25,12 +28,14 @@ export function PlantActions({ orgId, barcodes, onDone }: { orgId: number; barco
   const busy = actions.repot.isPending || actions.markForSale.isPending || actions.unmarkForSale.isPending || actions.discard.isPending
   const error = actions.repot.error ?? actions.markForSale.error ?? actions.unmarkForSale.error ?? actions.discard.error
 
-  const finished = (message: string) => {
+  const finished = (message: string, created: NewVariantDto[] = []) => {
     setDone(message)
+    setNewVariants(created)
     onDone?.()
   }
   const reset = () => {
     setDone(null)
+    setNewVariants([])
     ;[actions.repot, actions.markForSale, actions.unmarkForSale, actions.discard].forEach((m) => m.reset())
   }
 
@@ -55,7 +60,7 @@ export function PlantActions({ orgId, barcodes, onDone }: { orgId: number; barco
               reset()
               actions.repot.mutate(
                 { potSizeId: Number(potSizeId), barcodes },
-                { onSuccess: (r) => finished(`Moved ${r.moved}${r.unchanged ? ` · ${r.unchanged} already there` : ''}.`) },
+                { onSuccess: (r) => finished(`Moved ${r.moved}${r.unchanged ? ` · ${r.unchanged} already there` : ''}.`, r.newVariants) },
               )
             }}
           >
@@ -71,7 +76,7 @@ export function PlantActions({ orgId, barcodes, onDone }: { orgId: number; barco
               disabled={busy}
               onClick={() => {
                 reset()
-                actions.markForSale.mutate({ barcodes }, { onSuccess: (r) => finished(`Marked ${r.marked} for sale${r.alreadyForSale ? ` · ${r.alreadyForSale} already were` : ''}.`) })
+                actions.markForSale.mutate({ barcodes }, { onSuccess: (r) => finished(`Marked ${r.marked} for sale${r.alreadyForSale ? ` · ${r.alreadyForSale} already were` : ''}.`, r.newVariants) })
               }}
             >
               Mark for sale
@@ -128,6 +133,7 @@ export function PlantActions({ orgId, barcodes, onDone }: { orgId: number; barco
 
       <ErrorBanner error={error} />
       {done && <Notice>{done}</Notice>}
+      <NewVariants orgId={orgId} variants={newVariants} />
     </div>
   )
 }

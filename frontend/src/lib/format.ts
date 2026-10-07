@@ -25,3 +25,8 @@ export function formatDay(day: string) {
   const [year, month, date] = day.split('-').map(Number)
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(year, month - 1, date))
 }
+
+/** "45" or "45.5" (dollars, as typed) → 4500 or 4550 cents; NaN when it isn't a number. */
+export function dollarsToCents(text: string) {
+  return Math.round(Number(text) * 100)
+}

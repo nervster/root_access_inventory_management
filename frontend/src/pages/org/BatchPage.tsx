@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from 'react-router'
 import { useBatch, useMembership, usePlantActions, usePotSizes } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, PLANT_STATUS_LABELS, type PlantDto, type PlantStatus } from '../../api/types'
+import { NewVariants } from '../../components/NewVariants'
 import { Badge, Button, Card, ErrorBanner, LinkButton, Loading, Notice, PageHeader, Select } from '../../components/ui'
 import { formatDay, formatMoney } from '../../lib/format'
 
@@ -121,10 +122,13 @@ function RepotBatch({ orgId, batchId }: { orgId: number; batchId: number }) {
       <p className="mt-2 text-xs text-stone-500">Plants that grew differently can be moved one by one from Scan.</p>
       <ErrorBanner error={repot.error} />
       {repot.data && (
-        <p className="mt-2 text-sm">
-          Moved {repot.data.moved}
-          {repot.data.unchanged > 0 && <> · {repot.data.unchanged} were already in that pot</>}
-        </p>
+        <div className="mt-2 space-y-2 text-sm">
+          <p>
+            Moved {repot.data.moved}
+            {repot.data.unchanged > 0 && <> · {repot.data.unchanged} were already in that pot</>}
+          </p>
+          <NewVariants orgId={orgId} variants={repot.data.newVariants} />
+        </div>
       )}
     </Card>
   )
@@ -140,7 +144,7 @@ function MarkBatchForSale({ orgId, batchId }: { orgId: number; batchId: number }
       <Button disabled={markForSale.isPending} onClick={() => markForSale.mutate({ batchId })}>
         Mark for sale
       </Button>
-      <p className="mt-2 text-xs text-stone-500">Only plants in a pot that can be sold, with a price for that pot, are marked.</p>
+      <p className="mt-2 text-xs text-stone-500">Plants in a pot that can be sold go on sale. New kinds get their own SKU, priced on Products.</p>
       <ErrorBanner error={markForSale.error} />
       {result && (
         <div className="mt-2 space-y-1 text-sm">
@@ -149,9 +153,7 @@ function MarkBatchForSale({ orgId, batchId }: { orgId: number; batchId: number }
             {result.alreadyForSale > 0 && <> · {result.alreadyForSale} were already for sale</>}
           </p>
           {result.skipped.unsellablePot > 0 && <p className="text-stone-600 dark:text-stone-400">{result.skipped.unsellablePot} are still in a pot that can't be sold.</p>}
-          {result.skipped.noPrice > 0 && (
-            <p className="text-stone-600 dark:text-stone-400">{result.skipped.noPrice} have no price for their pot size yet (set prices on Products).</p>
-          )}
+          <NewVariants orgId={orgId} variants={result.newVariants} />
         </div>
       )}
     </Card>
