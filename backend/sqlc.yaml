@@ -7,6 +7,7 @@ sql:
     # One folder per domain. sqlc doesn't search subfolders, so add each new folder here.
     queries:
       - internal/db/queries/accounts
+      - internal/db/queries/inventory
     gen:
       go:
         package: dbgen

@@ -16,6 +16,7 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
+	"github.com/nervster/root_access_inventory_management/backend/internal/inventory"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/email"
@@ -60,6 +61,7 @@ func run() error {
 		platformAdmins: auth.NewPlatformAdmins(cfg.PlatformAdminEmails),
 		orgs:           organization.NewStore(pool),
 		deliverer:      deliverer,
+		inventory:      inventory.NewStore(pool),
 	})
 
 	server := &http.Server{
@@ -98,6 +100,7 @@ type dependencies struct {
 	platformAdmins auth.PlatformAdmins
 	orgs           *organization.Store
 	deliverer      organization.Deliverer
+	inventory      *inventory.Store
 }
 
 // newRouter builds the HTTP routes. It's separate from run so tests can use it.
@@ -113,6 +116,7 @@ func newRouter(d dependencies) *gin.Engine {
 	signedIn := api.Group("", d.authenticate, auth.RequireUser(d.users, d.platformAdmins))
 	organization.Routes(signedIn, d.orgs, d.deliverer)
 	organization.PlatformRoutes(signedIn, d.orgs, d.deliverer, d.platformAdmins)
+	inventory.Routes(signedIn, d.orgs, d.inventory)
 
 	return router
 }

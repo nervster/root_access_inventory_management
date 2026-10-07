@@ -13,6 +13,7 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/web"
 )
 
 // PlatformRoutes adds the platform admin routes to signedIn, a group behind auth.RequireUser.
@@ -40,16 +41,16 @@ func PlatformRoutes(signedIn *gin.RouterGroup, store *Store, deliverer Deliverer
 // actAsOwner gives a platform admin Owner access to the organization in the route, for account
 // management only (see PlatformRoutes). They aren't a member, so MembershipID is 0.
 func (h handler) actAsOwner(c *gin.Context) {
-	orgID, ok := idParam(c, "orgId")
+	orgID, ok := web.IDParam(c, "orgId")
 	if !ok {
-		fail(c, http.StatusNotFound, "organization not found")
+		web.Fail(c, http.StatusNotFound, "organization not found")
 		return
 	}
 	if _, err := h.store.OrganizationSummary(c.Request.Context(), orgID); err != nil {
 		if errors.Is(err, ErrNotFound) {
-			fail(c, http.StatusNotFound, "organization not found")
+			web.Fail(c, http.StatusNotFound, "organization not found")
 		} else {
-			failInternal(c, err)
+			web.FailInternal(c, err)
 		}
 		return
 	}
@@ -70,7 +71,7 @@ type platformOrganizationResponse struct {
 func (h handler) platformListOrganizations(c *gin.Context) {
 	orgs, err := h.store.AllOrganizations(c.Request.Context())
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	response := make([]platformOrganizationResponse, len(orgs))
@@ -100,13 +101,13 @@ var nonSlugCharacters = regexp.MustCompile(`[^a-z0-9]+`)
 func (h handler) platformCreateOrganization(c *gin.Context) {
 	var req createOrganizationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, "request body must be JSON")
+		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
 		return
 	}
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" || len(name) > 200 {
-		fail(c, http.StatusBadRequest, "name must be 1 to 200 characters")
+		web.Fail(c, http.StatusBadRequest, "name must be 1 to 200 characters")
 		return
 	}
 	slug := req.Slug
@@ -114,7 +115,7 @@ func (h handler) platformCreateOrganization(c *gin.Context) {
 		slug = strings.Trim(nonSlugCharacters.ReplaceAllString(strings.ToLower(name), "-"), "-")
 	}
 	if !slugPattern.MatchString(slug) || len(slug) > 100 {
-		fail(c, http.StatusBadRequest, "slug must be lowercase letters and numbers separated by single hyphens, e.g. root-access-htx")
+		web.Fail(c, http.StatusBadRequest, "slug must be lowercase letters and numbers separated by single hyphens, e.g. root-access-htx")
 		return
 	}
 	timeZone := req.TimeZone
@@ -122,22 +123,22 @@ func (h handler) platformCreateOrganization(c *gin.Context) {
 		timeZone = "America/Chicago"
 	}
 	if _, err := time.LoadLocation(timeZone); err != nil {
-		fail(c, http.StatusBadRequest, "unknown time zone; use an IANA name like America/Chicago")
+		web.Fail(c, http.StatusBadRequest, "unknown time zone; use an IANA name like America/Chicago")
 		return
 	}
 	owner, err := mail.ParseAddress(req.OwnerEmail)
 	if err != nil || owner.Address != strings.TrimSpace(req.OwnerEmail) {
-		fail(c, http.StatusBadRequest, "enter a valid owner email address")
+		web.Fail(c, http.StatusBadRequest, "enter a valid owner email address")
 		return
 	}
 
 	org, invitation, err := h.store.CreateOrganization(c.Request.Context(), name, slug, timeZone, owner.Address, auth.CurrentUser(c).ID)
 	switch {
 	case errors.Is(err, ErrSlugTaken):
-		fail(c, http.StatusConflict, "an organization with slug "+slug+" already exists")
+		web.Fail(c, http.StatusConflict, "an organization with slug "+slug+" already exists")
 		return
 	case err != nil:
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 
@@ -168,17 +169,17 @@ func (h handler) platformGetOrganization(c *gin.Context) {
 
 	summary, err := h.store.OrganizationSummary(ctx, orgID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	members, err := h.store.Members(ctx, orgID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	invitations, err := h.store.Invitations(ctx, orgID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 
@@ -205,29 +206,29 @@ func (h handler) platformUpdateOrganization(c *gin.Context) {
 	orgID := CurrentAccess(c).OrganizationID
 	var req platformUpdateOrganizationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, "request body must be JSON")
+		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
 		return
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > 200 {
-			fail(c, http.StatusBadRequest, "name must be 1 to 200 characters")
+			web.Fail(c, http.StatusBadRequest, "name must be 1 to 200 characters")
 			return
 		}
 		req.Name = &name
 	}
 	if req.Status != nil && *req.Status != dbgen.OrganizationStatusActive && *req.Status != dbgen.OrganizationStatusSuspended {
-		fail(c, http.StatusBadRequest, "status must be active or suspended")
+		web.Fail(c, http.StatusBadRequest, "status must be active or suspended")
 		return
 	}
 
 	if err := h.store.UpdateOrganizationAccount(c.Request.Context(), orgID, req.Name, req.Status); err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	summary, err := h.store.OrganizationSummary(c.Request.Context(), orgID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, platformOrganizationResponse(summary))
@@ -253,7 +254,7 @@ type platformMembershipResponse struct {
 func (h handler) platformSearchUsers(c *gin.Context) {
 	users, err := h.store.SearchUsers(c.Request.Context(), c.Query("email"))
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	response := make([]platformUserResponse, len(users))
