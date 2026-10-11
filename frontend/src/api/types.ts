@@ -312,3 +312,24 @@ export interface PhotoDto {
   /** Who added it: their name (email if they have none), as it was then. */
   uploadedBy: string | null
 }
+
+/** The nursery's link to its Shopify store (Settings → Shopify; Owners only). */
+export interface ShopifyConnectionDto {
+  /** The server has Plant Stock's Shopify app credentials. */
+  configured: boolean
+  connected: boolean
+  /** e.g. root-access-htx.myshopify.com */
+  shop: string | null
+  /** Shopify stopped accepting Plant Stock's access (e.g. the app was uninstalled): connect again. */
+  needsReconnect: boolean
+  /** Where customers pick up. */
+  locationId: string | null
+  locationName: string | null
+  connectedByName: string | null
+  connectedAt: string | null
+}
+
+export interface ShopifyLocationDto {
+  id: string
+  name: string
+}

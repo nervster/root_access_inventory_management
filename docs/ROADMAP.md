@@ -52,7 +52,7 @@ online. Root Access HTX is the first nursery.
 - [ ] Customers picking a specific plant from its photos
 
 ### 3. Shopify, per nursery
-- [ ] Shopify app with OAuth install, so each nursery connects its own store; tokens encrypted at rest
+- [x] Shopify app with OAuth install, so each nursery connects its own store; tokens encrypted at rest
 - [ ] Push products, SKUs (variants), images, prices, and stock to Shopify; SKUs without a price stay off it
 - [ ] Order and refund webhooks mark plants sold or available again (idempotent), processed via SQS
 - [ ] Nightly sync check that finds and fixes drift between Plant Stock and Shopify

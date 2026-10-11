@@ -25,6 +25,8 @@ import type {
   CorrectionResult,
   RepotResult,
   SaleResult,
+  ShopifyConnectionDto,
+  ShopifyLocationDto,
   VariegationDto,
 } from './types'
 
@@ -36,6 +38,8 @@ export const queryKeys = {
   platformOrganizations: ['platform', 'orgs'] as const,
   platformOrganization: (id: number) => ['platform', 'orgs', id] as const,
   platformUsers: (email: string) => ['platform', 'users', email] as const,
+  shopify: (orgId: number) => ['orgs', orgId, 'shopify'] as const,
+  shopifyLocations: (orgId: number) => ['orgs', orgId, 'shopify', 'locations'] as const,
 }
 
 // ── Signed-in user ──────────────────────────────────────────────────────────
@@ -459,4 +463,48 @@ export function useNameActions(orgId: number) {
       onSuccess: () => client.invalidateQueries({ queryKey: inventoryKeys.variegations(orgId) }),
     }),
   }
+}
+
+// ── Shopify (Owners) ────────────────────────────────────────────────────────
+
+export function useShopifyConnection(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: queryKeys.shopify(orgId), queryFn: () => api<ShopifyConnectionDto>(`/orgs/${orgId}/shopify`) })
+}
+
+/** Starts connecting a store: on success, the browser goes to Shopify to approve Plant Stock. */
+export function useConnectShopify(orgId: number) {
+  const api = useApi()
+  return useMutation({
+    mutationFn: (shop: string) => api<{ authorizeUrl: string }>(`/orgs/${orgId}/shopify/connect`, { method: 'POST', json: { shop } }),
+    onSuccess: ({ authorizeUrl }) => window.location.assign(authorizeUrl),
+  })
+}
+
+export function useDisconnectShopify(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<void>(`/orgs/${orgId}/shopify`, { method: 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.shopify(orgId) }),
+  })
+}
+
+/** The store's locations (asks Shopify, so only when connected). */
+export function useShopifyLocations(orgId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.shopifyLocations(orgId),
+    queryFn: () => api<ShopifyLocationDto[]>(`/orgs/${orgId}/shopify/locations`),
+    enabled,
+  })
+}
+
+export function useSetShopifyLocation(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (locationId: string) => api<ShopifyConnectionDto>(`/orgs/${orgId}/shopify/location`, { method: 'PUT', json: { locationId } }),
+    onSuccess: (connection) => client.setQueryData(queryKeys.shopify(orgId), connection),
+  })
 }

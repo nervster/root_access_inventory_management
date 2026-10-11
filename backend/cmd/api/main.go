@@ -1,4 +1,4 @@
-// Command api runs the NMS HTTP API.
+// Command api runs the Plant Stock HTTP API.
 package main
 
 import (
@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // time zone database built into the binary; the production image has none
@@ -21,6 +22,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/email"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
+	"github.com/nervster/root_access_inventory_management/backend/internal/shopify"
 )
 
 func main() {
@@ -64,6 +66,11 @@ func run() error {
 		}
 	}
 
+	shopifyStore, err := newShopifyStore(cfg, pool)
+	if err != nil {
+		return err
+	}
+
 	deliverer := organization.Deliverer{
 		SignUp: auth.NewClerkUsers(cfg.ClerkSecretKey),
 		Email:  email.SMTP{Addr: cfg.SMTPAddr, From: cfg.EmailFrom, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword},
@@ -77,6 +84,8 @@ func run() error {
 		deliverer:      deliverer,
 		inventory:      inventory.NewStore(pool),
 		photos:         photos,
+		shopify:        shopifyStore,
+		appURL:         cfg.AppURL,
 	})
 
 	server := &http.Server{
@@ -117,6 +126,8 @@ type dependencies struct {
 	deliverer      organization.Deliverer
 	inventory      *inventory.Store
 	photos         inventory.PhotoStorage
+	shopify        *shopify.Store
+	appURL         string
 }
 
 // newRouter builds the HTTP routes. It's separate from run so tests can use it.
@@ -133,6 +144,22 @@ func newRouter(d dependencies) *gin.Engine {
 	organization.Routes(signedIn, d.orgs, d.deliverer)
 	organization.PlatformRoutes(signedIn, d.orgs, d.deliverer, d.platformAdmins)
 	inventory.Routes(signedIn, d.orgs, d.inventory, d.photos)
+	shopify.Routes(api, signedIn, d.orgs, d.shopify, d.appURL)
 
 	return router
+}
+
+// newShopifyStore connects the Shopify app when it's configured; otherwise Shopify stays off and
+// Settings says so.
+func newShopifyStore(cfg config.Config, pool db.Conn) (*shopify.Store, error) {
+	if cfg.ShopifyClientID == "" {
+		slog.Warn("Shopify is off (no SHOPIFY_CLIENT_ID)")
+		return shopify.NewStore(pool, nil, nil), nil
+	}
+	sealer, err := shopify.NewSealer(cfg.ShopifyTokenKey)
+	if err != nil {
+		return nil, err
+	}
+	app := shopify.NewApp(cfg.ShopifyClientID, cfg.ShopifyClientSecret, strings.TrimSuffix(cfg.AppURL, "/")+"/api/shopify/callback")
+	return shopify.NewStore(pool, app, sealer), nil
 }

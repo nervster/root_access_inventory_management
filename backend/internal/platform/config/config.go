@@ -38,6 +38,11 @@ type Config struct {
 	AWSRegion        string
 	S3Endpoint       string
 	S3PublicEndpoint string // what browsers use in signed links, if different from S3_ENDPOINT
+
+	// Shopify app (Dev Dashboard → the app → Settings). Without a client ID, Shopify is turned off.
+	ShopifyClientID     string
+	ShopifyClientSecret string
+	ShopifyTokenKey     string // encrypts stores' tokens: openssl rand -base64 32
 }
 
 // Load reads settings from environment variables. For local development it first loads .env
@@ -63,9 +68,18 @@ func Load() (Config, error) {
 		AWSRegion:        getEnv("AWS_REGION", "us-east-1"),
 		S3Endpoint:       os.Getenv("S3_ENDPOINT"),
 		S3PublicEndpoint: os.Getenv("S3_PUBLIC_ENDPOINT"),
+
+		ShopifyClientID:     os.Getenv("SHOPIFY_CLIENT_ID"),
+		ShopifyClientSecret: os.Getenv("SHOPIFY_CLIENT_SECRET"),
+		ShopifyTokenKey:     os.Getenv("SHOPIFY_TOKEN_KEY"),
 	}
 	if cfg.ClerkSecretKey == "" {
 		return Config{}, errors.New("CLERK_SECRET_KEY is required (locally: add it to the repo's .env)")
+	}
+
+	if cfg.ShopifyClientID != "" && (cfg.ShopifyClientSecret == "" || cfg.ShopifyTokenKey == "") {
+		return Config{}, errors.New("SHOPIFY_CLIENT_ID is set, so SHOPIFY_CLIENT_SECRET and SHOPIFY_TOKEN_KEY are required too " +
+			"(make the key with: openssl rand -base64 32)")
 	}
 
 	// A typo here would silently lock the admin out, so refuse to start instead.

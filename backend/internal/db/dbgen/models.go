@@ -375,6 +375,30 @@ type ProductVariant struct {
 	CreatedAt      time.Time
 }
 
+type ShopifyConnection struct {
+	OrganizationID        int64
+	Shop                  string
+	Scopes                string
+	AccessToken           []byte
+	AccessTokenExpiresAt  time.Time
+	RefreshToken          []byte
+	RefreshTokenExpiresAt time.Time
+	NeedsReconnect        bool
+	LocationID            *string
+	LocationName          *string
+	ConnectedBy           *int64
+	ConnectedByName       *string
+	ConnectedAt           time.Time
+}
+
+type ShopifyOauthState struct {
+	State          string
+	OrganizationID int64
+	UserID         int64
+	Shop           string
+	CreatedAt      time.Time
+}
+
 type User struct {
 	ID          int64
 	ExternalID  string
