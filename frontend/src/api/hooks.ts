@@ -28,6 +28,9 @@ import type {
   ShopifyConnectionDto,
   ShopifyLocationDto,
   ShopifyProductStatusDto,
+  OrderDto,
+  OrderStatus,
+  OrdersStatusDto,
   VariegationDto,
 } from './types'
 
@@ -42,6 +45,8 @@ export const queryKeys = {
   shopify: (orgId: number) => ['orgs', orgId, 'shopify'] as const,
   shopifyLocations: (orgId: number) => ['orgs', orgId, 'shopify', 'locations'] as const,
   shopifyProducts: (orgId: number) => ['orgs', orgId, 'shopify', 'products'] as const,
+  orders: (orgId: number, status: OrderStatus) => ['orgs', orgId, 'orders', status] as const,
+  ordersStatus: (orgId: number) => ['orgs', orgId, 'orders', 'status'] as const,
 }
 
 // ── Signed-in user ──────────────────────────────────────────────────────────
@@ -527,4 +532,38 @@ export function useShopifyProducts(orgId: number, enabled: boolean) {
 export function useSyncShopify(orgId: number) {
   const api = useApi()
   return useMutation({ mutationFn: () => api<void>(`/orgs/${orgId}/shopify/sync`, { method: 'POST' }) })
+}
+
+// ── Orders ──────────────────────────────────────────────────────────────────
+
+/** The nursery's online orders with status. Refreshes each minute: the worker imports orders in the background. */
+export function useOrders(orgId: number, status: OrderStatus) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.orders(orgId, status),
+    queryFn: () => api<OrderDto[]>(`/orgs/${orgId}/orders?status=${status}`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Whether orders are arriving from Shopify, and why not. */
+export function useOrdersStatus(orgId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.ordersStatus(orgId),
+    queryFn: () => api<OrdersStatusDto>(`/orgs/${orgId}/shopify/orders/status`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Reads new orders from Shopify now (instead of within the minute); refreshes the list shortly after. */
+export function useCheckOrders(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<void>(`/orgs/${orgId}/shopify/orders/import`, { method: 'POST' }),
+    onSuccess: () => {
+      setTimeout(() => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders'] }), 4000)
+    },
+  })
 }

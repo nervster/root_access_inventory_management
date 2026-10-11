@@ -17,6 +17,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/inventory"
+	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/email"
@@ -84,6 +85,7 @@ func run() error {
 		inventory:      inventory.NewStore(pool),
 		photos:         photos,
 		shopify:        shopifyStore,
+		conn:           pool,
 		appURL:         cfg.AppURL,
 	})
 
@@ -126,6 +128,7 @@ type dependencies struct {
 	inventory      *inventory.Store
 	photos         inventory.PhotoStorage
 	shopify        *shopify.Store
+	conn           db.Conn
 	appURL         string
 }
 
@@ -144,6 +147,7 @@ func newRouter(d dependencies) *gin.Engine {
 	organization.PlatformRoutes(signedIn, d.orgs, d.deliverer, d.platformAdmins)
 	inventory.Routes(signedIn, d.orgs, d.inventory, d.photos)
 	shopify.Routes(api, signedIn, d.orgs, d.shopify, d.appURL)
+	orders.Routes(signedIn, d.orgs, orders.NewStore(d.conn))
 
 	return router
 }

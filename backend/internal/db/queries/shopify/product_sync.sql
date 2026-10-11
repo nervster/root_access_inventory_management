@@ -69,7 +69,7 @@ SELECT v.id, v.sku, sv.shopify_inventory_item_id, sv.stocked_location_id,
           AND p.plant_name_id = pr.plant_name_id
           AND p.variegation_id IS NOT DISTINCT FROM pr.variegation_id
           AND p.pot_size_id = v.pot_size_id
-          AND p.status = 'for_sale')::integer AS stock
+          AND p.status IN ('for_sale', 'held'))::integer AS stock -- held: ordered, still here until pickup
 FROM product_variants v
 JOIN products pr ON pr.id = v.product_id
 JOIN shopify_variants sv ON sv.variant_id = v.id AND sv.shop = @shop

@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -24,6 +25,7 @@ const callbackPath = "/api/shopify/callback"
 func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, appURL string) {
 	h := handler{orgs: orgs, store: store, appURL: strings.TrimSuffix(appURL, "/")}
 	api.GET(strings.TrimPrefix(callbackPath, "/api"), h.callback)
+	api.POST("/shopify/webhooks", h.webhook)
 
 	shopify := signedIn.Group("/orgs/:orgId/shopify",
 		organization.RequireMember(orgs), organization.RequirePermission(organization.IntegrationsManage))
@@ -34,6 +36,11 @@ func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Sto
 	shopify.PUT("/location", h.setLocation)
 	shopify.POST("/sync", h.syncAll)
 	shopify.GET("/products", h.listProducts)
+
+	// Orders: any member who sees inventory can see whether they're arriving, and check now.
+	orders := signedIn.Group("/orgs/:orgId/shopify/orders", organization.RequireMember(orgs))
+	orders.GET("/status", organization.RequirePermission(organization.InventoryView), h.ordersStatus)
+	orders.POST("/import", organization.RequirePermission(organization.InventoryEdit), h.importOrders)
 }
 
 type handler struct {
@@ -43,7 +50,9 @@ type handler struct {
 }
 
 type connectionResponse struct {
-	Configured      bool       `json:"configured"` // the server has the app's credentials
+	Configured      bool       `json:"configured"`      // the server has the app's credentials
+	OrdersCheckedAt *time.Time `json:"ordersCheckedAt"` // orders are read up to here
+	OrdersError     *string    `json:"ordersError"`     // why reading orders failed last time
 	Connected       bool       `json:"connected"`
 	Shop            *string    `json:"shop"`
 	NeedsReconnect  bool       `json:"needsReconnect"`
@@ -67,6 +76,7 @@ func (h handler) getConnection(c *gin.Context) {
 		response.NeedsReconnect = connection.NeedsReconnect
 		response.LocationID, response.LocationName = connection.LocationID, connection.LocationName
 		response.ConnectedByName, response.ConnectedAt = connection.ConnectedByName, &connection.ConnectedAt
+		response.OrdersCheckedAt, response.OrdersError = connection.OrdersCheckedThrough, connection.OrdersError
 	}
 	c.JSON(http.StatusOK, response)
 }
@@ -258,4 +268,45 @@ func (h handler) listProducts(c *gin.Context) {
 func adminProductURL(shop, productGID string) string {
 	store := strings.TrimSuffix(shop, ".myshopify.com")
 	return "https://admin.shopify.com/store/" + store + "/products/" + productGID[strings.LastIndex(productGID, "/")+1:]
+}
+
+// ordersStatus handles GET /orgs/:orgId/shopify/orders/status: whether orders are arriving.
+func (h handler) ordersStatus(c *gin.Context) {
+	connection, err := h.store.Connection(c.Request.Context(), organization.CurrentAccess(c).OrganizationID)
+	switch {
+	case errors.Is(err, ErrNotConnected):
+		c.JSON(http.StatusOK, gin.H{"connected": false})
+	case err != nil:
+		web.FailInternal(c, err)
+	default:
+		c.JSON(http.StatusOK, gin.H{"connected": true, "checkedAt": connection.OrdersCheckedThrough, "error": connection.OrdersError})
+	}
+}
+
+// importOrders handles POST /orgs/:orgId/shopify/orders/import ("Check now").
+func (h handler) importOrders(c *gin.Context) {
+	switch err := h.store.QueueOrderImport(c.Request.Context(), organization.CurrentAccess(c).OrganizationID); {
+	case errors.Is(err, ErrNotConnected):
+		web.Fail(c, http.StatusNotFound, "no store is connected")
+	case err != nil:
+		web.FailInternal(c, err)
+	default:
+		c.Status(http.StatusAccepted)
+	}
+}
+
+// webhook handles POST /shopify/webhooks: Shopify telling Plant Stock something changed. It only
+// queues work, and answers quickly (Shopify retries slow or failed deliveries).
+func (h handler) webhook(c *gin.Context) {
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
+	if err != nil || !h.store.Configured() || !h.store.app.VerifyWebhook(body, c.GetHeader("X-Shopify-Hmac-Sha256")) {
+		c.Status(http.StatusUnauthorized)
+		return
+	}
+	topic, shop := c.GetHeader("X-Shopify-Topic"), c.GetHeader("X-Shopify-Shop-Domain")
+	if err := h.store.HandleWebhook(c.Request.Context(), topic, shop); err != nil {
+		web.FailInternal(c, err) // Shopify retries
+		return
+	}
+	c.Status(http.StatusOK)
 }

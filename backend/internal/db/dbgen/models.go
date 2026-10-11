@@ -99,15 +99,17 @@ func (ns NullOrganizationStatus) Value() (driver.Value, error) {
 type PlantEventType string
 
 const (
-	PlantEventTypeReceived        PlantEventType = "received"
-	PlantEventTypeRepotted        PlantEventType = "repotted"
-	PlantEventTypeMarkedForSale   PlantEventType = "marked_for_sale"
-	PlantEventTypeUnmarkedForSale PlantEventType = "unmarked_for_sale"
-	PlantEventTypeSold            PlantEventType = "sold"
-	PlantEventTypeDiscarded       PlantEventType = "discarded"
-	PlantEventTypeNameCorrected   PlantEventType = "name_corrected"
-	PlantEventTypePhotoAdded      PlantEventType = "photo_added"
-	PlantEventTypePhotoDeleted    PlantEventType = "photo_deleted"
+	PlantEventTypeReceived          PlantEventType = "received"
+	PlantEventTypeRepotted          PlantEventType = "repotted"
+	PlantEventTypeMarkedForSale     PlantEventType = "marked_for_sale"
+	PlantEventTypeUnmarkedForSale   PlantEventType = "unmarked_for_sale"
+	PlantEventTypeSold              PlantEventType = "sold"
+	PlantEventTypeDiscarded         PlantEventType = "discarded"
+	PlantEventTypeNameCorrected     PlantEventType = "name_corrected"
+	PlantEventTypePhotoAdded        PlantEventType = "photo_added"
+	PlantEventTypePhotoDeleted      PlantEventType = "photo_deleted"
+	PlantEventTypeHeldForOrder      PlantEventType = "held_for_order"
+	PlantEventTypeReleasedFromOrder PlantEventType = "released_from_order"
 )
 
 func (e *PlantEventType) Scan(src interface{}) error {
@@ -194,6 +196,7 @@ type PlantStatus string
 const (
 	PlantStatusGrowing   PlantStatus = "growing"
 	PlantStatusForSale   PlantStatus = "for_sale"
+	PlantStatusHeld      PlantStatus = "held"
 	PlantStatusSold      PlantStatus = "sold"
 	PlantStatusDiscarded PlantStatus = "discarded"
 )
@@ -284,6 +287,32 @@ type Membership struct {
 	CreatedAt      time.Time
 }
 
+type Order struct {
+	ID                       int64
+	OrganizationID           int64
+	Shop                     string
+	ShopifyOrderID           string
+	Name                     string
+	Status                   string
+	PlacedAt                 time.Time
+	CancelledAt              *time.Time
+	ShopifyFulfillmentStatus *string
+	ShopifyUpdatedAt         time.Time
+	CreatedAt                time.Time
+}
+
+type OrderItem struct {
+	ID                int64
+	OrganizationID    int64
+	OrderID           int64
+	ShopifyLineItemID string
+	VariantID         *int64
+	Sku               *string
+	Title             string
+	Quantity          int32
+	PriceCents        *int32
+}
+
 type Organization struct {
 	ID        int64
 	Name      string
@@ -307,6 +336,7 @@ type Plant struct {
 	UpdatedAt      time.Time
 	DiscardedAt    *time.Time
 	DiscardReason  *string
+	OrderItemID    *int64
 }
 
 type PlantEvent struct {
@@ -398,6 +428,8 @@ type ShopifyConnection struct {
 	ConnectedBy           *int64
 	ConnectedByName       *string
 	ConnectedAt           time.Time
+	OrdersCheckedThrough  *time.Time
+	OrdersError           *string
 }
 
 type ShopifyMedium struct {

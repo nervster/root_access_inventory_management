@@ -13,6 +13,10 @@ function describe(event: PlantEventDto): { text: string; note?: string } {
       return { text: 'Marked for sale' }
     case 'unmarked_for_sale':
       return { text: 'Taken off sale' }
+    case 'held_for_order':
+      return { text: 'Held for an online order', note: d.order }
+    case 'released_from_order':
+      return { text: 'Back on sale: order cancelled', note: d.order }
     case 'sold':
       return { text: 'Sold' }
     case 'discarded':
@@ -32,6 +36,8 @@ const dot: Record<PlantEventDto['type'], string> = {
   repotted: 'bg-stone-500',
   marked_for_sale: 'bg-emerald-500',
   unmarked_for_sale: 'bg-stone-400',
+  held_for_order: 'bg-amber-400',
+  released_from_order: 'bg-emerald-500',
   sold: 'bg-amber-500',
   discarded: 'bg-red-600',
   name_corrected: 'bg-stone-500',

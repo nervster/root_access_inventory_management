@@ -122,6 +122,17 @@ function Connected({ orgId, connection }: { orgId: number; connection: ShopifyCo
         </div>
       ) : (
         <>
+          {connection.ordersError && (
+            <ErrorBanner
+              error={
+                new Error(
+                  connection.ordersError.includes('not approved')
+                    ? 'Shopify isn’t letting Plant Stock read orders yet. In the Shopify Dev Dashboard, open Plant Stock and turn on access to protected customer data (orders).'
+                    : `Couldn’t read orders from Shopify: ${connection.ordersError}`,
+                )
+              }
+            />
+          )}
           <PickupLocation orgId={orgId} connection={connection} />
           <ProductsOnShopify orgId={orgId} />
         </>

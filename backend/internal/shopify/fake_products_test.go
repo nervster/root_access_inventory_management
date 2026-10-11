@@ -45,6 +45,17 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			{"id": "gid://shopify/Location/1", "name": "Greenhouse"},
 			{"id": "gid://shopify/Location/2", "name": "Market Stall"},
 		}}}
+	case strings.Contains(request.Query, "orders("):
+		if f.ordersError != "" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": nil, "errors": []map[string]string{{"message": f.ordersError}}})
+			return
+		}
+		var variables struct{ Query string }
+		_ = json.Unmarshal(request.Variables, &variables)
+		f.lastSearch = variables.Query
+		data = map[string]any{"orders": map[string]any{
+			"nodes": f.orders, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "end"},
+		}}
 	case strings.Contains(request.Query, "stagedUploadsCreate("):
 		data = map[string]any{"stagedUploadsCreate": f.stagedUploadsCreate(request.Variables)}
 	case strings.Contains(request.Query, "productSet("):

@@ -62,7 +62,7 @@ INSERT INTO plants (organization_id, barcode, batch_id, plant_name_id, variegati
 SELECT $1, $2::text || '-' || lpad(n::text, 6, '0'), $3, $4, $5, $6
 FROM generate_series($7::bigint, $8::bigint) AS n
 ORDER BY n
-RETURNING id, organization_id, barcode, batch_id, plant_name_id, variegation_id, pot_size_id, status, notes, created_at, updated_at, discarded_at, discard_reason
+RETURNING id, organization_id, barcode, batch_id, plant_name_id, variegation_id, pot_size_id, status, notes, created_at, updated_at, discarded_at, discard_reason, order_item_id
 `
 
 type CreateBatchPlantsParams struct {
@@ -109,6 +109,7 @@ func (q *Queries) CreateBatchPlants(ctx context.Context, arg CreateBatchPlantsPa
 			&i.UpdatedAt,
 			&i.DiscardedAt,
 			&i.DiscardReason,
+			&i.OrderItemID,
 		); err != nil {
 			return nil, err
 		}
@@ -126,6 +127,7 @@ SELECT b.id, b.organization_id, b.code, b.plant_name_id, b.variegation_id, b.sou
        v.name AS variegation,
        count(p.id) FILTER (WHERE p.status = 'growing')   AS growing_count,
        count(p.id) FILTER (WHERE p.status = 'for_sale')  AS for_sale_count,
+       count(p.id) FILTER (WHERE p.status = 'held')      AS held_count,
        count(p.id) FILTER (WHERE p.status = 'sold')      AS sold_count,
        count(p.id) FILTER (WHERE p.status = 'discarded') AS discarded_count
 FROM batches b
@@ -157,6 +159,7 @@ type GetBatchRow struct {
 	Variegation    *string
 	GrowingCount   int64
 	ForSaleCount   int64
+	HeldCount      int64
 	SoldCount      int64
 	DiscardedCount int64
 }
@@ -180,6 +183,7 @@ func (q *Queries) GetBatch(ctx context.Context, arg GetBatchParams) (GetBatchRow
 		&i.Variegation,
 		&i.GrowingCount,
 		&i.ForSaleCount,
+		&i.HeldCount,
 		&i.SoldCount,
 		&i.DiscardedCount,
 	)
@@ -192,6 +196,7 @@ SELECT b.id, b.organization_id, b.code, b.plant_name_id, b.variegation_id, b.sou
        v.name AS variegation,
        count(p.id) FILTER (WHERE p.status = 'growing')   AS growing_count,
        count(p.id) FILTER (WHERE p.status = 'for_sale')  AS for_sale_count,
+       count(p.id) FILTER (WHERE p.status = 'held')      AS held_count,
        count(p.id) FILTER (WHERE p.status = 'sold')      AS sold_count,
        count(p.id) FILTER (WHERE p.status = 'discarded') AS discarded_count
 FROM batches b
@@ -219,6 +224,7 @@ type ListBatchesRow struct {
 	Variegation    *string
 	GrowingCount   int64
 	ForSaleCount   int64
+	HeldCount      int64
 	SoldCount      int64
 	DiscardedCount int64
 }
@@ -249,6 +255,7 @@ func (q *Queries) ListBatches(ctx context.Context, organizationID int64) ([]List
 			&i.Variegation,
 			&i.GrowingCount,
 			&i.ForSaleCount,
+			&i.HeldCount,
 			&i.SoldCount,
 			&i.DiscardedCount,
 		); err != nil {

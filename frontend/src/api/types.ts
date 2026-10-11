@@ -122,7 +122,7 @@ export interface PotSizeDto {
 }
 
 export interface DashboardDto {
-  plants: { growing: number; forSale: number; sold: number; discarded: number }
+  plants: { growing: number; forSale: number; held: number; sold: number; discarded: number }
   last30Days: { received: number; discarded: number }
   /** The prices of everything for sale right now. */
   forSaleValueCents: number
@@ -134,8 +134,14 @@ export interface DashboardDto {
   potSizes: { id: number; name: string; sellable: boolean; growing: number; forSale: number }[]
 }
 
-export type PlantStatus = 'growing' | 'for_sale' | 'sold' | 'discarded'
-export const PLANT_STATUS_LABELS: Record<PlantStatus, string> = { growing: 'Growing', for_sale: 'For sale', sold: 'Sold', discarded: 'Discarded' }
+export type PlantStatus = 'growing' | 'for_sale' | 'held' | 'sold' | 'discarded'
+export const PLANT_STATUS_LABELS: Record<PlantStatus, string> = {
+  growing: 'Growing',
+  for_sale: 'For sale',
+  held: 'Held for an order',
+  sold: 'Sold',
+  discarded: 'Discarded',
+}
 
 export interface PlantNameDto {
   id: number
@@ -169,7 +175,8 @@ export interface BatchDto {
   unitCostCents?: number | null
   notes: string | null
   createdAt: string
-  plantCounts: { growing: number; forSale: number; sold: number; discarded: number }
+  /** held: bought online, waiting for pickup. */
+  plantCounts: { growing: number; forSale: number; held: number; sold: number; discarded: number }
 }
 
 export interface PlantDto {
@@ -232,6 +239,8 @@ export type PlantEventType =
   | 'repotted'
   | 'marked_for_sale'
   | 'unmarked_for_sale'
+  | 'held_for_order'
+  | 'released_from_order'
   | 'sold'
   | 'discarded'
   | 'name_corrected'
@@ -250,6 +259,8 @@ export interface PlantEventDto {
     from?: string
     to?: string
     caption?: string
+    /** The online order it was held for or released from, e.g. #1001. */
+    order?: string
   }
   occurredAt: string
   /** Who: their name (their email if they have none); null for system changes. */
@@ -327,6 +338,10 @@ export interface ShopifyConnectionDto {
   locationName: string | null
   connectedByName: string | null
   connectedAt: string | null
+  /** Orders are read up to here. */
+  ordersCheckedAt: string | null
+  /** Why reading orders failed last time. */
+  ordersError: string | null
 }
 
 export interface ShopifyLocationDto {
@@ -343,4 +358,39 @@ export interface ShopifyProductStatusDto {
   syncedAt: string | null
   /** Why Shopify refused it last time. */
   error: string | null
+}
+
+export type OrderStatus = 'open' | 'picked_up' | 'cancelled'
+
+/** An online order, and the plants held for it until pickup. */
+export interface OrderDto {
+  id: number
+  /** e.g. #1001, as the customer sees it. */
+  name: string
+  status: OrderStatus
+  placedAt: string
+  cancelledAt: string | null
+  shopifyFulfillmentStatus: string | null
+  /** The order in the Shopify admin. */
+  adminUrl: string
+  items: OrderItemDto[]
+}
+
+export interface OrderItemDto {
+  id: number
+  title: string
+  sku: string | null
+  potSize: string | null
+  quantity: number
+  priceCents: number | null
+  /** False for items that aren't Plant Stock's SKUs: nothing is held for them. */
+  inPlantStock: boolean
+  /** The plants to pull. Fewer than quantity when it was oversold. */
+  heldBarcodes: string[]
+}
+
+export interface OrdersStatusDto {
+  connected: boolean
+  checkedAt?: string | null
+  error?: string | null
 }

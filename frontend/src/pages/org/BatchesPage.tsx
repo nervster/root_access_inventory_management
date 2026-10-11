@@ -41,10 +41,11 @@ export function BatchesPage() {
 }
 
 function BatchCard({ orgId, batch }: { orgId: number; batch: BatchDto }) {
-  const { growing, forSale, sold, discarded } = batch.plantCounts
+  const { growing, forSale, held, sold, discarded } = batch.plantCounts
   const counts = [
     [growing, 'growing'],
     [forSale, 'for sale'],
+    [held, 'held for orders'],
     [sold, 'sold'],
     [discarded, 'discarded'],
   ].filter(([n]) => (n as number) > 0)

@@ -19,6 +19,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbtest"
+	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 )
 
@@ -42,6 +43,10 @@ type fakeShopify struct {
 	baseURL     string            // the fake's own address, for staged upload targets
 	uploads     map[string]string // staged uploads: resource URL → content
 	uploadCount int
+
+	orders      []map[string]any // the store's orders, as the Admin API returns them
+	ordersError string           // when set, the orders query fails with this message
+	lastSearch  string           // the last orders query's search
 
 	stocked     map[string]bool // "item@location" pairs an SKU is stocked at
 	onHand      map[string]int  // by "item@location"
@@ -122,9 +127,11 @@ func newShopTest(t *testing.T) *shopTest {
 		org  int64
 		role dbgen.OrgRole
 	}{
-		"owner": {s.org.ID, dbgen.OrgRoleOwner},
-		"admin": {s.org.ID, dbgen.OrgRoleAdmin},
-		"rival": {s.other.ID, dbgen.OrgRoleOwner},
+		"owner":  {s.org.ID, dbgen.OrgRoleOwner},
+		"admin":  {s.org.ID, dbgen.OrgRoleAdmin},
+		"staff":  {s.org.ID, dbgen.OrgRoleStaff},
+		"viewer": {s.org.ID, dbgen.OrgRoleViewer},
+		"rival":  {s.other.ID, dbgen.OrgRoleOwner},
 	} {
 		displayName := "Pat " + name
 		user, err := q.UpsertUser(ctx, dbgen.UpsertUserParams{ExternalID: "user_shopify_" + name, Email: name + "@shopify.example.com", DisplayName: &displayName})
@@ -160,6 +167,18 @@ func (s *shopTest) router(as string) *gin.Engine {
 		c.Next()
 	})
 	Routes(api, signedIn, organization.NewStore(s.db), s.store, "http://localhost:5173")
+	return router
+}
+
+// ordersRouter serves the orders routes (internal/orders) as the named user.
+func (s *shopTest) ordersRouter(as string) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	signedIn := router.Group("/api", func(c *gin.Context) {
+		auth.SetCurrentUser(c, s.users[as], false)
+		c.Next()
+	})
+	orders.Routes(signedIn, organization.NewStore(s.db), orders.NewStore(s.db))
 	return router
 }
 

@@ -32,6 +32,7 @@ SELECT b.*,
        v.name AS variegation,
        count(p.id) FILTER (WHERE p.status = 'growing')   AS growing_count,
        count(p.id) FILTER (WHERE p.status = 'for_sale')  AS for_sale_count,
+       count(p.id) FILTER (WHERE p.status = 'held')      AS held_count,
        count(p.id) FILTER (WHERE p.status = 'sold')      AS sold_count,
        count(p.id) FILTER (WHERE p.status = 'discarded') AS discarded_count
 FROM batches b
@@ -48,6 +49,7 @@ SELECT b.*,
        v.name AS variegation,
        count(p.id) FILTER (WHERE p.status = 'growing')   AS growing_count,
        count(p.id) FILTER (WHERE p.status = 'for_sale')  AS for_sale_count,
+       count(p.id) FILTER (WHERE p.status = 'held')      AS held_count,
        count(p.id) FILTER (WHERE p.status = 'sold')      AS sold_count,
        count(p.id) FILTER (WHERE p.status = 'discarded') AS discarded_count
 FROM batches b

@@ -70,8 +70,31 @@ func run() error {
 	var loops sync.WaitGroup
 	loops.Go(func() { jobs.Relay{Conn: pool, Queue: queue}.Run(ctx, time.Second) })
 	loops.Go(func() { jobs.Worker{Queue: queue, Handlers: handlers}.Run(ctx) })
+	// Each minute, check every connected store for new or changed orders (webhooks need a public
+	// address, so this is how orders arrive locally, and a safety net when deployed).
+	loops.Go(func() {
+		every(ctx, time.Minute, func() {
+			if err := shopify.QueueOrderImports(ctx, pool); err != nil && ctx.Err() == nil {
+				slog.Error("queueing order imports failed", "error", err)
+			}
+		})
+	})
 	loops.Wait() // both return once ctx ends (and running jobs finish)
 
 	slog.Info("worker stopped")
 	return nil
+}
+
+// every runs fn now and then every interval, until ctx ends.
+func every(ctx context.Context, interval time.Duration, fn func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		fn()
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

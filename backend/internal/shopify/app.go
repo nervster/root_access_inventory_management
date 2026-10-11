@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -108,6 +109,18 @@ func (a *App) VerifyCallback(query url.Values) bool {
 		return false
 	}
 	return hmac.Equal(given, a.sign(query)) // constant time, so the signature can't be guessed bit by bit
+}
+
+// VerifyWebhook reports whether Shopify signed a webhook's body with the app's secret (the
+// X-Shopify-Hmac-Sha256 header: a base64 HMAC-SHA256 of the raw body).
+func (a *App) VerifyWebhook(body []byte, signature string) bool {
+	given, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil || len(given) == 0 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(a.ClientSecret))
+	mac.Write(body)
+	return hmac.Equal(given, mac.Sum(nil))
 }
 
 func (a *App) sign(query url.Values) []byte {
