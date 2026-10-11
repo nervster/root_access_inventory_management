@@ -96,6 +96,55 @@ func (ns NullOrganizationStatus) Value() (driver.Value, error) {
 	return string(ns.OrganizationStatus), nil
 }
 
+type PlantEventType string
+
+const (
+	PlantEventTypeReceived        PlantEventType = "received"
+	PlantEventTypeRepotted        PlantEventType = "repotted"
+	PlantEventTypeMarkedForSale   PlantEventType = "marked_for_sale"
+	PlantEventTypeUnmarkedForSale PlantEventType = "unmarked_for_sale"
+	PlantEventTypeSold            PlantEventType = "sold"
+	PlantEventTypeDiscarded       PlantEventType = "discarded"
+	PlantEventTypeNameCorrected   PlantEventType = "name_corrected"
+	PlantEventTypePhotoAdded      PlantEventType = "photo_added"
+	PlantEventTypePhotoDeleted    PlantEventType = "photo_deleted"
+)
+
+func (e *PlantEventType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PlantEventType(s)
+	case string:
+		*e = PlantEventType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PlantEventType: %T", src)
+	}
+	return nil
+}
+
+type NullPlantEventType struct {
+	PlantEventType PlantEventType
+	Valid          bool // Valid is true if PlantEventType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPlantEventType) Scan(value interface{}) error {
+	if value == nil {
+		ns.PlantEventType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PlantEventType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPlantEventType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PlantEventType), nil
+}
+
 type PlantRank string
 
 const (
@@ -215,6 +264,7 @@ type Invitation struct {
 	ExpiresAt       time.Time
 	AcceptedAt      *time.Time
 	RevokedAt       *time.Time
+	InvitedByName   *string
 }
 
 type Membership struct {
@@ -250,6 +300,17 @@ type Plant struct {
 	DiscardReason  *string
 }
 
+type PlantEvent struct {
+	ID             int64
+	OrganizationID int64
+	PlantID        int64
+	Type           PlantEventType
+	Details        []byte
+	ChangedBy      *int64
+	OccurredAt     time.Time
+	ChangedByName  *string
+}
+
 type PlantName struct {
 	ID             int64
 	OrganizationID *int64
@@ -270,16 +331,7 @@ type PlantPhoto struct {
 	Caption        *string
 	UploadedBy     *int64
 	CreatedAt      time.Time
-}
-
-type PotChange struct {
-	ID             int64
-	OrganizationID int64
-	PlantID        int64
-	FromPotSizeID  *int64
-	ToPotSizeID    int64
-	ChangedAt      time.Time
-	ChangedBy      *int64
+	UploadedByName *string
 }
 
 type PotSize struct {

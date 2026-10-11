@@ -262,25 +262,6 @@ func (q *Queries) ListBatches(ctx context.Context, organizationID int64) ([]List
 	return items, nil
 }
 
-const recordFirstPots = `-- name: RecordFirstPots :exec
-INSERT INTO pot_changes (organization_id, plant_id, to_pot_size_id, changed_by)
-SELECT p.organization_id, p.id, p.pot_size_id, $1
-FROM plants p
-WHERE p.organization_id = $2 AND p.batch_id = $3
-`
-
-type RecordFirstPotsParams struct {
-	ChangedBy      *int64
-	OrganizationID int64
-	BatchID        int64
-}
-
-// The start of each new plant's pot history.
-func (q *Queries) RecordFirstPots(ctx context.Context, arg RecordFirstPotsParams) error {
-	_, err := q.db.Exec(ctx, recordFirstPots, arg.ChangedBy, arg.OrganizationID, arg.BatchID)
-	return err
-}
-
 const reserveInventoryNumbers = `-- name: ReserveInventoryNumbers :one
 
 INSERT INTO inventory_counters (organization_id, barcode_prefix, next_plant_number, next_batch_number)

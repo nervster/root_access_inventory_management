@@ -143,6 +143,54 @@ func (q *Queries) GetPlantStatuses(ctx context.Context, arg GetPlantStatusesPara
 	return items, nil
 }
 
+const listPlantEvents = `-- name: ListPlantEvents :many
+SELECT e.id, e.type, e.details, e.occurred_at, e.changed_by_name
+FROM plant_events e
+WHERE e.organization_id = $1 AND e.plant_id = $2
+ORDER BY e.occurred_at, e.id
+`
+
+type ListPlantEventsParams struct {
+	OrganizationID int64
+	PlantID        int64
+}
+
+type ListPlantEventsRow struct {
+	ID            int64
+	Type          PlantEventType
+	Details       []byte
+	OccurredAt    time.Time
+	ChangedByName *string
+}
+
+// A plant's history (written by triggers, see migrations 00011 to 00013), oldest first. The name of
+// who made each change is copied into the event, so it shows even after they leave the team.
+func (q *Queries) ListPlantEvents(ctx context.Context, arg ListPlantEventsParams) ([]ListPlantEventsRow, error) {
+	rows, err := q.db.Query(ctx, listPlantEvents, arg.OrganizationID, arg.PlantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPlantEventsRow{}
+	for rows.Next() {
+		var i ListPlantEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Details,
+			&i.OccurredAt,
+			&i.ChangedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPlants = `-- name: ListPlants :many
 
 SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at, p.discarded_at, p.discard_reason,
@@ -235,108 +283,37 @@ func (q *Queries) ListPlants(ctx context.Context, arg ListPlantsParams) ([]ListP
 	return items, nil
 }
 
-const listPotChanges = `-- name: ListPotChanges :many
-SELECT pc.id, pc.changed_at, pc.from_pot_size_id, pc.to_pot_size_id,
-       from_ps.name AS from_pot_size,
-       to_ps.name AS to_pot_size,
-       u.email AS changed_by_email
-FROM pot_changes pc
-LEFT JOIN pot_sizes from_ps ON from_ps.id = pc.from_pot_size_id
-JOIN pot_sizes to_ps ON to_ps.id = pc.to_pot_size_id
-LEFT JOIN users u ON u.id = pc.changed_by
-WHERE pc.organization_id = $1 AND pc.plant_id = $2
-ORDER BY pc.changed_at, pc.id
-`
-
-type ListPotChangesParams struct {
-	OrganizationID int64
-	PlantID        int64
-}
-
-type ListPotChangesRow struct {
-	ID             int64
-	ChangedAt      time.Time
-	FromPotSizeID  *int64
-	ToPotSizeID    int64
-	FromPotSize    *string
-	ToPotSize      string
-	ChangedByEmail *string
-}
-
-// A plant's pot history, oldest first.
-func (q *Queries) ListPotChanges(ctx context.Context, arg ListPotChangesParams) ([]ListPotChangesRow, error) {
-	rows, err := q.db.Query(ctx, listPotChanges, arg.OrganizationID, arg.PlantID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListPotChangesRow{}
-	for rows.Next() {
-		var i ListPotChangesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.ChangedAt,
-			&i.FromPotSizeID,
-			&i.ToPotSizeID,
-			&i.FromPotSize,
-			&i.ToPotSize,
-			&i.ChangedByEmail,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const movePlantsToPot = `-- name: MovePlantsToPot :many
-WITH chosen AS (
-    SELECT id, pot_size_id AS from_pot_size_id
-    FROM plants
-    WHERE organization_id = $1
-      AND status IN ('growing', 'for_sale')
-      AND pot_size_id <> $2
-      AND ($4::bigint IS NULL OR batch_id = $4)
-      AND ($5::text[] IS NULL OR barcode = ANY($5::text[]))
-    FOR UPDATE
-), moved AS (
-    UPDATE plants p
-    SET pot_size_id = $2,
-        status      = CASE WHEN p.status = 'for_sale' AND NOT $6::boolean THEN 'growing'::plant_status ELSE p.status END,
-        updated_at  = now()
-    FROM chosen
-    WHERE p.id = chosen.id
-    RETURNING p.id, chosen.from_pot_size_id
-)
-INSERT INTO pot_changes (organization_id, plant_id, from_pot_size_id, to_pot_size_id, changed_by)
-SELECT $1, moved.id, moved.from_pot_size_id, $2, $3
-FROM moved
-RETURNING plant_id
+UPDATE plants p
+SET pot_size_id = $1,
+    status      = CASE WHEN p.status = 'for_sale' AND NOT $2::boolean THEN 'growing'::plant_status ELSE p.status END,
+    updated_at  = now()
+WHERE p.organization_id = $3
+  AND p.status IN ('growing', 'for_sale')
+  AND p.pot_size_id <> $1
+  AND ($4::bigint IS NULL OR p.batch_id = $4)
+  AND ($5::text[] IS NULL OR p.barcode = ANY($5::text[]))
+RETURNING p.id
 `
 
 type MovePlantsToPotParams struct {
-	OrganizationID int64
 	ToPotSizeID    int64
-	ChangedBy      *int64
+	ToPotSellable  bool
+	OrganizationID int64
 	BatchID        *int64
 	Barcodes       []string
-	ToPotSellable  bool
 }
 
-// Moves growing and for-sale plants (a whole batch, or the listed barcodes) into @to_pot_size_id and
-// records each move in their pot history. Plants already in that pot aren't touched. A for-sale
-// plant moved into a pot that can't be sold goes back to growing. Returns the moved plants' IDs.
+// Moves growing and for-sale plants (a whole batch, or the listed barcodes) into @to_pot_size_id;
+// plants already in that pot aren't touched. A for-sale plant moved into a pot that can't be sold
+// goes back to growing. The history trigger records each move. Returns the moved plants' IDs.
 func (q *Queries) MovePlantsToPot(ctx context.Context, arg MovePlantsToPotParams) ([]int64, error) {
 	rows, err := q.db.Query(ctx, movePlantsToPot,
-		arg.OrganizationID,
 		arg.ToPotSizeID,
-		arg.ChangedBy,
+		arg.ToPotSellable,
+		arg.OrganizationID,
 		arg.BatchID,
 		arg.Barcodes,
-		arg.ToPotSellable,
 	)
 	if err != nil {
 		return nil, err
@@ -344,11 +321,11 @@ func (q *Queries) MovePlantsToPot(ctx context.Context, arg MovePlantsToPotParams
 	defer rows.Close()
 	items := []int64{}
 	for rows.Next() {
-		var plant_id int64
-		if err := rows.Scan(&plant_id); err != nil {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, plant_id)
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

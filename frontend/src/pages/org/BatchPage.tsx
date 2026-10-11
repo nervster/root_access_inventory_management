@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, useSearchParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { useBatch, useMembership, usePlantActions, usePotSizes } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, PLANT_STATUS_LABELS, type PlantDto, type PlantStatus } from '../../api/types'
@@ -73,7 +73,7 @@ export function BatchPage() {
         <Card key={pot.id} title={`${pot.name} (${plants.length})`}>
           <ul className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
             {plants.map((plant) => (
-              <PlantRow key={plant.id} plant={plant} />
+              <PlantRow key={plant.id} orgId={orgId} plant={plant} />
             ))}
           </ul>
         </Card>
@@ -89,10 +89,12 @@ const statusTone: Record<PlantStatus, 'neutral' | 'green' | 'red' | 'amber'> = {
   discarded: 'red',
 }
 
-function PlantRow({ plant }: { plant: PlantDto }) {
+function PlantRow({ orgId, plant }: { orgId: number; plant: PlantDto }) {
   return (
     <li className="flex items-center justify-between gap-2 border-b border-stone-100 py-2 last:border-0 dark:border-stone-800">
-      <span className="font-mono text-sm">{plant.barcode}</span>
+      <Link to={`/orgs/${orgId}/plants/${plant.barcode}`} className="font-mono text-sm text-emerald-800 hover:underline dark:text-emerald-400">
+        {plant.barcode}
+      </Link>
       <Badge tone={statusTone[plant.status]}>{PLANT_STATUS_LABELS[plant.status]}</Badge>
     </li>
   )

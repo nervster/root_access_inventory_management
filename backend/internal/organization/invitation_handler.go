@@ -22,12 +22,13 @@ type invitationResponse struct {
 	CreatedAt time.Time     `json:"createdAt"`
 	ExpiresAt time.Time     `json:"expiresAt"`
 	Expired   bool          `json:"expired"`
+	InvitedBy *string       `json:"invitedBy"` // their name (email if they have none), as it was then
 }
 
 func newInvitationResponse(i dbgen.Invitation) invitationResponse {
 	return invitationResponse{
 		ID: i.ID, Email: i.Email, Role: i.Role, CreatedAt: i.CreatedAt, ExpiresAt: i.ExpiresAt,
-		Expired: !i.ExpiresAt.After(time.Now()),
+		Expired: !i.ExpiresAt.After(time.Now()), InvitedBy: i.InvitedByName,
 	}
 }
 

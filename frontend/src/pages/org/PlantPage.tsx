@@ -4,11 +4,12 @@ import { usePlant } from '../../api/hooks'
 import { PLANT_STATUS_LABELS } from '../../api/types'
 import { NotFound } from '../../components/Guards'
 import { PlantActions } from '../../components/PlantActions'
+import { PlantHistory } from '../../components/PlantHistory'
 import { PlantPhotos } from '../../components/PlantPhotos'
 import { Badge, Card, ErrorBanner, Loading, PageHeader } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 
-/** One plant: where it came from, where it is now, and its pot history. */
+/** One plant: where it came from, where it is now, its photos, and everything that happened to it. */
 export function PlantPage() {
   const params = useParams()
   const orgId = Number(params.orgId)
@@ -63,19 +64,8 @@ export function PlantPage() {
         <PlantPhotos orgId={orgId} barcode={p.barcode} />
       </Card>
 
-      <Card title="Pot history">
-        <ol className="space-y-3 border-l-2 border-stone-200 pl-4 dark:border-stone-800">
-          {[...p.potHistory].reverse().map((change, i) => (
-            <li key={i} className="relative text-sm">
-              <span className="absolute top-1.5 -left-[21px] size-2 rounded-full bg-emerald-700" aria-hidden="true" />
-              <p className="font-medium">{change.fromPotSize ? `${change.fromPotSize} → ${change.toPotSize}` : `Started in ${change.toPotSize}`}</p>
-              <p className="text-stone-500">
-                {formatDate(change.changedAt)}
-                {change.changedBy && ` · ${change.changedBy}`}
-              </p>
-            </li>
-          ))}
-        </ol>
+      <Card title="History">
+        <PlantHistory history={p.history} />
       </Card>
     </div>
   )

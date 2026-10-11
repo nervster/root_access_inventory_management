@@ -6,7 +6,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/web"
 )
@@ -46,7 +45,7 @@ func (h handler) repot(c *gin.Context) {
 	}
 
 	result, err := h.store.RepotPlants(c.Request.Context(), access.OrganizationID, Repot{
-		PotSizeID: req.PotSizeID, BatchID: req.BatchID, Barcodes: req.Barcodes, ChangedBy: auth.CurrentUser(c).ID,
+		PotSizeID: req.PotSizeID, BatchID: req.BatchID, Barcodes: req.Barcodes,
 	})
 	var barcodeErr *BarcodeError
 	switch {

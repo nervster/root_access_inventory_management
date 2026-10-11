@@ -36,7 +36,6 @@ type Repot struct {
 	PotSizeID int64
 	BatchID   *int64   // every growing or for-sale plant in this batch…
 	Barcodes  []string // …or these plants
-	ChangedBy int64
 }
 
 // RepotResult counts the chosen plants that moved, and those already in that pot.
@@ -47,7 +46,7 @@ type RepotResult struct {
 	NewVariants []NewVariant
 }
 
-// RepotPlants moves plants into a new pot size and records each move in the plant's pot history.
+// RepotPlants moves plants into a new pot size (the history trigger records each move).
 // It fails with ErrPotSizeNotFound, ErrNotFound (the batch), or a *BarcodeError.
 func (s *Store) RepotPlants(ctx context.Context, orgID int64, r Repot) (result RepotResult, err error) {
 	barcodes := normalizeBarcodes(r.Barcodes)
@@ -80,7 +79,6 @@ func (s *Store) RepotPlants(ctx context.Context, orgID int64, r Repot) (result R
 			ToPotSellable:  pot.Sellable,
 			BatchID:        r.BatchID,
 			Barcodes:       barcodes, // nil when moving a batch: no barcode filter
-			ChangedBy:      &r.ChangedBy,
 		})
 		if err != nil {
 			return fmt.Errorf("move plants: %w", err)

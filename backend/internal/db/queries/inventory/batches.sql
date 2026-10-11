@@ -25,13 +25,6 @@ FROM generate_series(@first_number::bigint, @last_number::bigint) AS n
 ORDER BY n
 RETURNING *;
 
--- name: RecordFirstPots :exec
--- The start of each new plant's pot history.
-INSERT INTO pot_changes (organization_id, plant_id, to_pot_size_id, changed_by)
-SELECT p.organization_id, p.id, p.pot_size_id, @changed_by
-FROM plants p
-WHERE p.organization_id = @organization_id AND p.batch_id = @batch_id;
-
 -- name: ListBatches :many
 -- Newest first, with how many of the batch's plants are in each status.
 SELECT b.*,

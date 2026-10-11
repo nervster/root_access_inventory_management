@@ -74,6 +74,8 @@ export interface InvitationDto {
   createdAt: string
   expiresAt: string
   expired: boolean
+  /** Who sent it: their name (email if they have none), as it was then. */
+  invitedBy: string | null
 }
 
 export interface PlatformOrganizationDto {
@@ -217,18 +219,38 @@ export interface SaleResult {
   newVariants: NewVariantDto[]
 }
 
-export interface PotChangeDto {
-  changedAt: string
-  /** null for the plant's first pot. */
-  fromPotSize: string | null
-  toPotSize: string
-  /** Email of who moved it. */
+export type PlantEventType =
+  | 'received'
+  | 'repotted'
+  | 'marked_for_sale'
+  | 'unmarked_for_sale'
+  | 'sold'
+  | 'discarded'
+  | 'name_corrected'
+  | 'photo_added'
+  | 'photo_deleted'
+
+/** One thing that happened to a plant. Postgres records these whenever a plant or its photos change. */
+export interface PlantEventDto {
+  type: PlantEventType
+  /** Depends on type: batch and pot names, a discard reason, a photo caption… */
+  details: {
+    batch?: string
+    fromPotSize?: string
+    toPotSize?: string
+    reason?: string
+    from?: string
+    to?: string
+    caption?: string
+  }
+  occurredAt: string
+  /** Who: their name (their email if they have none); null for system changes. */
   changedBy: string | null
 }
 
 export interface PlantWithHistoryDto extends PlantDto {
   /** Oldest first. */
-  potHistory: PotChangeDto[]
+  history: PlantEventDto[]
 }
 
 export interface VariantDto {
@@ -279,6 +301,6 @@ export interface PhotoDto {
   viewUrl: string
   takenAt: string
   caption: string | null
-  /** Email of who added it. */
+  /** Who added it: their name (email if they have none), as it was then. */
   uploadedBy: string | null
 }

@@ -44,6 +44,9 @@ func TestPlatformCreateOrganization(t *testing.T) {
 	if created.OwnerInvitation.Role != dbgen.OrgRoleOwner || created.OwnerInvitation.Email != "founder@example.com" || created.DeliveryError != nil {
 		t.Errorf("invitation = %+v (delivery error %v), want an Owner invitation sent to founder@example.com", created.OwnerInvitation, created.DeliveryError)
 	}
+	if created.OwnerInvitation.InvitedBy == nil || *created.OwnerInvitation.InvitedBy != "platform@example.com" {
+		t.Errorf("owner invitation sent by %v, want the platform admin", created.OwnerInvitation.InvitedBy)
+	}
 	if len(n.signUp.invited) != 1 || n.signUp.invited[0] != "founder@example.com" {
 		t.Errorf("Clerk invited %v, want founder@example.com", n.signUp.invited)
 	}

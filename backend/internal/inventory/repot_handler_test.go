@@ -66,12 +66,14 @@ func TestRepotBatchThenExceptions(t *testing.T) {
 
 	plant := n.plant("IT-000004")
 	var steps []string
-	for _, change := range plant.PotHistory {
-		from := "start"
-		if change.FromPotSize != nil {
-			from = *change.FromPotSize
+	for _, event := range plant.History {
+		var d struct{ FromPotSize, ToPotSize string }
+		_ = json.Unmarshal(event.Details, &d)
+		from := d.FromPotSize
+		if event.Type == "received" {
+			from = "start"
 		}
-		steps = append(steps, from+" → "+change.ToPotSize)
+		steps = append(steps, from+" → "+d.ToPotSize)
 	}
 	if plant.PotSize != "Medium Cup" || strings.Join(steps, ", ") != "start → Tissue Culture Cup, Tissue Culture Cup → Small Cup, Small Cup → Medium Cup" {
 		t.Errorf("IT-000004 is in %s with history %v, want Medium Cup after TC → Small → Medium", plant.PotSize, steps)

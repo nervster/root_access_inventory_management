@@ -156,12 +156,12 @@ func TestFindPlants(t *testing.T) {
 	n.expect("viewer", "GET", "/api/orgs/{org}/plants?status=dead", "", 400)
 	n.expect("viewer", "GET", "/api/orgs/{org}/plants?batchId=abc", "", 400)
 
-	// Scanning a label: lower-case is fine, and the pot history starts in the first pot.
+	// Scanning a label: lower-case is fine, and the history starts with its arrival.
 	var scanned plantWithHistoryResponse
 	_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/it-000002", "", 200).Body.Bytes(), &scanned)
-	if scanned.Barcode != "IT-000002" || len(scanned.PotHistory) != 1 || scanned.PotHistory[0].FromPotSize != nil ||
-		scanned.PotHistory[0].ToPotSize != "Tissue Culture Cup" || *scanned.PotHistory[0].ChangedBy != "staff@inventory.example.com" {
-		t.Errorf("scanned = %+v, want IT-000002 with its first pot recorded by staff", scanned)
+	if scanned.Barcode != "IT-000002" || len(scanned.History) != 1 || scanned.History[0].Type != "received" ||
+		!strings.Contains(string(scanned.History[0].Details), `"toPotSize":"Tissue Culture Cup"`) || *scanned.History[0].ChangedBy != "staff@inventory.example.com" {
+		t.Errorf("scanned = %+v, want IT-000002, received into the Tissue Culture Cup by staff", scanned)
 	}
 	n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/IT-999999", "", 404)
 	n.expect("rival", "GET", "/api/orgs/{org}/plants/by-barcode/IT-000002", "", 404) // another nursery can't find it

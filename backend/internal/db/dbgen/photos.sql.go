@@ -73,9 +73,10 @@ func (q *Queries) CountEligibleProductPhotos(ctx context.Context, arg CountEligi
 
 const createPlantPhoto = `-- name: CreatePlantPhoto :one
 
-INSERT INTO plant_photos (organization_id, plant_id, storage_key, taken_at, caption, uploaded_by)
-VALUES ($1, $2, $3, coalesce($4::timestamptz, now()), $5, $6)
-RETURNING id, organization_id, plant_id, storage_key, taken_at, caption, uploaded_by, created_at
+INSERT INTO plant_photos (organization_id, plant_id, storage_key, taken_at, caption, uploaded_by, uploaded_by_name)
+VALUES ($1, $2, $3, coalesce($4::timestamptz, now()), $5, $6,
+        current_user_name())
+RETURNING id, organization_id, plant_id, storage_key, taken_at, caption, uploaded_by, created_at, uploaded_by_name
 `
 
 type CreatePlantPhotoParams struct {
@@ -88,6 +89,7 @@ type CreatePlantPhotoParams struct {
 }
 
 // Inside one nursery (run through db.InTenant) --
+// uploaded_by_name: the uploader's name as it is now (see migration 00014).
 func (q *Queries) CreatePlantPhoto(ctx context.Context, arg CreatePlantPhotoParams) (PlantPhoto, error) {
 	row := q.db.QueryRow(ctx, createPlantPhoto,
 		arg.OrganizationID,
@@ -107,6 +109,7 @@ func (q *Queries) CreatePlantPhoto(ctx context.Context, arg CreatePlantPhotoPara
 		&i.Caption,
 		&i.UploadedBy,
 		&i.CreatedAt,
+		&i.UploadedByName,
 	)
 	return i, err
 }
@@ -130,11 +133,9 @@ func (q *Queries) DeletePlantPhoto(ctx context.Context, arg DeletePlantPhotoPara
 }
 
 const listPlantPhotos = `-- name: ListPlantPhotos :many
-SELECT ph.id, ph.organization_id, ph.plant_id, ph.storage_key, ph.taken_at, ph.caption, ph.uploaded_by, ph.created_at, u.email AS uploaded_by_email
-FROM plant_photos ph
-LEFT JOIN users u ON u.id = ph.uploaded_by
-WHERE ph.organization_id = $1 AND ph.plant_id = $2
-ORDER BY ph.taken_at DESC, ph.id DESC
+SELECT id, organization_id, plant_id, storage_key, taken_at, caption, uploaded_by, created_at, uploaded_by_name FROM plant_photos
+WHERE organization_id = $1 AND plant_id = $2
+ORDER BY taken_at DESC, id DESC
 `
 
 type ListPlantPhotosParams struct {
@@ -142,28 +143,16 @@ type ListPlantPhotosParams struct {
 	PlantID        int64
 }
 
-type ListPlantPhotosRow struct {
-	ID              int64
-	OrganizationID  int64
-	PlantID         int64
-	StorageKey      string
-	TakenAt         time.Time
-	Caption         *string
-	UploadedBy      *int64
-	CreatedAt       time.Time
-	UploadedByEmail *string
-}
-
-// Newest first, with who uploaded each.
-func (q *Queries) ListPlantPhotos(ctx context.Context, arg ListPlantPhotosParams) ([]ListPlantPhotosRow, error) {
+// Newest first.
+func (q *Queries) ListPlantPhotos(ctx context.Context, arg ListPlantPhotosParams) ([]PlantPhoto, error) {
 	rows, err := q.db.Query(ctx, listPlantPhotos, arg.OrganizationID, arg.PlantID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ListPlantPhotosRow{}
+	items := []PlantPhoto{}
 	for rows.Next() {
-		var i ListPlantPhotosRow
+		var i PlantPhoto
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
@@ -173,7 +162,7 @@ func (q *Queries) ListPlantPhotos(ctx context.Context, arg ListPlantPhotosParams
 			&i.Caption,
 			&i.UploadedBy,
 			&i.CreatedAt,
-			&i.UploadedByEmail,
+			&i.UploadedByName,
 		); err != nil {
 			return nil, err
 		}

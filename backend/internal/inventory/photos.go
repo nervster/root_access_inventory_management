@@ -59,7 +59,7 @@ func (s *Store) AddPlantPhoto(ctx context.Context, params dbgen.CreatePlantPhoto
 }
 
 // PlantPhotos lists a plant's photos, newest first.
-func (s *Store) PlantPhotos(ctx context.Context, orgID, plantID int64) (photos []dbgen.ListPlantPhotosRow, err error) {
+func (s *Store) PlantPhotos(ctx context.Context, orgID, plantID int64) (photos []dbgen.PlantPhoto, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
 		photos, err = q.ListPlantPhotos(ctx, dbgen.ListPlantPhotosParams{OrganizationID: orgID, PlantID: plantID})
 		return err
@@ -137,7 +137,7 @@ type photoResponse struct {
 	ViewURL    string    `json:"viewUrl"` // valid for an hour
 	TakenAt    time.Time `json:"takenAt"`
 	Caption    *string   `json:"caption"`
-	UploadedBy *string   `json:"uploadedBy"` // their email
+	UploadedBy *string   `json:"uploadedBy"` // their name (email if they have none), as it was then
 }
 
 type addPhotoRequest struct {
@@ -196,7 +196,7 @@ func (h handler) addPlantPhoto(c *gin.Context) {
 		web.FailInternal(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, photoResponse{ID: photo.ID, ViewURL: viewURL, TakenAt: photo.TakenAt, Caption: photo.Caption, UploadedBy: &user.Email})
+	c.JSON(http.StatusCreated, photoResponse{ID: photo.ID, ViewURL: viewURL, TakenAt: photo.TakenAt, Caption: photo.Caption, UploadedBy: photo.UploadedByName})
 }
 
 func (h handler) listPlantPhotos(c *gin.Context) {
@@ -217,7 +217,7 @@ func (h handler) listPlantPhotos(c *gin.Context) {
 			web.FailInternal(c, err)
 			return
 		}
-		response[i] = photoResponse{ID: p.ID, ViewURL: viewURL, TakenAt: p.TakenAt, Caption: p.Caption, UploadedBy: p.UploadedByEmail}
+		response[i] = photoResponse{ID: p.ID, ViewURL: viewURL, TakenAt: p.TakenAt, Caption: p.Caption, UploadedBy: p.UploadedByName}
 	}
 	c.JSON(http.StatusOK, response)
 }

@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -276,16 +277,17 @@ func (h handler) listPlants(c *gin.Context) {
 	c.JSON(http.StatusOK, newPlantResponses(plants))
 }
 
-type potChangeResponse struct {
-	ChangedAt   time.Time `json:"changedAt"`
-	FromPotSize *string   `json:"fromPotSize"` // null for the plant's first pot
-	ToPotSize   string    `json:"toPotSize"`
-	ChangedBy   *string   `json:"changedBy"` // their email
+// eventResponse is one entry in a plant's history.
+type eventResponse struct {
+	Type       dbgen.PlantEventType `json:"type"`       // received, repotted, marked_for_sale, …
+	Details    json.RawMessage      `json:"details"`    // depends on type, e.g. {"fromPotSize": …, "toPotSize": …}
+	OccurredAt time.Time            `json:"occurredAt"` //
+	ChangedBy  *string              `json:"changedBy"`  // who: their name (email if they have none); null for system changes
 }
 
 type plantWithHistoryResponse struct {
 	plantResponse
-	PotHistory []potChangeResponse `json:"potHistory"`
+	History []eventResponse `json:"history"` // oldest first
 }
 
 // getPlantByBarcode handles GET /plants/by-barcode/:barcode, e.g. after scanning a label.
@@ -299,11 +301,9 @@ func (h handler) getPlantByBarcode(c *gin.Context) {
 		web.FailInternal(c, err)
 		return
 	}
-	response := plantWithHistoryResponse{plantResponse: newPlantResponse(plant), PotHistory: make([]potChangeResponse, len(history))}
-	for i, change := range history {
-		response.PotHistory[i] = potChangeResponse{
-			ChangedAt: change.ChangedAt, FromPotSize: change.FromPotSize, ToPotSize: change.ToPotSize, ChangedBy: change.ChangedByEmail,
-		}
+	response := plantWithHistoryResponse{plantResponse: newPlantResponse(plant), History: make([]eventResponse, len(history))}
+	for i, event := range history {
+		response.History[i] = eventResponse{Type: event.Type, Details: event.Details, OccurredAt: event.OccurredAt, ChangedBy: event.ChangedByName}
 	}
 	c.JSON(http.StatusOK, response)
 }

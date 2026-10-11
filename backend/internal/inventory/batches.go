@@ -41,7 +41,7 @@ type NewBatch struct {
 }
 
 // CreateBatch receives a batch: it creates the batch and one plant per Quantity, each with the
-// nursery's next barcode, and starts every plant's pot history. It returns the batch's ID.
+// nursery's next barcode (their history starts with "received"). It returns the batch's ID.
 // It fails with ErrPlantNameNotFound, ErrVariegationNotFound, or ErrPotSizeNotFound.
 func (s *Store) CreateBatch(ctx context.Context, orgID int64, nb NewBatch) (batchID int64, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
@@ -106,7 +106,7 @@ func (s *Store) CreateBatch(ctx context.Context, orgID int64, nb NewBatch) (batc
 		if err != nil {
 			return fmt.Errorf("create plants: %w", err)
 		}
-		return q.RecordFirstPots(ctx, dbgen.RecordFirstPotsParams{OrganizationID: orgID, BatchID: batch.ID, ChangedBy: &nb.CreatedBy})
+		return nil // each plant's "received" event is written by the history trigger
 	})
 	return batchID, err
 }
@@ -170,14 +170,14 @@ func listPlants(ctx context.Context, q *dbgen.Queries, params dbgen.ListPlantsPa
 	return plants, nil
 }
 
-// PlantByBarcode returns the plant with barcode and its pot history, or ErrNotFound.
-func (s *Store) PlantByBarcode(ctx context.Context, orgID int64, barcode string) (plant PlantDetails, history []dbgen.ListPotChangesRow, err error) {
+// PlantByBarcode returns the plant with barcode and its history (oldest first), or ErrNotFound.
+func (s *Store) PlantByBarcode(ctx context.Context, orgID int64, barcode string) (plant PlantDetails, history []dbgen.ListPlantEventsRow, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
 		plant, err = q.GetPlantByBarcode(ctx, dbgen.GetPlantByBarcodeParams{OrganizationID: orgID, Barcode: strings.ToUpper(strings.TrimSpace(barcode))})
 		if err != nil {
 			return translate(err)
 		}
-		history, err = q.ListPotChanges(ctx, dbgen.ListPotChangesParams{OrganizationID: orgID, PlantID: plant.ID})
+		history, err = q.ListPlantEvents(ctx, dbgen.ListPlantEventsParams{OrganizationID: orgID, PlantID: plant.ID})
 		return err
 	})
 	return plant, history, err

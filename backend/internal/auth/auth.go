@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
 )
 
@@ -67,9 +68,11 @@ func RequireUser(users *Store, admins PlatformAdmins) gin.HandlerFunc {
 }
 
 // SetCurrentUser marks user as signed in for this request. RequireUser calls it; tests can too.
+// It also records them as who is making changes, for database history (see db.WithUser).
 func SetCurrentUser(c *gin.Context, user dbgen.User, platformAdmin bool) {
 	c.Set(userKey, user)
 	c.Set(platformAdminKey, platformAdmin)
+	c.Request = c.Request.WithContext(db.WithUser(c.Request.Context(), user.ID))
 }
 
 // IsPlatformAdmin reports whether the signed-in user runs the platform.

@@ -33,9 +33,9 @@ func (q *Queries) AcceptInvitation(ctx context.Context, arg AcceptInvitationPara
 
 const createInvitation = `-- name: CreateInvitation :one
 
-INSERT INTO invitations (organization_id, email, role, invited_by_user_id, expires_at)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at
+INSERT INTO invitations (organization_id, email, role, invited_by_user_id, invited_by_name, expires_at)
+VALUES ($1, $2, $3, $4, current_user_name(), $5)
+RETURNING id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at, invited_by_name
 `
 
 type CreateInvitationParams struct {
@@ -47,6 +47,7 @@ type CreateInvitationParams struct {
 }
 
 // Inside one nursery (run through db.InTenant) --
+// invited_by_name: the inviter's name as it is now (see migration 00014).
 func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationParams) (Invitation, error) {
 	row := q.db.QueryRow(ctx, createInvitation,
 		arg.OrganizationID,
@@ -66,6 +67,7 @@ func (q *Queries) CreateInvitation(ctx context.Context, arg CreateInvitationPara
 		&i.ExpiresAt,
 		&i.AcceptedAt,
 		&i.RevokedAt,
+		&i.InvitedByName,
 	)
 	return i, err
 }
@@ -74,7 +76,7 @@ const extendInvitation = `-- name: ExtendInvitation :one
 UPDATE invitations
 SET expires_at = $1
 WHERE organization_id = $2 AND id = $3
-RETURNING id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at
+RETURNING id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at, invited_by_name
 `
 
 type ExtendInvitationParams struct {
@@ -96,6 +98,7 @@ func (q *Queries) ExtendInvitation(ctx context.Context, arg ExtendInvitationPara
 		&i.ExpiresAt,
 		&i.AcceptedAt,
 		&i.RevokedAt,
+		&i.InvitedByName,
 	)
 	return i, err
 }
@@ -132,7 +135,7 @@ func (q *Queries) GetInvitationForEmail(ctx context.Context, arg GetInvitationFo
 }
 
 const getOpenInvitation = `-- name: GetOpenInvitation :one
-SELECT id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at FROM invitations
+SELECT id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at, invited_by_name FROM invitations
 WHERE organization_id = $1 AND id = $2 AND accepted_at IS NULL AND revoked_at IS NULL
 `
 
@@ -154,12 +157,13 @@ func (q *Queries) GetOpenInvitation(ctx context.Context, arg GetOpenInvitationPa
 		&i.ExpiresAt,
 		&i.AcceptedAt,
 		&i.RevokedAt,
+		&i.InvitedByName,
 	)
 	return i, err
 }
 
 const getOpenInvitationByEmail = `-- name: GetOpenInvitationByEmail :one
-SELECT id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at FROM invitations
+SELECT id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at, invited_by_name FROM invitations
 WHERE organization_id = $1 AND email = $2 AND accepted_at IS NULL AND revoked_at IS NULL
 `
 
@@ -181,6 +185,7 @@ func (q *Queries) GetOpenInvitationByEmail(ctx context.Context, arg GetOpenInvit
 		&i.ExpiresAt,
 		&i.AcceptedAt,
 		&i.RevokedAt,
+		&i.InvitedByName,
 	)
 	return i, err
 }
@@ -224,7 +229,7 @@ func (q *Queries) JoinOrganization(ctx context.Context, arg JoinOrganizationPara
 }
 
 const listOpenInvitations = `-- name: ListOpenInvitations :many
-SELECT id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at FROM invitations
+SELECT id, organization_id, email, role, invited_by_user_id, created_at, expires_at, accepted_at, revoked_at, invited_by_name FROM invitations
 WHERE organization_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL
 ORDER BY created_at DESC
 `
@@ -249,6 +254,7 @@ func (q *Queries) ListOpenInvitations(ctx context.Context, organizationID int64)
 			&i.ExpiresAt,
 			&i.AcceptedAt,
 			&i.RevokedAt,
+			&i.InvitedByName,
 		); err != nil {
 			return nil, err
 		}
