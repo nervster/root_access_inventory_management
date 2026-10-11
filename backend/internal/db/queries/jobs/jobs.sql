@@ -2,7 +2,8 @@
 
 -- name: EnqueueJob :exec
 INSERT INTO jobs (organization_id, kind, payload)
-VALUES (@organization_id, @kind, @payload);
+VALUES (@organization_id, @kind, @payload)
+ON CONFLICT DO NOTHING; -- the same job already waiting (see migration 00017)
 
 -- The worker (account-level, every nursery) --
 

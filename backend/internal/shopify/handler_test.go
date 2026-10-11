@@ -34,6 +34,10 @@ type fakeShopify struct {
 	refreshes     int
 	refuseRefresh bool
 	issued        int
+
+	products map[string]*fakeProduct // the store's products, by ID
+	nextID   int
+	refuse   string // when set, productSet refuses every product with this message
 }
 
 func (f *fakeShopify) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -65,9 +69,7 @@ func (f *fakeShopify) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"errors":"Invalid API key or access token"}`, http.StatusUnauthorized)
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":{"locations":{"nodes":[
-			{"id":"gid://shopify/Location/1","name":"Greenhouse"},
-			{"id":"gid://shopify/Location/2","name":"Market Stall"}]}}}`))
+		f.graphQL(w, r)
 	default:
 		http.NotFound(w, r)
 	}

@@ -333,3 +333,14 @@ export interface ShopifyLocationDto {
   id: string
   name: string
 }
+
+/** How one product stands on the nursery's Shopify store. */
+export interface ShopifyProductStatusDto {
+  productId: number
+  title: string
+  /** The product in the Shopify admin, once created. */
+  adminUrl: string | null
+  syncedAt: string | null
+  /** Why Shopify refused it last time. */
+  error: string | null
+}

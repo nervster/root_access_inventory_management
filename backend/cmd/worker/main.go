@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"os"
 	"os/signal"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/jobs"
+	"github.com/nervster/root_access_inventory_management/backend/internal/shopify"
 )
 
 func main() {
@@ -49,8 +51,14 @@ func run() error {
 		return err
 	}
 
-	// Each feature adds its kinds of jobs here (Shopify's arrive in the next step).
+	shopifyStore, err := shopify.FromConfig(cfg, pool)
+	if err != nil {
+		return err
+	}
+
+	// Each feature adds its kinds of jobs here.
 	handlers := map[string]jobs.Handler{}
+	maps.Copy(handlers, shopifyStore.JobHandlers())
 
 	slog.Info("worker started", "queue", cfg.JobsQueue, "jobKinds", len(handlers))
 	var loops sync.WaitGroup

@@ -27,6 +27,7 @@ const enqueueJob = `-- name: EnqueueJob :exec
 
 INSERT INTO jobs (organization_id, kind, payload)
 VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
 `
 
 type EnqueueJobParams struct {
@@ -54,6 +55,7 @@ func (q *Queries) MarkJobsSent(ctx context.Context, ids []int64) error {
 
 const unsentJobs = `-- name: UnsentJobs :many
 
+
 SELECT id, organization_id, kind, payload
 FROM jobs
 WHERE sent_at IS NULL
@@ -69,6 +71,7 @@ type UnsentJobsRow struct {
 	Payload        []byte
 }
 
+// the same job already waiting (see migration 00017)
 // The worker (account-level, every nursery) --
 // The oldest jobs not yet handed to SQS. SKIP LOCKED lets several workers relay at once without
 // sending the same job twice.

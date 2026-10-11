@@ -6,6 +6,8 @@ import {
   useSetShopifyLocation,
   useShopifyConnection,
   useShopifyLocations,
+  useShopifyProducts,
+  useSyncShopify,
 } from '../api/hooks'
 import type { ShopifyConnectionDto } from '../api/types'
 import { formatDate } from '../lib/format'
@@ -119,7 +121,10 @@ function Connected({ orgId, connection }: { orgId: number; connection: ShopifyCo
           <ConnectForm orgId={orgId} shop={shop} />
         </div>
       ) : (
-        <PickupLocation orgId={orgId} connection={connection} />
+        <>
+          <PickupLocation orgId={orgId} connection={connection} />
+          <ProductsOnShopify orgId={orgId} />
+        </>
       )}
 
       <div className="border-t border-stone-200 pt-4 dark:border-stone-800">
@@ -163,6 +168,59 @@ function PickupLocation({ orgId, connection }: { orgId: number; connection: Shop
       </Field>
       <ErrorBanner error={setLocation.error} />
       {!connection.locationId && <Notice>Choose a location before Plant Stock can put stock on Shopify.</Notice>}
+    </div>
+  )
+}
+
+function ProductsOnShopify({ orgId }: { orgId: number }) {
+  const products = useShopifyProducts(orgId, true)
+  const sync = useSyncShopify(orgId)
+  const problems = products.data?.filter((p) => p.error) ?? []
+  const synced = products.data?.filter((p) => !p.error) ?? []
+
+  return (
+    <div className="space-y-3 border-t border-stone-200 pt-4 dark:border-stone-800">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Products on Shopify</p>
+          <p className="text-xs text-stone-500">
+            Products with a price go to Shopify automatically. New ones arrive as drafts for you to check and publish there.
+          </p>
+        </div>
+        <Button variant="secondary" disabled={sync.isPending} onClick={() => sync.mutate()}>
+          {sync.isPending ? 'Queuing…' : 'Sync now'}
+        </Button>
+      </div>
+      <ErrorBanner error={sync.error} />
+      {sync.isSuccess && <Notice>Syncing in the background. Products appear on Shopify within a minute.</Notice>}
+
+      {products.isPending ? (
+        <Loading />
+      ) : products.error ? (
+        <ErrorBanner error={products.error} />
+      ) : products.data.length === 0 ? (
+        <p className="text-sm text-stone-500">None yet. Set a price on a product to put it on Shopify.</p>
+      ) : (
+        <ul className="divide-y divide-stone-200 text-sm dark:divide-stone-800">
+          {[...problems, ...synced].map((product) => (
+            <li key={product.productId} className="flex flex-wrap items-center justify-between gap-2 py-2">
+              <span className="min-w-0">
+                <span className="block truncate">{product.title}</span>
+                {product.error && <span className="block text-xs text-red-700 dark:text-red-400">Shopify refused it: {product.error}</span>}
+              </span>
+              {product.error ? (
+                <Badge tone="red">Not synced</Badge>
+              ) : (
+                product.adminUrl && (
+                  <a href={product.adminUrl} target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline dark:text-emerald-400">
+                    Open in Shopify ↗
+                  </a>
+                )
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }

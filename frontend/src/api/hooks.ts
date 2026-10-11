@@ -27,6 +27,7 @@ import type {
   SaleResult,
   ShopifyConnectionDto,
   ShopifyLocationDto,
+  ShopifyProductStatusDto,
   VariegationDto,
 } from './types'
 
@@ -40,6 +41,7 @@ export const queryKeys = {
   platformUsers: (email: string) => ['platform', 'users', email] as const,
   shopify: (orgId: number) => ['orgs', orgId, 'shopify'] as const,
   shopifyLocations: (orgId: number) => ['orgs', orgId, 'shopify', 'locations'] as const,
+  shopifyProducts: (orgId: number) => ['orgs', orgId, 'shopify', 'products'] as const,
 }
 
 // ── Signed-in user ──────────────────────────────────────────────────────────
@@ -507,4 +509,22 @@ export function useSetShopifyLocation(orgId: number) {
     mutationFn: (locationId: string) => api<ShopifyConnectionDto>(`/orgs/${orgId}/shopify/location`, { method: 'PUT', json: { locationId } }),
     onSuccess: (connection) => client.setQueryData(queryKeys.shopify(orgId), connection),
   })
+}
+
+/** Products sent to the store (or refused by it), problems first. Refreshes while the page is open,
+ *  since the worker pushes products in the background. */
+export function useShopifyProducts(orgId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.shopifyProducts(orgId),
+    queryFn: () => api<ShopifyProductStatusDto[]>(`/orgs/${orgId}/shopify/products`),
+    enabled,
+    refetchInterval: 10_000,
+  })
+}
+
+/** Pushes every product to the store again (the worker does it in the background). */
+export function useSyncShopify(orgId: number) {
+  const api = useApi()
+  return useMutation({ mutationFn: () => api<void>(`/orgs/${orgId}/shopify/sync`, { method: 'POST' }) })
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/jobs"
 )
 
 var (
@@ -39,6 +42,21 @@ type Store struct {
 
 func NewStore(conn db.Conn, app *App, sealer *Sealer) *Store {
 	return &Store{conn: conn, app: app, sealer: sealer}
+}
+
+// FromConfig sets up the Shopify app from the server's settings. Without SHOPIFY_CLIENT_ID,
+// Shopify is off and Settings says so.
+func FromConfig(cfg config.Config, conn db.Conn) (*Store, error) {
+	if cfg.ShopifyClientID == "" {
+		slog.Warn("Shopify is off (no SHOPIFY_CLIENT_ID)")
+		return NewStore(conn, nil, nil), nil
+	}
+	sealer, err := NewSealer(cfg.ShopifyTokenKey)
+	if err != nil {
+		return nil, err
+	}
+	app := NewApp(cfg.ShopifyClientID, cfg.ShopifyClientSecret, strings.TrimSuffix(cfg.AppURL, "/")+callbackPath)
+	return NewStore(conn, app, sealer), nil
 }
 
 // Configured reports whether the server has the Shopify app's credentials.
@@ -126,8 +144,10 @@ func (s *Store) FinishConnect(ctx context.Context, attempt dbgen.ShopifyOauthSta
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation on shop
 			return ErrOtherNursery
+		} else if err != nil {
+			return err
 		}
-		return err
+		return jobs.Enqueue(ctx, q, attempt.OrganizationID, JobSyncAll, struct{}{}) // push the products
 	})
 }
 

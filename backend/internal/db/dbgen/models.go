@@ -408,6 +408,23 @@ type ShopifyOauthState struct {
 	CreatedAt      time.Time
 }
 
+type ShopifyProduct struct {
+	OrganizationID   int64
+	ProductID        int64
+	Shop             string
+	ShopifyProductID *string
+	SyncedAt         *time.Time
+	SyncError        *string
+}
+
+type ShopifyVariant struct {
+	OrganizationID         int64
+	VariantID              int64
+	Shop                   string
+	ShopifyVariantID       string
+	ShopifyInventoryItemID string
+}
+
 type User struct {
 	ID          int64
 	ExternalID  string

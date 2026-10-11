@@ -32,6 +32,8 @@ func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Sto
 	shopify.DELETE("", h.disconnect)
 	shopify.GET("/locations", h.listLocations)
 	shopify.PUT("/location", h.setLocation)
+	shopify.POST("/sync", h.syncAll)
+	shopify.GET("/products", h.listProducts)
 }
 
 type handler struct {
@@ -212,4 +214,48 @@ func failShopify(c *gin.Context, err error) bool {
 		web.FailInternal(c, err)
 	}
 	return true
+}
+
+// syncAll handles POST /orgs/:orgId/shopify/sync: push every product again (the worker does it).
+func (h handler) syncAll(c *gin.Context) {
+	switch err := h.store.QueueSyncAll(c.Request.Context(), organization.CurrentAccess(c).OrganizationID); {
+	case errors.Is(err, ErrNotConnected):
+		web.Fail(c, http.StatusNotFound, "no store is connected")
+	case err != nil:
+		web.FailInternal(c, err)
+	default:
+		c.Status(http.StatusAccepted)
+	}
+}
+
+type productStatusResponse struct {
+	ProductID int64      `json:"productId"`
+	Title     string     `json:"title"`
+	AdminURL  *string    `json:"adminUrl"` // the product in the Shopify admin, once created
+	SyncedAt  *time.Time `json:"syncedAt"`
+	Error     *string    `json:"error"` // why Shopify refused it last time
+}
+
+// listProducts handles GET /orgs/:orgId/shopify/products: how each product stands on the store.
+func (h handler) listProducts(c *gin.Context) {
+	rows, err := h.store.ProductStatuses(c.Request.Context(), organization.CurrentAccess(c).OrganizationID)
+	if failShopify(c, err) {
+		return
+	}
+	response := make([]productStatusResponse, len(rows))
+	for i, row := range rows {
+		response[i] = productStatusResponse{ProductID: row.ProductID, Title: row.Title, SyncedAt: row.SyncedAt, Error: row.SyncError}
+		if row.ShopifyProductID != nil {
+			url := adminProductURL(row.Shop, *row.ShopifyProductID)
+			response[i].AdminURL = &url
+		}
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// adminProductURL links to a product in the Shopify admin: gid://shopify/Product/123 on
+// root-access.myshopify.com is admin.shopify.com/store/root-access/products/123.
+func adminProductURL(shop, productGID string) string {
+	store := strings.TrimSuffix(shop, ".myshopify.com")
+	return "https://admin.shopify.com/store/" + store + "/products/" + productGID[strings.LastIndex(productGID, "/")+1:]
 }
