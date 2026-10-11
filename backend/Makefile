@@ -5,13 +5,16 @@ MIGRATIONS := internal/db/migrations
 DATABASE_URL ?= postgres://nms:nms_dev@localhost:5433/nms?sslmode=disable
 
 .DEFAULT_GOAL := help
-.PHONY: help run test generate migration migrate-status migrate-down
+.PHONY: help run worker test generate migration migrate-status migrate-down
 
 help: ## List the available commands
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-16s %s\n", $$1, $$2}'
 
 run: ## Start the API on :8080 (applies pending migrations first)
 	go run ./cmd/api
+
+worker: ## Start the background-job worker (needs `docker compose up -d` for SQS)
+	go run ./cmd/worker
 
 test: ## Run all tests (needs `docker compose up -d`)
 	go test -race ./...

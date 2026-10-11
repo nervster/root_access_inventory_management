@@ -267,6 +267,15 @@ type Invitation struct {
 	InvitedByName   *string
 }
 
+type Job struct {
+	ID             int64
+	OrganizationID int64
+	Kind           string
+	Payload        []byte
+	CreatedAt      time.Time
+	SentAt         *time.Time
+}
+
 type Membership struct {
 	ID             int64
 	OrganizationID int64

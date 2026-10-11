@@ -67,6 +67,9 @@ services:
       SMTP_ADDR: mailpit:1025
       S3_ENDPOINT: http://localstack:4566 # the API reaches LocalStack inside Docker…
       S3_PUBLIC_ENDPOINT: http://localhost:4566 # …browsers on your Mac
+      SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-} # from the git-ignored .env
+      SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
+      SHOPIFY_TOKEN_KEY: ${SHOPIFY_TOKEN_KEY:-}
     ports:
       - "8080:8080"
     depends_on:
@@ -76,6 +79,25 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      localstack:
+        condition: service_healthy
+
+  # Background jobs (same image as the backend, running /worker).
+  worker:
+    profiles: [app]
+    build: ./backend
+    entrypoint: ["/worker"]
+    environment:
+      DATABASE_URL: postgres://nms:nms_dev@postgres:5432/nms?sslmode=disable # dev-only password
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
+      APP_URL: http://localhost:8081
+      SQS_ENDPOINT: http://localstack:4566
+      SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-}
+      SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
+      SHOPIFY_TOKEN_KEY: ${SHOPIFY_TOKEN_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
       localstack:
         condition: service_healthy
 
