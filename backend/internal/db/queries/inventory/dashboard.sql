@@ -3,6 +3,7 @@
 -- name: PlantStatusCounts :one
 SELECT count(*) FILTER (WHERE status = 'growing')   AS growing,
        count(*) FILTER (WHERE status = 'for_sale')  AS for_sale,
+       count(*) FILTER (WHERE status = 'held')      AS held,
        count(*) FILTER (WHERE status = 'sold')      AS sold,
        count(*) FILTER (WHERE status = 'discarded') AS discarded,
        count(*) FILTER (WHERE created_at > now() - interval '30 days') AS received_last_30_days,

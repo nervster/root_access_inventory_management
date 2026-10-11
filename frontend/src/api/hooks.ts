@@ -25,6 +25,12 @@ import type {
   CorrectionResult,
   RepotResult,
   SaleResult,
+  ShopifyConnectionDto,
+  ShopifyLocationDto,
+  ShopifyProductStatusDto,
+  OrderDto,
+  OrderStatus,
+  OrdersStatusDto,
   VariegationDto,
 } from './types'
 
@@ -36,6 +42,11 @@ export const queryKeys = {
   platformOrganizations: ['platform', 'orgs'] as const,
   platformOrganization: (id: number) => ['platform', 'orgs', id] as const,
   platformUsers: (email: string) => ['platform', 'users', email] as const,
+  shopify: (orgId: number) => ['orgs', orgId, 'shopify'] as const,
+  shopifyLocations: (orgId: number) => ['orgs', orgId, 'shopify', 'locations'] as const,
+  shopifyProducts: (orgId: number) => ['orgs', orgId, 'shopify', 'products'] as const,
+  orders: (orgId: number, status: OrderStatus) => ['orgs', orgId, 'orders', status] as const,
+  ordersStatus: (orgId: number) => ['orgs', orgId, 'orders', 'status'] as const,
 }
 
 // ── Signed-in user ──────────────────────────────────────────────────────────
@@ -459,4 +470,121 @@ export function useNameActions(orgId: number) {
       onSuccess: () => client.invalidateQueries({ queryKey: inventoryKeys.variegations(orgId) }),
     }),
   }
+}
+
+// ── Shopify (Owners) ────────────────────────────────────────────────────────
+
+export function useShopifyConnection(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: queryKeys.shopify(orgId), queryFn: () => api<ShopifyConnectionDto>(`/orgs/${orgId}/shopify`) })
+}
+
+/** Starts connecting a store: on success, the browser goes to Shopify to approve Plant Stock. */
+export function useConnectShopify(orgId: number) {
+  const api = useApi()
+  return useMutation({
+    mutationFn: (shop: string) => api<{ authorizeUrl: string }>(`/orgs/${orgId}/shopify/connect`, { method: 'POST', json: { shop } }),
+    onSuccess: ({ authorizeUrl }) => window.location.assign(authorizeUrl),
+  })
+}
+
+export function useDisconnectShopify(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<void>(`/orgs/${orgId}/shopify`, { method: 'DELETE' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.shopify(orgId) }),
+  })
+}
+
+/** The store's locations (asks Shopify, so only when connected). */
+export function useShopifyLocations(orgId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.shopifyLocations(orgId),
+    queryFn: () => api<ShopifyLocationDto[]>(`/orgs/${orgId}/shopify/locations`),
+    enabled,
+  })
+}
+
+export function useSetShopifyLocation(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (locationId: string) => api<ShopifyConnectionDto>(`/orgs/${orgId}/shopify/location`, { method: 'PUT', json: { locationId } }),
+    onSuccess: (connection) => client.setQueryData(queryKeys.shopify(orgId), connection),
+  })
+}
+
+/** Products sent to the store (or refused by it), problems first. Refreshes while the page is open,
+ *  since the worker pushes products in the background. */
+export function useShopifyProducts(orgId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.shopifyProducts(orgId),
+    queryFn: () => api<ShopifyProductStatusDto[]>(`/orgs/${orgId}/shopify/products`),
+    enabled,
+    refetchInterval: 10_000,
+  })
+}
+
+/** Pushes every product to the store again (the worker does it in the background). */
+export function useSyncShopify(orgId: number) {
+  const api = useApi()
+  return useMutation({ mutationFn: () => api<void>(`/orgs/${orgId}/shopify/sync`, { method: 'POST' }) })
+}
+
+// ── Orders ──────────────────────────────────────────────────────────────────
+
+/** The nursery's online orders with status. Refreshes each minute: the worker imports orders in the background. */
+export function useOrders(orgId: number, status: OrderStatus) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.orders(orgId, status),
+    queryFn: () => api<OrderDto[]>(`/orgs/${orgId}/orders?status=${status}`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Whether orders are arriving from Shopify, and why not. */
+export function useOrdersStatus(orgId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.ordersStatus(orgId),
+    queryFn: () => api<OrdersStatusDto>(`/orgs/${orgId}/shopify/orders/status`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Moving an order along: ready for pickup (in the locker), then picked up. */
+export function useOrderActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const refresh = () => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders'] })
+  return {
+    ready: useMutation({
+      mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/ready`, { method: 'POST' }),
+      onSuccess: refresh,
+    }),
+    notReady: useMutation({
+      mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/not-ready`, { method: 'POST' }),
+      onSuccess: refresh,
+    }),
+    pickedUp: useMutation({
+      mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/picked-up`, { method: 'POST' }),
+      onSuccess: refresh,
+    }),
+  }
+}
+
+/** Reads new orders from Shopify now (instead of within the minute); refreshes the list shortly after. */
+export function useCheckOrders(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<void>(`/orgs/${orgId}/shopify/orders/import`, { method: 'POST' }),
+    onSuccess: () => {
+      setTimeout(() => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders'] }), 4000)
+    },
+  })
 }

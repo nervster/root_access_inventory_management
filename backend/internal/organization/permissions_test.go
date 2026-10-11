@@ -21,6 +21,8 @@ func TestRolePermissions(t *testing.T) {
 		{dbgen.OrgRoleStaff, TeamManage, false},
 		{dbgen.OrgRoleViewer, InventoryView, true},
 		{dbgen.OrgRoleViewer, InventoryEdit, false},
+		{dbgen.OrgRoleStaff, OrdersPrepare, true}, // whoever packs the locker
+		{dbgen.OrgRoleViewer, OrdersPrepare, false},
 		{"superadmin", OrganizationView, false}, // unknown roles get nothing
 	}
 	for _, tt := range tests {

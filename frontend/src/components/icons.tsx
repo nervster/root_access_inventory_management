@@ -86,3 +86,12 @@ export function ProductsIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   )
 }
+
+export function OrdersIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M5 8h14l-1.2 11.1a1.5 1.5 0 0 1-1.5 1.4H7.7a1.5 1.5 0 0 1-1.5-1.4L5 8Z" />
+      <path d="M9 10V6.5a3 3 0 0 1 6 0V10" />
+    </Icon>
+  )
+}

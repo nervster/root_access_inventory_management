@@ -18,6 +18,7 @@ import (
 type BarcodeError struct {
 	Unknown  []string
 	Finished []string
+	Held     []string // held for an online order: cancel the order, or hand it over, first
 }
 
 func (e *BarcodeError) Error() string {
@@ -27,6 +28,9 @@ func (e *BarcodeError) Error() string {
 	}
 	if len(e.Finished) > 0 {
 		parts = append(parts, "already sold or discarded: "+strings.Join(e.Finished, ", "))
+	}
+	if len(e.Held) > 0 {
+		parts = append(parts, "held for an online order: "+strings.Join(e.Held, ", "))
 	}
 	return strings.Join(parts, "; ")
 }
@@ -107,7 +111,8 @@ func (s *Store) DiscardPlants(ctx context.Context, orgID int64, barcodes []strin
 	return discarded, err
 }
 
-// checkBarcodes fails with a *BarcodeError if any barcode is unknown or its plant is sold or discarded.
+// checkBarcodes fails with a *BarcodeError if any barcode is unknown, or its plant is sold, discarded,
+// or held for an order.
 func checkBarcodes(ctx context.Context, q *dbgen.Queries, orgID int64, barcodes []string) error {
 	rows, err := q.GetPlantStatuses(ctx, dbgen.GetPlantStatusesParams{OrganizationID: orgID, Barcodes: barcodes})
 	if err != nil {
@@ -125,9 +130,11 @@ func checkBarcodes(ctx context.Context, q *dbgen.Queries, orgID int64, barcodes 
 			problem.Unknown = append(problem.Unknown, barcode)
 		case s == dbgen.PlantStatusSold || s == dbgen.PlantStatusDiscarded:
 			problem.Finished = append(problem.Finished, barcode)
+		case s == dbgen.PlantStatusHeld:
+			problem.Held = append(problem.Held, barcode)
 		}
 	}
-	if len(problem.Unknown) > 0 || len(problem.Finished) > 0 {
+	if len(problem.Unknown) > 0 || len(problem.Finished) > 0 || len(problem.Held) > 0 {
 		return problem
 	}
 	return nil

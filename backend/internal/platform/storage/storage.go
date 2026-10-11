@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -105,6 +106,15 @@ func (s *S3) Stat(ctx context.Context, key string) (FileInfo, bool, error) {
 		return FileInfo{}, false, fmt.Errorf("check file: %w", err)
 	}
 	return FileInfo{Size: aws.ToInt64(head.ContentLength), ContentType: aws.ToString(head.ContentType)}, true, nil
+}
+
+// Open reads the file at key (e.g. for the worker to upload a photo to Shopify). Close it after.
+func (s *S3) Open(ctx context.Context, key string) (io.ReadCloser, FileInfo, error) {
+	object, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
+	if err != nil {
+		return nil, FileInfo{}, fmt.Errorf("read file: %w", err)
+	}
+	return object.Body, FileInfo{Size: aws.ToInt64(object.ContentLength), ContentType: aws.ToString(object.ContentType)}, nil
 }
 
 func (s *S3) Delete(ctx context.Context, key string) error {

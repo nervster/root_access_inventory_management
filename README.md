@@ -1,4 +1,4 @@
-# NMS — Nursery Management System
+# Plant Stock — inventory for plant nurseries
 
 A multi-tenant web app for independent gardens and nurseries to manage their plant inventory, team,
 and photos, and to sell online through their own Shopify store. Root Access HTX (Houston) is the

@@ -8,6 +8,9 @@ sql:
     queries:
       - internal/db/queries/accounts
       - internal/db/queries/inventory
+      - internal/db/queries/jobs
+      - internal/db/queries/orders
+      - internal/db/queries/shopify
     gen:
       go:
         package: dbgen

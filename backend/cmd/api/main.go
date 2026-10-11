@@ -1,4 +1,4 @@
-// Command api runs the NMS HTTP API.
+// Command api runs the Plant Stock HTTP API.
 package main
 
 import (
@@ -17,10 +17,12 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/inventory"
+	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/email"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
+	"github.com/nervster/root_access_inventory_management/backend/internal/shopify"
 )
 
 func main() {
@@ -64,6 +66,11 @@ func run() error {
 		}
 	}
 
+	shopifyStore, err := shopify.FromConfig(cfg, pool, photos)
+	if err != nil {
+		return err
+	}
+
 	deliverer := organization.Deliverer{
 		SignUp: auth.NewClerkUsers(cfg.ClerkSecretKey),
 		Email:  email.SMTP{Addr: cfg.SMTPAddr, From: cfg.EmailFrom, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword},
@@ -77,6 +84,9 @@ func run() error {
 		deliverer:      deliverer,
 		inventory:      inventory.NewStore(pool),
 		photos:         photos,
+		shopify:        shopifyStore,
+		conn:           pool,
+		appURL:         cfg.AppURL,
 	})
 
 	server := &http.Server{
@@ -117,6 +127,9 @@ type dependencies struct {
 	deliverer      organization.Deliverer
 	inventory      *inventory.Store
 	photos         inventory.PhotoStorage
+	shopify        *shopify.Store
+	conn           db.Conn
+	appURL         string
 }
 
 // newRouter builds the HTTP routes. It's separate from run so tests can use it.
@@ -133,6 +146,8 @@ func newRouter(d dependencies) *gin.Engine {
 	organization.Routes(signedIn, d.orgs, d.deliverer)
 	organization.PlatformRoutes(signedIn, d.orgs, d.deliverer, d.platformAdmins)
 	inventory.Routes(signedIn, d.orgs, d.inventory, d.photos)
+	shopify.Routes(api, signedIn, d.orgs, d.shopify, d.appURL)
+	orders.Routes(signedIn, d.orgs, orders.NewStore(d.conn))
 
 	return router
 }

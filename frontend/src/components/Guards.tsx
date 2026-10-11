@@ -28,7 +28,7 @@ export function RequireMembership() {
   const membership = me.data?.memberships.find((m) => m.organizationId === orgId)
   if (!membership) return <NotFound message="You're not a member of this nursery." />
   if (membership.status === 'suspended')
-    return <NotFound message={`${membership.organizationName} is suspended. Contact NMS support.`} />
+    return <NotFound message={`${membership.organizationName} is suspended. Contact Plant Stock support.`} />
   return <Outlet />
 }
 

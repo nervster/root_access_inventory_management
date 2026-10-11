@@ -4,6 +4,7 @@ import { useMembership, useOrganization, useUpdateOrganization } from '../../api
 import { can } from '../../api/roles'
 import { Permissions } from '../../api/types'
 import { NotFound } from '../../components/Guards'
+import { ShopifySettings } from '../../components/ShopifySettings'
 import type { OrganizationDto } from '../../api/types'
 import { Button, Card, ErrorBanner, Field, Input, Loading, Notice, PageHeader, Select } from '../../components/ui'
 import { TIME_ZONES } from '../../lib/format'
@@ -16,7 +17,12 @@ export function SettingsPage() {
   if (!can(membership, Permissions.OrganizationManage)) return <NotFound message="Only Owners can change nursery settings." />
   if (org.isPending) return <Loading />
   if (org.error) return <ErrorBanner error={org.error} />
-  return <SettingsForm org={org.data} />
+  return (
+    <div className="space-y-4">
+      <SettingsForm org={org.data} />
+      {can(membership, Permissions.IntegrationsManage) && <ShopifySettings orgId={orgId} />}
+    </div>
+  )
 }
 
 function SettingsForm({ org }: { org: OrganizationDto }) {
@@ -30,7 +36,7 @@ function SettingsForm({ org }: { org: OrganizationDto }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div>
       <PageHeader title="Settings" />
       <Card>
         <form onSubmit={submit} className="space-y-4">

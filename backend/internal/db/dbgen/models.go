@@ -99,15 +99,17 @@ func (ns NullOrganizationStatus) Value() (driver.Value, error) {
 type PlantEventType string
 
 const (
-	PlantEventTypeReceived        PlantEventType = "received"
-	PlantEventTypeRepotted        PlantEventType = "repotted"
-	PlantEventTypeMarkedForSale   PlantEventType = "marked_for_sale"
-	PlantEventTypeUnmarkedForSale PlantEventType = "unmarked_for_sale"
-	PlantEventTypeSold            PlantEventType = "sold"
-	PlantEventTypeDiscarded       PlantEventType = "discarded"
-	PlantEventTypeNameCorrected   PlantEventType = "name_corrected"
-	PlantEventTypePhotoAdded      PlantEventType = "photo_added"
-	PlantEventTypePhotoDeleted    PlantEventType = "photo_deleted"
+	PlantEventTypeReceived          PlantEventType = "received"
+	PlantEventTypeRepotted          PlantEventType = "repotted"
+	PlantEventTypeMarkedForSale     PlantEventType = "marked_for_sale"
+	PlantEventTypeUnmarkedForSale   PlantEventType = "unmarked_for_sale"
+	PlantEventTypeSold              PlantEventType = "sold"
+	PlantEventTypeDiscarded         PlantEventType = "discarded"
+	PlantEventTypeNameCorrected     PlantEventType = "name_corrected"
+	PlantEventTypePhotoAdded        PlantEventType = "photo_added"
+	PlantEventTypePhotoDeleted      PlantEventType = "photo_deleted"
+	PlantEventTypeHeldForOrder      PlantEventType = "held_for_order"
+	PlantEventTypeReleasedFromOrder PlantEventType = "released_from_order"
 )
 
 func (e *PlantEventType) Scan(src interface{}) error {
@@ -194,6 +196,7 @@ type PlantStatus string
 const (
 	PlantStatusGrowing   PlantStatus = "growing"
 	PlantStatusForSale   PlantStatus = "for_sale"
+	PlantStatusHeld      PlantStatus = "held"
 	PlantStatusSold      PlantStatus = "sold"
 	PlantStatusDiscarded PlantStatus = "discarded"
 )
@@ -267,12 +270,51 @@ type Invitation struct {
 	InvitedByName   *string
 }
 
+type Job struct {
+	ID             int64
+	OrganizationID int64
+	Kind           string
+	Payload        []byte
+	CreatedAt      time.Time
+	SentAt         *time.Time
+}
+
 type Membership struct {
 	ID             int64
 	OrganizationID int64
 	UserID         int64
 	Role           OrgRole
 	CreatedAt      time.Time
+}
+
+type Order struct {
+	ID                       int64
+	OrganizationID           int64
+	Shop                     string
+	ShopifyOrderID           string
+	Name                     string
+	Status                   string
+	PlacedAt                 time.Time
+	CancelledAt              *time.Time
+	ShopifyFulfillmentStatus *string
+	ShopifyUpdatedAt         time.Time
+	CreatedAt                time.Time
+	ReadyAt                  *time.Time
+	ReadyByName              *string
+	PickedUpAt               *time.Time
+	PickedUpByName           *string
+}
+
+type OrderItem struct {
+	ID                int64
+	OrganizationID    int64
+	OrderID           int64
+	ShopifyLineItemID string
+	VariantID         *int64
+	Sku               *string
+	Title             string
+	Quantity          int32
+	PriceCents        *int32
 }
 
 type Organization struct {
@@ -298,6 +340,7 @@ type Plant struct {
 	UpdatedAt      time.Time
 	DiscardedAt    *time.Time
 	DiscardReason  *string
+	OrderItemID    *int64
 }
 
 type PlantEvent struct {
@@ -373,6 +416,58 @@ type ProductVariant struct {
 	Sku            string
 	PriceCents     *int32
 	CreatedAt      time.Time
+}
+
+type ShopifyConnection struct {
+	OrganizationID        int64
+	Shop                  string
+	Scopes                string
+	AccessToken           []byte
+	AccessTokenExpiresAt  time.Time
+	RefreshToken          []byte
+	RefreshTokenExpiresAt time.Time
+	NeedsReconnect        bool
+	LocationID            *string
+	LocationName          *string
+	ConnectedBy           *int64
+	ConnectedByName       *string
+	ConnectedAt           time.Time
+	OrdersCheckedThrough  *time.Time
+	OrdersError           *string
+}
+
+type ShopifyMedium struct {
+	OrganizationID int64
+	ProductID      int64
+	PhotoID        int64
+	Shop           string
+	ShopifyMediaID string
+}
+
+type ShopifyOauthState struct {
+	State          string
+	OrganizationID int64
+	UserID         int64
+	Shop           string
+	CreatedAt      time.Time
+}
+
+type ShopifyProduct struct {
+	OrganizationID   int64
+	ProductID        int64
+	Shop             string
+	ShopifyProductID *string
+	SyncedAt         *time.Time
+	SyncError        *string
+}
+
+type ShopifyVariant struct {
+	OrganizationID         int64
+	VariantID              int64
+	Shop                   string
+	ShopifyVariantID       string
+	ShopifyInventoryItemID string
+	StockedLocationID      *string
 }
 
 type User struct {

@@ -34,7 +34,7 @@ export function PlantPage() {
             {p.variegation && ` ${p.variegation}`}
           </>
         }
-        actions={<Badge tone={p.status === 'for_sale' ? 'green' : living ? 'neutral' : 'red'}>{PLANT_STATUS_LABELS[p.status]}</Badge>}
+        actions={<Badge tone={p.status === 'for_sale' ? 'green' : p.status === 'held' ? 'amber' : living ? 'neutral' : 'red'}>{PLANT_STATUS_LABELS[p.status]}</Badge>}
       />
 
       <Card>

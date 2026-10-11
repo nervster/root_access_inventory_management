@@ -26,7 +26,7 @@ type Sender interface {
 // SMTP sends through an SMTP server such as Mailpit or a provider's relay.
 type SMTP struct {
 	Addr     string // host:port
-	From     string // e.g. "NMS <no-reply@example.com>"
+	From     string // e.g. "Plant Stock <no-reply@example.com>"
 	Username string // optional; when set, also Password
 	Password string
 }

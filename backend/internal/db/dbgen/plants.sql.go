@@ -98,7 +98,7 @@ func (q *Queries) DiscardPlants(ctx context.Context, arg DiscardPlantsParams) ([
 }
 
 const getPlantByBarcode = `-- name: GetPlantByBarcode :one
-SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at, p.discarded_at, p.discard_reason,
+SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at, p.discarded_at, p.discard_reason, p.order_item_id,
        b.code AS batch_code,
        pn.full_name AS plant_name,
        v.name AS variegation,
@@ -130,6 +130,7 @@ type GetPlantByBarcodeRow struct {
 	UpdatedAt      time.Time
 	DiscardedAt    *time.Time
 	DiscardReason  *string
+	OrderItemID    *int64
 	BatchCode      string
 	PlantName      string
 	Variegation    *string
@@ -153,6 +154,7 @@ func (q *Queries) GetPlantByBarcode(ctx context.Context, arg GetPlantByBarcodePa
 		&i.UpdatedAt,
 		&i.DiscardedAt,
 		&i.DiscardReason,
+		&i.OrderItemID,
 		&i.BatchCode,
 		&i.PlantName,
 		&i.Variegation,
@@ -247,7 +249,7 @@ func (q *Queries) ListPlantEvents(ctx context.Context, arg ListPlantEventsParams
 
 const listPlants = `-- name: ListPlants :many
 
-SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at, p.discarded_at, p.discard_reason,
+SELECT p.id, p.organization_id, p.barcode, p.batch_id, p.plant_name_id, p.variegation_id, p.pot_size_id, p.status, p.notes, p.created_at, p.updated_at, p.discarded_at, p.discard_reason, p.order_item_id,
        b.code AS batch_code,
        pn.full_name AS plant_name,
        v.name AS variegation,
@@ -286,6 +288,7 @@ type ListPlantsRow struct {
 	UpdatedAt      time.Time
 	DiscardedAt    *time.Time
 	DiscardReason  *string
+	OrderItemID    *int64
 	BatchCode      string
 	PlantName      string
 	Variegation    *string
@@ -322,6 +325,7 @@ func (q *Queries) ListPlants(ctx context.Context, arg ListPlantsParams) ([]ListP
 			&i.UpdatedAt,
 			&i.DiscardedAt,
 			&i.DiscardReason,
+			&i.OrderItemID,
 			&i.BatchCode,
 			&i.PlantName,
 			&i.Variegation,

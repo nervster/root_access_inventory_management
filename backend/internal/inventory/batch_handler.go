@@ -25,7 +25,7 @@ type plantNameResponse struct {
 	Rank     dbgen.PlantRank `json:"rank"`
 	FullName string          `json:"fullName"` // Alocasia baginda 'Dragon Scale'
 	Notes    *string         `json:"notes"`    // e.g. the trade name
-	Shared   bool            `json:"shared"`   // from NMS's shared list, not this nursery's own
+	Shared   bool            `json:"shared"`   // from Plant Stock's shared list, not this nursery's own
 }
 
 func (h handler) searchPlantNames(c *gin.Context) {
@@ -81,6 +81,7 @@ type batchResponse struct {
 type plantCountsJSON struct {
 	Growing   int64 `json:"growing"`
 	ForSale   int64 `json:"forSale"`
+	Held      int64 `json:"held"` // held for online orders, until pickup
 	Sold      int64 `json:"sold"`
 	Discarded int64 `json:"discarded"`
 }
@@ -91,7 +92,7 @@ func newBatchResponse(b BatchSummary, showCost bool) batchResponse {
 		ID: b.ID, Code: b.Code, PlantNameID: b.PlantNameID, PlantName: b.PlantName,
 		VariegationID: b.VariegationID, Variegation: b.Variegation, Source: b.Source,
 		ReceivedOn: b.ReceivedOn.Format(time.DateOnly), Notes: b.Notes, CreatedAt: b.CreatedAt,
-		PlantCounts: plantCountsJSON{Growing: b.GrowingCount, ForSale: b.ForSaleCount, Sold: b.SoldCount, Discarded: b.DiscardedCount},
+		PlantCounts: plantCountsJSON{Growing: b.GrowingCount, ForSale: b.ForSaleCount, Held: b.HeldCount, Sold: b.SoldCount, Discarded: b.DiscardedCount},
 	}
 	if showCost {
 		response.UnitCostCents = b.UnitCostCents
@@ -262,8 +263,8 @@ func (h handler) listPlants(c *gin.Context) {
 	}
 	if status := c.Query("status"); status != "" {
 		s := dbgen.PlantStatus(status)
-		if s != dbgen.PlantStatusGrowing && s != dbgen.PlantStatusForSale && s != dbgen.PlantStatusSold && s != dbgen.PlantStatusDiscarded {
-			web.Fail(c, http.StatusBadRequest, "status must be growing, for_sale, sold, or discarded")
+		if s != dbgen.PlantStatusGrowing && s != dbgen.PlantStatusForSale && s != dbgen.PlantStatusHeld && s != dbgen.PlantStatusSold && s != dbgen.PlantStatusDiscarded {
+			web.Fail(c, http.StatusBadRequest, "status must be growing, for_sale, held, sold, or discarded")
 			return
 		}
 		params.Status = &s

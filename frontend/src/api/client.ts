@@ -33,8 +33,9 @@ export function useApi() {
         const body: { error?: string } = await response.json().catch(() => ({}))
         throw new ApiError(response.status, body.error ?? `Request failed (${response.status})`)
       }
-      if (response.status === 204) return undefined as T
-      return (await response.json()) as T
+      // No body (204 No Content, 202 Accepted, …): nothing to parse.
+      const text = await response.text()
+      return (text ? JSON.parse(text) : undefined) as T
     },
     [getToken],
   )
