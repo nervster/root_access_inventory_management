@@ -2,9 +2,7 @@ package organization
 
 import (
 	"errors"
-	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +10,7 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/web"
 )
 
 // Routes adds the organization routes to signedIn, a group behind auth.RequireUser.
@@ -67,12 +66,12 @@ func (h handler) me(c *gin.Context) {
 	user := auth.CurrentUser(c)
 	memberships, err := h.memberships(c, user.ID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	rows, err := h.store.PendingInvitationsFor(c.Request.Context(), user.Email)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 
@@ -122,7 +121,7 @@ func newOrganizationResponse(org dbgen.Organization) organizationResponse {
 func (h handler) getOrganization(c *gin.Context) {
 	org, err := h.store.Organization(c.Request.Context(), CurrentAccess(c).OrganizationID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, newOrganizationResponse(org))
@@ -137,27 +136,27 @@ type updateOrganizationRequest struct {
 func (h handler) updateOrganization(c *gin.Context) {
 	var req updateOrganizationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, "request body must be JSON")
+		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
 		return
 	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" || len(name) > 200 {
-			fail(c, http.StatusBadRequest, "name must be 1 to 200 characters")
+			web.Fail(c, http.StatusBadRequest, "name must be 1 to 200 characters")
 			return
 		}
 		req.Name = &name
 	}
 	if req.TimeZone != nil {
 		if _, err := time.LoadLocation(*req.TimeZone); err != nil || *req.TimeZone == "" {
-			fail(c, http.StatusBadRequest, "unknown time zone; use an IANA name like America/Chicago")
+			web.Fail(c, http.StatusBadRequest, "unknown time zone; use an IANA name like America/Chicago")
 			return
 		}
 	}
 
 	org, err := h.store.UpdateOrganization(c.Request.Context(), CurrentAccess(c).OrganizationID, req.Name, req.TimeZone)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, newOrganizationResponse(org))
@@ -181,7 +180,7 @@ func newMemberResponse(m Member) memberResponse {
 func (h handler) listMembers(c *gin.Context) {
 	members, err := h.store.Members(c.Request.Context(), CurrentAccess(c).OrganizationID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	response := make([]memberResponse, len(members))
@@ -196,14 +195,14 @@ type changeRoleRequest struct {
 }
 
 func (h handler) changeRole(c *gin.Context) {
-	memberID, ok := idParam(c, "memberId")
+	memberID, ok := web.IDParam(c, "memberId")
 	if !ok {
-		fail(c, http.StatusNotFound, "member not found")
+		web.Fail(c, http.StatusNotFound, "member not found")
 		return
 	}
 	var req changeRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil || !validRole(req.Role) {
-		fail(c, http.StatusBadRequest, "role must be owner, admin, staff, or viewer")
+		web.Fail(c, http.StatusBadRequest, "role must be owner, admin, staff, or viewer")
 		return
 	}
 
@@ -218,9 +217,9 @@ func (h handler) changeRole(c *gin.Context) {
 // removeMember lets anyone leave. Removing someone else needs team.manage and a role the actor may manage.
 func (h handler) removeMember(c *gin.Context) {
 	access := CurrentAccess(c)
-	memberID, ok := idParam(c, "memberId")
+	memberID, ok := web.IDParam(c, "memberId")
 	if !ok {
-		fail(c, http.StatusNotFound, "member not found")
+		web.Fail(c, http.StatusNotFound, "member not found")
 		return
 	}
 
@@ -231,7 +230,7 @@ func (h handler) removeMember(c *gin.Context) {
 	}
 	isSelf := member.ID == access.MembershipID
 	if !isSelf && !(Has(access.Role, TeamManage) && CanManageRole(access.Role, member.Role)) {
-		fail(c, http.StatusForbidden, "you can't remove this member")
+		web.Fail(c, http.StatusForbidden, "you can't remove this member")
 		return
 	}
 
@@ -242,31 +241,13 @@ func (h handler) removeMember(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-// --- helpers ---
-
-// idParam reads a numeric ID from the route, e.g. :orgId.
-func idParam(c *gin.Context, name string) (int64, bool) {
-	id, err := strconv.ParseInt(c.Param(name), 10, 64)
-	return id, err == nil && id > 0
-}
-
-func fail(c *gin.Context, status int, message string) {
-	c.AbortWithStatusJSON(status, gin.H{"error": message})
-}
-
-// failInternal logs an unexpected error and hides its details from the client.
-func failInternal(c *gin.Context, err error) {
-	slog.Error("request failed", "method", c.Request.Method, "path", c.FullPath(), "error", err)
-	fail(c, http.StatusInternalServerError, "something went wrong")
-}
-
 func failTeamChange(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		fail(c, http.StatusNotFound, "member not found")
+		web.Fail(c, http.StatusNotFound, "member not found")
 	case errors.Is(err, ErrLastOwner):
-		fail(c, http.StatusConflict, "an organization must keep at least one Owner; make someone else an Owner first")
+		web.Fail(c, http.StatusConflict, "an organization must keep at least one Owner; make someone else an Owner first")
 	default:
-		failInternal(c, err)
+		web.FailInternal(c, err)
 	}
 }

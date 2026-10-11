@@ -1,8 +1,7 @@
 import { UserButton } from '@clerk/react'
 import { Link, NavLink, Outlet, useMatch, useNavigate } from 'react-router'
 import { useMe } from '../api/hooks'
-import { can } from '../api/roles'
-import { Permissions } from '../api/types'
+import { NurseryBottomBar, NurseryTabs } from './NurseryNav'
 import { ErrorBanner } from './ui'
 
 function Tab({ to, end, children }: { to: string; end?: boolean; children: string }) {
@@ -71,32 +70,22 @@ export function Layout() {
             <UserButton />
           </div>
         </div>
-        {(membership || inPlatform) && (
+        {membership && <NurseryTabs membership={membership} />}
+        {inPlatform && (
           <nav className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 pb-2">
-            {membership && (
-              <>
-                <Tab to={`/orgs/${orgId}`} end>
-                  Overview
-                </Tab>
-                <Tab to={`/orgs/${orgId}/team`}>Team</Tab>
-                {can(membership, Permissions.OrganizationManage) && <Tab to={`/orgs/${orgId}/settings`}>Settings</Tab>}
-              </>
-            )}
-            {inPlatform && (
-              <>
-                <Tab to="/platform" end>
-                  Nurseries
-                </Tab>
-                <Tab to="/platform/users">Users</Tab>
-              </>
-            )}
+            <Tab to="/platform" end>
+              Nurseries
+            </Tab>
+            <Tab to="/platform/users">Users</Tab>
           </nav>
         )}
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">
+      {/* On phones the nursery's bottom bar covers the last 56px; leave room for it. */}
+      <main className={`mx-auto max-w-5xl px-4 py-6 ${membership ? 'pb-24 sm:pb-6' : ''}`}>
         <ErrorBanner error={me.error} />
         <Outlet />
       </main>
+      {membership && <NurseryBottomBar membership={membership} />}
     </div>
   )
 }

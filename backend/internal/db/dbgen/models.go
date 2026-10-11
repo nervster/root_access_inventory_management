@@ -96,6 +96,164 @@ func (ns NullOrganizationStatus) Value() (driver.Value, error) {
 	return string(ns.OrganizationStatus), nil
 }
 
+type PlantEventType string
+
+const (
+	PlantEventTypeReceived        PlantEventType = "received"
+	PlantEventTypeRepotted        PlantEventType = "repotted"
+	PlantEventTypeMarkedForSale   PlantEventType = "marked_for_sale"
+	PlantEventTypeUnmarkedForSale PlantEventType = "unmarked_for_sale"
+	PlantEventTypeSold            PlantEventType = "sold"
+	PlantEventTypeDiscarded       PlantEventType = "discarded"
+	PlantEventTypeNameCorrected   PlantEventType = "name_corrected"
+	PlantEventTypePhotoAdded      PlantEventType = "photo_added"
+	PlantEventTypePhotoDeleted    PlantEventType = "photo_deleted"
+)
+
+func (e *PlantEventType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PlantEventType(s)
+	case string:
+		*e = PlantEventType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PlantEventType: %T", src)
+	}
+	return nil
+}
+
+type NullPlantEventType struct {
+	PlantEventType PlantEventType
+	Valid          bool // Valid is true if PlantEventType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPlantEventType) Scan(value interface{}) error {
+	if value == nil {
+		ns.PlantEventType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PlantEventType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPlantEventType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PlantEventType), nil
+}
+
+type PlantRank string
+
+const (
+	PlantRankFamily   PlantRank = "family"
+	PlantRankGenus    PlantRank = "genus"
+	PlantRankSpecies  PlantRank = "species"
+	PlantRankCultivar PlantRank = "cultivar"
+)
+
+func (e *PlantRank) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PlantRank(s)
+	case string:
+		*e = PlantRank(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PlantRank: %T", src)
+	}
+	return nil
+}
+
+type NullPlantRank struct {
+	PlantRank PlantRank
+	Valid     bool // Valid is true if PlantRank is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPlantRank) Scan(value interface{}) error {
+	if value == nil {
+		ns.PlantRank, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PlantRank.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPlantRank) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PlantRank), nil
+}
+
+type PlantStatus string
+
+const (
+	PlantStatusGrowing   PlantStatus = "growing"
+	PlantStatusForSale   PlantStatus = "for_sale"
+	PlantStatusSold      PlantStatus = "sold"
+	PlantStatusDiscarded PlantStatus = "discarded"
+)
+
+func (e *PlantStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PlantStatus(s)
+	case string:
+		*e = PlantStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PlantStatus: %T", src)
+	}
+	return nil
+}
+
+type NullPlantStatus struct {
+	PlantStatus PlantStatus
+	Valid       bool // Valid is true if PlantStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPlantStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.PlantStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PlantStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPlantStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PlantStatus), nil
+}
+
+type Batch struct {
+	ID             int64
+	OrganizationID int64
+	Code           string
+	PlantNameID    int64
+	VariegationID  *int64
+	Source         *string
+	ReceivedOn     time.Time
+	UnitCostCents  *int32
+	Notes          *string
+	CreatedBy      *int64
+	CreatedAt      time.Time
+}
+
+type InventoryCounter struct {
+	OrganizationID  int64
+	BarcodePrefix   string
+	NextPlantNumber int64
+	NextBatchNumber int64
+}
+
 type Invitation struct {
 	ID              int64
 	OrganizationID  int64
@@ -106,6 +264,7 @@ type Invitation struct {
 	ExpiresAt       time.Time
 	AcceptedAt      *time.Time
 	RevokedAt       *time.Time
+	InvitedByName   *string
 }
 
 type Membership struct {
@@ -125,10 +284,109 @@ type Organization struct {
 	CreatedAt time.Time
 }
 
+type Plant struct {
+	ID             int64
+	OrganizationID int64
+	Barcode        string
+	BatchID        int64
+	PlantNameID    int64
+	VariegationID  *int64
+	PotSizeID      int64
+	Status         PlantStatus
+	Notes          *string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	DiscardedAt    *time.Time
+	DiscardReason  *string
+}
+
+type PlantEvent struct {
+	ID             int64
+	OrganizationID int64
+	PlantID        int64
+	Type           PlantEventType
+	Details        []byte
+	ChangedBy      *int64
+	OccurredAt     time.Time
+	ChangedByName  *string
+}
+
+type PlantName struct {
+	ID             int64
+	OrganizationID *int64
+	ParentID       *int64
+	Rank           PlantRank
+	Name           string
+	FullName       string
+	Notes          *string
+	CreatedAt      time.Time
+}
+
+type PlantPhoto struct {
+	ID             int64
+	OrganizationID int64
+	PlantID        int64
+	StorageKey     string
+	TakenAt        time.Time
+	Caption        *string
+	UploadedBy     *int64
+	CreatedAt      time.Time
+	UploadedByName *string
+}
+
+type PotSize struct {
+	ID             int64
+	OrganizationID int64
+	Name           string
+	DiameterInches *float64
+	HeightInches   *float64
+	SortOrder      int32
+	Sellable       bool
+	Description    *string
+	CreatedAt      time.Time
+}
+
+type Product struct {
+	ID             int64
+	OrganizationID int64
+	PlantNameID    int64
+	VariegationID  *int64
+	Title          string
+	Description    *string
+	CreatedAt      time.Time
+	ProductType    *string
+	Tags           []string
+}
+
+type ProductPhoto struct {
+	OrganizationID int64
+	ProductID      int64
+	PhotoID        int64
+	Position       int32
+}
+
+type ProductVariant struct {
+	ID             int64
+	OrganizationID int64
+	ProductID      int64
+	PotSizeID      int64
+	Sku            string
+	PriceCents     *int32
+	CreatedAt      time.Time
+}
+
 type User struct {
 	ID          int64
 	ExternalID  string
 	Email       string
 	DisplayName *string
 	CreatedAt   time.Time
+}
+
+type Variegation struct {
+	ID             int64
+	OrganizationID *int64
+	Name           string
+	Notes          *string
+	CreatedAt      time.Time
 }

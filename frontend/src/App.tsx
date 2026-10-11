@@ -4,7 +4,15 @@ import { NotFound, RequireMembership, RequirePlatformAdmin, RequireSignIn } from
 import { Layout } from './components/Layout'
 import { AuthPage } from './pages/AuthPage'
 import { HomePage } from './pages/HomePage'
-import { OrgOverviewPage } from './pages/org/OrgOverviewPage'
+import { BatchPage } from './pages/org/BatchPage'
+import { BatchesPage } from './pages/org/BatchesPage'
+import { DashboardPage } from './pages/org/DashboardPage'
+import { LabelsPage } from './pages/org/LabelsPage'
+import { PlantPage } from './pages/org/PlantPage'
+import { ProductsPage } from './pages/org/ProductsPage'
+import { ReceiveBatchPage } from './pages/org/ReceiveBatchPage'
+import { ScanPage } from './pages/org/ScanPage'
+import { PotSizesPage } from './pages/org/PotSizesPage'
 import { SettingsPage } from './pages/org/SettingsPage'
 import { TeamPage } from './pages/org/TeamPage'
 import { OrganizationDetailPage } from './pages/platform/OrganizationDetailPage'
@@ -33,10 +41,19 @@ export default function App() {
         }
       />
       <Route element={<RequireSignIn />}>
+        {/* Outside the layout so only the labels print. */}
+        <Route path="orgs/:orgId/batches/:batchId/labels" element={<LabelsPage />} />
         <Route element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="orgs/:orgId" element={<RequireMembership />}>
-            <Route index element={<OrgOverviewPage />} />
+            <Route index element={<DashboardPage />} />
+            <Route path="batches" element={<BatchesPage />} />
+            <Route path="batches/new" element={<ReceiveBatchPage />} />
+            <Route path="batches/:batchId" element={<BatchPage />} />
+            <Route path="scan" element={<ScanPage />} />
+            <Route path="plants/:barcode" element={<PlantPage />} />
+            <Route path="products" element={<ProductsPage />} />
+            <Route path="pot-sizes" element={<PotSizesPage />} />
             <Route path="team" element={<TeamPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

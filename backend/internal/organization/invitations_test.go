@@ -60,6 +60,10 @@ func TestInviteSomeoneNew(t *testing.T) {
 	if invitation.Email != "new@example.com" || invitation.Expired {
 		t.Errorf("got %+v, want a pending invitation for new@example.com", invitation)
 	}
+	// The admin has no name, so the invitation shows who sent it by email.
+	if invitation.InvitedBy == nil || *invitation.InvitedBy != "admin@example.com" {
+		t.Errorf("invited by %v, want admin@example.com", invitation.InvitedBy)
+	}
 	// New people get Clerk's sign-up invitation, not our email.
 	if len(n.signUp.invited) != 1 || n.signUp.invited[0] != "new@example.com" || len(n.mail.sent) != 0 {
 		t.Errorf("Clerk invited %v, we emailed %v; want only a Clerk invitation", n.signUp.invited, n.mail.sent)

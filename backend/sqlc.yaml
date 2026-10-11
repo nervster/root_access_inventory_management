@@ -7,6 +7,7 @@ sql:
     # One folder per domain. sqlc doesn't search subfolders, so add each new folder here.
     queries:
       - internal/db/queries/accounts
+      - internal/db/queries/inventory
     gen:
       go:
         package: dbgen
@@ -18,6 +19,13 @@ sql:
           - db_type: timestamptz
             go_type: time.Time
           - db_type: timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
+          - db_type: date
+            go_type: time.Time
+          - db_type: date
             nullable: true
             go_type:
               type: time.Time

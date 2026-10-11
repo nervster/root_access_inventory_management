@@ -16,9 +16,11 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
+	"github.com/nervster/root_access_inventory_management/backend/internal/inventory"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/email"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
 )
 
 func main() {
@@ -49,6 +51,19 @@ func run() error {
 		return err
 	}
 
+	storageConfig := storage.Config{Bucket: cfg.S3Bucket, Region: cfg.AWSRegion, Endpoint: cfg.S3Endpoint, PublicEndpoint: cfg.S3PublicEndpoint}
+	photos, err := storage.New(ctx, storageConfig)
+	if err != nil {
+		return err
+	}
+	if storageConfig.Local() {
+		// Locally, make the LocalStack bucket. If LocalStack isn't running, the API still starts;
+		// only photos won't work.
+		if err := photos.PrepareLocalBucket(ctx, []string{cfg.AppURL}); err != nil {
+			slog.Warn("photo storage unavailable (is LocalStack running? docker compose up -d)", "error", err)
+		}
+	}
+
 	deliverer := organization.Deliverer{
 		SignUp: auth.NewClerkUsers(cfg.ClerkSecretKey),
 		Email:  email.SMTP{Addr: cfg.SMTPAddr, From: cfg.EmailFrom, Username: cfg.SMTPUsername, Password: cfg.SMTPPassword},
@@ -60,6 +75,8 @@ func run() error {
 		platformAdmins: auth.NewPlatformAdmins(cfg.PlatformAdminEmails),
 		orgs:           organization.NewStore(pool),
 		deliverer:      deliverer,
+		inventory:      inventory.NewStore(pool),
+		photos:         photos,
 	})
 
 	server := &http.Server{
@@ -98,6 +115,8 @@ type dependencies struct {
 	platformAdmins auth.PlatformAdmins
 	orgs           *organization.Store
 	deliverer      organization.Deliverer
+	inventory      *inventory.Store
+	photos         inventory.PhotoStorage
 }
 
 // newRouter builds the HTTP routes. It's separate from run so tests can use it.
@@ -113,6 +132,7 @@ func newRouter(d dependencies) *gin.Engine {
 	signedIn := api.Group("", d.authenticate, auth.RequireUser(d.users, d.platformAdmins))
 	organization.Routes(signedIn, d.orgs, d.deliverer)
 	organization.PlatformRoutes(signedIn, d.orgs, d.deliverer, d.platformAdmins)
+	inventory.Routes(signedIn, d.orgs, d.inventory, d.photos)
 
 	return router
 }

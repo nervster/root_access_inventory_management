@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
+import { useCallback } from 'react'
 import { useApi } from './client'
 import type {
   CreateOrganizationResponse,
+  DashboardDto,
   InvitationDto,
   MeResponse,
   MemberDto,
@@ -12,6 +14,18 @@ import type {
   PlatformOrganizationDetailDto,
   PlatformOrganizationDto,
   PlatformUserDto,
+  PotSizeDto,
+  BatchDto,
+  BatchWithPlantsDto,
+  PhotoCandidateDto,
+  PhotoDto,
+  PlantNameDto,
+  PlantWithHistoryDto,
+  ProductDto,
+  CorrectionResult,
+  RepotResult,
+  SaleResult,
+  VariegationDto,
 } from './types'
 
 export const queryKeys = {
@@ -159,4 +173,290 @@ export function usePlatformUsers(email: string) {
     queryKey: queryKeys.platformUsers(email),
     queryFn: () => api<PlatformUserDto[]>(`/platform/users?email=${encodeURIComponent(email)}`),
   })
+}
+
+// ── Inventory ───────────────────────────────────────────────────────────────
+
+export const inventoryKeys = {
+  /** Everything inventory-related in a nursery: invalidate this after any plant changes. */
+  all: (orgId: number) => ['orgs', orgId, 'inventory'] as const,
+  dashboard: (orgId: number) => ['orgs', orgId, 'inventory', 'dashboard'] as const,
+  potSizes: (orgId: number) => ['orgs', orgId, 'inventory', 'pot-sizes'] as const,
+  batches: (orgId: number) => ['orgs', orgId, 'inventory', 'batches'] as const,
+  batch: (orgId: number, batchId: number) => ['orgs', orgId, 'inventory', 'batches', batchId] as const,
+  plantNames: (orgId: number, search: string) => ['orgs', orgId, 'plant-names', search] as const,
+  variegations: (orgId: number) => ['orgs', orgId, 'variegations'] as const,
+  plant: (orgId: number, barcode: string) => ['orgs', orgId, 'inventory', 'plants', barcode] as const,
+  products: (orgId: number) => ['orgs', orgId, 'inventory', 'products'] as const,
+  plantPhotos: (orgId: number, barcode: string) => ['orgs', orgId, 'inventory', 'plants', barcode, 'photos'] as const,
+}
+
+export function useDashboard(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.dashboard(orgId), queryFn: () => api<DashboardDto>(`/orgs/${orgId}/dashboard`) })
+}
+
+export function usePotSizes(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.potSizes(orgId), queryFn: () => api<PotSizeDto[]>(`/orgs/${orgId}/pot-sizes`) })
+}
+
+export interface PotSizeInput {
+  name?: string
+  diameterInches?: number
+  heightInches?: number
+  sellable?: boolean
+  description?: string
+}
+
+export function usePotSizeActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const onSuccess = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: inventoryKeys.potSizes(orgId) }),
+      client.invalidateQueries({ queryKey: inventoryKeys.dashboard(orgId) }),
+    ])
+  return {
+    create: useMutation({
+      mutationFn: (body: PotSizeInput) => api<PotSizeDto>(`/orgs/${orgId}/pot-sizes`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: PotSizeInput & { id: number }) =>
+        api<PotSizeDto>(`/orgs/${orgId}/pot-sizes/${id}`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+    reorder: useMutation({
+      mutationFn: (ids: number[]) => api<PotSizeDto[]>(`/orgs/${orgId}/pot-sizes/order`, { method: 'PUT', json: { ids } }),
+      onSuccess,
+    }),
+    remove: useMutation({
+      mutationFn: (id: number) => api<void>(`/orgs/${orgId}/pot-sizes/${id}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+  }
+}
+
+export function useBatches(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.batches(orgId), queryFn: () => api<BatchDto[]>(`/orgs/${orgId}/batches`) })
+}
+
+export function useBatch(orgId: number, batchId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.batch(orgId, batchId),
+    queryFn: () => api<BatchWithPlantsDto>(`/orgs/${orgId}/batches/${batchId}`),
+  })
+}
+
+/**
+ * Plant names containing search (2+ characters), from the shared list and the nursery's own. Families
+ * are left out unless includeFamilies (for choosing where a new genus goes).
+ */
+export function usePlantNames(orgId: number, search: string, includeFamilies = false) {
+  const api = useApi()
+  const term = search.trim()
+  return useQuery({
+    queryKey: [...inventoryKeys.plantNames(orgId, term), includeFamilies],
+    queryFn: () =>
+      api<PlantNameDto[]>(`/orgs/${orgId}/plant-names?search=${encodeURIComponent(term)}${includeFamilies ? '&includeFamilies=true' : ''}`),
+    enabled: term.length >= 2,
+    staleTime: 5 * 60_000,
+  })
+}
+
+export function useVariegations(orgId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.variegations(orgId),
+    queryFn: () => api<VariegationDto[]>(`/orgs/${orgId}/variegations`),
+    staleTime: 5 * 60_000,
+  })
+}
+
+export interface ReceiveBatchInput {
+  plantNameId: number
+  variegationId?: number
+  potSizeId: number
+  quantity: number
+  receivedOn: string
+  source?: string
+  notes?: string
+  unitCostCents?: number
+}
+
+/** Receiving batches, repotting, and marking for sale: each refreshes everything inventory shows. */
+export function usePlantActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.all(orgId) })
+  return {
+    receiveBatch: useMutation({
+      mutationFn: (body: ReceiveBatchInput) => api<BatchWithPlantsDto>(`/orgs/${orgId}/batches`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    repot: useMutation({
+      mutationFn: (body: { potSizeId: number; batchId?: number; barcodes?: string[] }) =>
+        api<RepotResult>(`/orgs/${orgId}/repot`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    markForSale: useMutation({
+      mutationFn: (body: { batchId?: number; barcodes?: string[] }) =>
+        api<SaleResult>(`/orgs/${orgId}/plants/mark-for-sale`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    unmarkForSale: useMutation({
+      mutationFn: (barcodes: string[]) =>
+        api<{ unmarked: number }>(`/orgs/${orgId}/plants/unmark-for-sale`, { method: 'POST', json: { barcodes } }),
+      onSuccess,
+    }),
+    discard: useMutation({
+      mutationFn: (body: { barcodes: string[]; reason?: string }) =>
+        api<{ discarded: number }>(`/orgs/${orgId}/plants/discard`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    /** Fix name and/or variegation. Leave a field out to keep it; variegationId null means none. */
+    correct: useMutation({
+      mutationFn: (body: { batchId?: number; barcodes?: string[]; plantNameId?: number; variegationId?: number | null }) =>
+        api<CorrectionResult>(`/orgs/${orgId}/plants/correct`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    setNotes: useMutation({
+      mutationFn: ({ barcode, notes }: { barcode: string; notes: string }) =>
+        api<PlantWithHistoryDto>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}`, { method: 'PATCH', json: { notes } }),
+      onSuccess,
+    }),
+    /** Fix a batch's details. Leave a field out to keep it; "" clears text; unitCostCents null clears it. */
+    updateBatch: useMutation({
+      mutationFn: ({ batchId, ...body }: { batchId: number; source?: string; notes?: string; receivedOn?: string; unitCostCents?: number | null }) =>
+        api<BatchWithPlantsDto>(`/orgs/${orgId}/batches/${batchId}`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+  }
+}
+
+/** Looks up a plant by its barcode (for the plant page). */
+export function usePlant(orgId: number, barcode: string) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.plant(orgId, barcode),
+    queryFn: () => api<PlantWithHistoryDto>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}`),
+  })
+}
+
+/** Returns a function that looks up a plant by barcode, using the cache when possible (for scanning). */
+export function useLookupPlant(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useCallback(
+    (barcode: string) =>
+      client.fetchQuery({
+        queryKey: inventoryKeys.plant(orgId, barcode),
+        queryFn: () => api<PlantWithHistoryDto>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}`),
+      }),
+    [api, client, orgId],
+  )
+}
+
+export function useProducts(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: inventoryKeys.products(orgId), queryFn: () => api<ProductDto[]>(`/orgs/${orgId}/products`) })
+}
+
+/** Product details and prices. Products and SKUs themselves are created by marking plants for sale. */
+export function useProductActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.all(orgId) })
+  return {
+    update: useMutation({
+      mutationFn: ({ id, ...body }: { id: number; title?: string; description?: string; productType?: string; tags?: string[] }) =>
+        api<ProductDto>(`/orgs/${orgId}/products/${id}`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+    updateVariant: useMutation({
+      mutationFn: ({ productId, potSizeId, ...body }: { productId: number; potSizeId: number; sku?: string; priceCents?: number }) =>
+        api<ProductDto>(`/orgs/${orgId}/products/${productId}/variants/${potSizeId}`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+    removePrice: useMutation({
+      mutationFn: ({ productId, potSizeId }: { productId: number; potSizeId: number }) =>
+        api<void>(`/orgs/${orgId}/products/${productId}/variants/${potSizeId}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+    /** Replaces the product's images with photoIds, in order. */
+    setImages: useMutation({
+      mutationFn: ({ productId, photoIds }: { productId: number; photoIds: number[] }) =>
+        api<ProductDto>(`/orgs/${orgId}/products/${productId}/photos`, { method: 'PUT', json: { photoIds } }),
+      onSuccess,
+    }),
+  }
+}
+
+export function usePlantPhotos(orgId: number, barcode: string) {
+  const api = useApi()
+  return useQuery({
+    queryKey: inventoryKeys.plantPhotos(orgId, barcode),
+    queryFn: () => api<PhotoDto[]>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}/photos`),
+    staleTime: 30 * 60_000, // view links last an hour
+  })
+}
+
+/**
+ * Adding and deleting a plant's photos. Adding takes three steps so the file goes straight from the
+ * phone to storage: get an upload link from the API, PUT the file there, then record it.
+ */
+export function usePlantPhotoActions(orgId: number, barcode: string) {
+  const api = useApi()
+  const client = useQueryClient()
+  const path = `/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}/photos`
+  const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.plantPhotos(orgId, barcode) })
+  return {
+    add: useMutation({
+      mutationFn: async ({ photo, caption, takenAt }: { photo: Blob; caption?: string; takenAt?: string }) => {
+        const link = await api<{ uploadUrl: string; contentType: string; key: string }>(`${path}/upload-link`, {
+          method: 'POST',
+          json: { contentType: 'image/jpeg' },
+        })
+        // Straight to storage: no API session token here, the link itself grants the upload.
+        const upload = await fetch(link.uploadUrl, { method: 'PUT', headers: { 'Content-Type': link.contentType }, body: photo })
+        if (!upload.ok) throw new Error(`The photo didn't upload (${upload.status}). Try again.`)
+        return api<PhotoDto>(path, { method: 'POST', json: { key: link.key, caption, takenAt } })
+      },
+      onSuccess,
+    }),
+    remove: useMutation({
+      mutationFn: (photoId: number) => api<void>(`/orgs/${orgId}/photos/${photoId}`, { method: 'DELETE' }),
+      onSuccess,
+    }),
+  }
+}
+
+/** Photos of a product's plants that can be its images (only fetched while choosing). */
+export function useProductPhotoCandidates(orgId: number, productId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: [...inventoryKeys.products(orgId), productId, 'photo-candidates'],
+    queryFn: () => api<PhotoCandidateDto[]>(`/orgs/${orgId}/products/${productId}/photo-candidates`),
+    enabled,
+  })
+}
+
+/** Adding the nursery's own plant names and variegations to the shared lists. */
+export function useNameActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return {
+    addPlantName: useMutation({
+      mutationFn: (body: { parentId?: number; rank: PlantNameDto['rank']; name: string; notes?: string }) =>
+        api<PlantNameDto>(`/orgs/${orgId}/plant-names`, { method: 'POST', json: body }),
+      onSuccess: () => client.invalidateQueries({ queryKey: ['orgs', orgId, 'plant-names'] }),
+    }),
+    addVariegation: useMutation({
+      mutationFn: (body: { name: string; notes?: string }) => api<VariegationDto>(`/orgs/${orgId}/variegations`, { method: 'POST', json: body }),
+      onSuccess: () => client.invalidateQueries({ queryKey: inventoryKeys.variegations(orgId) }),
+    }),
+  }
 }

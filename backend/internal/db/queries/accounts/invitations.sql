@@ -1,8 +1,9 @@
 -- Inside one nursery (run through db.InTenant) --
 
 -- name: CreateInvitation :one
-INSERT INTO invitations (organization_id, email, role, invited_by_user_id, expires_at)
-VALUES (@organization_id, @email, @role, @invited_by_user_id, @expires_at)
+-- invited_by_name: the inviter's name as it is now (see migration 00014).
+INSERT INTO invitations (organization_id, email, role, invited_by_user_id, invited_by_name, expires_at)
+VALUES (@organization_id, @email, @role, @invited_by_user_id, current_user_name(), @expires_at)
 RETURNING *;
 
 -- name: ListOpenInvitations :many

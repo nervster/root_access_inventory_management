@@ -110,6 +110,7 @@ export function InvitationList({
               <p className="flex flex-wrap items-center gap-2 text-sm text-stone-500">
                 <Badge>{ROLE_LABELS[invitation.role]}</Badge>
                 {invitation.expired ? <Badge tone="red">Expired</Badge> : <span>expires {formatDate(invitation.expiresAt)}</span>}
+                {invitation.invitedBy && <span>· invited by {invitation.invitedBy}</span>}
               </p>
             </div>
             {rules.canManageInvitation(invitation) && (

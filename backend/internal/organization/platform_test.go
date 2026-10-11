@@ -44,6 +44,9 @@ func TestPlatformCreateOrganization(t *testing.T) {
 	if created.OwnerInvitation.Role != dbgen.OrgRoleOwner || created.OwnerInvitation.Email != "founder@example.com" || created.DeliveryError != nil {
 		t.Errorf("invitation = %+v (delivery error %v), want an Owner invitation sent to founder@example.com", created.OwnerInvitation, created.DeliveryError)
 	}
+	if created.OwnerInvitation.InvitedBy == nil || *created.OwnerInvitation.InvitedBy != "platform@example.com" {
+		t.Errorf("owner invitation sent by %v, want the platform admin", created.OwnerInvitation.InvitedBy)
+	}
 	if len(n.signUp.invited) != 1 || n.signUp.invited[0] != "founder@example.com" {
 		t.Errorf("Clerk invited %v, want founder@example.com", n.signUp.invited)
 	}
@@ -55,7 +58,16 @@ func TestPlatformCreateOrganization(t *testing.T) {
 
 	var orgs []platformOrganizationResponse
 	_ = json.Unmarshal(n.expect("platform", "GET", "/api/platform/organizations", "", http.StatusOK).Body.Bytes(), &orgs)
-	if len(orgs) != 2 || orgs[0].Name != "Root Access HTX" || orgs[0].MemberCount != 0 || orgs[1].MemberCount != 4 {
+	// Other test packages may have nurseries in the database at the same moment; check ours.
+	counts := map[string]int64{}
+	var order []string
+	for _, org := range orgs {
+		if org.Name == "Root Access HTX" || org.Name == "Test Nursery" {
+			counts[org.Name] = org.MemberCount
+			order = append(order, org.Name)
+		}
+	}
+	if len(order) != 2 || order[0] != "Root Access HTX" || counts["Root Access HTX"] != 0 || counts["Test Nursery"] != 4 {
 		t.Errorf("organizations = %+v, want Root Access HTX (0 members) and Test Nursery (4), by name", orgs)
 	}
 }
@@ -114,7 +126,16 @@ func TestPlatformSearchUsers(t *testing.T) {
 	}
 
 	_ = json.Unmarshal(n.expect("platform", "GET", "/api/platform/users", "", http.StatusOK).Body.Bytes(), &users)
-	if len(users) != 6 {
-		t.Errorf("got %d users with no search term, want all 6", len(users))
+	// Other test packages may have users in the database at the same moment; check ours are all there.
+	found := 0
+	for _, u := range users {
+		for _, ours := range n.users {
+			if u.ID == ours.ID {
+				found++
+			}
+		}
+	}
+	if found != len(n.users) {
+		t.Errorf("found %d of this test's %d users with no search term, want all", found, len(n.users))
 	}
 }

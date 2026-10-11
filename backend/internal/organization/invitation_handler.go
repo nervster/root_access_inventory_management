@@ -12,6 +12,7 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/auth"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/web"
 )
 
 type invitationResponse struct {
@@ -21,12 +22,13 @@ type invitationResponse struct {
 	CreatedAt time.Time     `json:"createdAt"`
 	ExpiresAt time.Time     `json:"expiresAt"`
 	Expired   bool          `json:"expired"`
+	InvitedBy *string       `json:"invitedBy"` // their name (email if they have none), as it was then
 }
 
 func newInvitationResponse(i dbgen.Invitation) invitationResponse {
 	return invitationResponse{
 		ID: i.ID, Email: i.Email, Role: i.Role, CreatedAt: i.CreatedAt, ExpiresAt: i.ExpiresAt,
-		Expired: !i.ExpiresAt.After(time.Now()),
+		Expired: !i.ExpiresAt.After(time.Now()), InvitedBy: i.InvitedByName,
 	}
 }
 
@@ -44,7 +46,7 @@ type pendingInvitationResponse struct {
 func (h handler) listInvitations(c *gin.Context) {
 	invitations, err := h.store.Invitations(c.Request.Context(), CurrentAccess(c).OrganizationID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	response := make([]invitationResponse, len(invitations))
@@ -63,21 +65,21 @@ func (h handler) createInvitation(c *gin.Context) {
 	access := CurrentAccess(c)
 	var req createInvitationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		fail(c, http.StatusBadRequest, "request body must be JSON")
+		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
 		return
 	}
 	// A plain address only (not "Name <address>").
 	address, err := mail.ParseAddress(req.Email)
 	if err != nil || address.Address != strings.TrimSpace(req.Email) || len(address.Address) > 320 {
-		fail(c, http.StatusBadRequest, "enter a valid email address")
+		web.Fail(c, http.StatusBadRequest, "enter a valid email address")
 		return
 	}
 	if !validRole(req.Role) {
-		fail(c, http.StatusBadRequest, "role must be owner, admin, staff, or viewer")
+		web.Fail(c, http.StatusBadRequest, "role must be owner, admin, staff, or viewer")
 		return
 	}
 	if !CanManageRole(access.Role, req.Role) {
-		fail(c, http.StatusForbidden, "you can't invite someone as "+string(req.Role))
+		web.Fail(c, http.StatusForbidden, "you can't invite someone as "+string(req.Role))
 		return
 	}
 
@@ -85,13 +87,13 @@ func (h handler) createInvitation(c *gin.Context) {
 	invitation, err := h.store.CreateInvitation(c.Request.Context(), access.OrganizationID, address.Address, req.Role, &user.ID)
 	switch {
 	case errors.Is(err, ErrAlreadyMember):
-		fail(c, http.StatusConflict, address.Address+" is already a member")
+		web.Fail(c, http.StatusConflict, address.Address+" is already a member")
 		return
 	case errors.Is(err, ErrAlreadyInvited):
-		fail(c, http.StatusConflict, address.Address+" already has a pending invitation; resend it instead")
+		web.Fail(c, http.StatusConflict, address.Address+" already has a pending invitation; resend it instead")
 		return
 	case err != nil:
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 
@@ -108,7 +110,7 @@ func (h handler) resendInvitation(c *gin.Context) {
 	}
 	invitation, err := h.store.ExtendInvitation(c.Request.Context(), invitation.OrganizationID, invitation.ID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	if !h.deliver(c, invitation) {
@@ -123,7 +125,7 @@ func (h handler) revokeInvitation(c *gin.Context) {
 		return
 	}
 	if err := h.store.RevokeInvitation(c.Request.Context(), invitation.OrganizationID, invitation.ID); err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -133,21 +135,21 @@ func (h handler) revokeInvitation(c *gin.Context) {
 // its role. Otherwise it writes the error response and returns false.
 func (h handler) manageableInvitation(c *gin.Context) (dbgen.Invitation, bool) {
 	access := CurrentAccess(c)
-	invitationID, ok := idParam(c, "invitationId")
+	invitationID, ok := web.IDParam(c, "invitationId")
 	if !ok {
-		fail(c, http.StatusNotFound, "invitation not found")
+		web.Fail(c, http.StatusNotFound, "invitation not found")
 		return dbgen.Invitation{}, false
 	}
 	invitation, err := h.store.OpenInvitation(c.Request.Context(), access.OrganizationID, invitationID)
 	switch {
 	case errors.Is(err, ErrNotFound):
-		fail(c, http.StatusNotFound, "invitation not found")
+		web.Fail(c, http.StatusNotFound, "invitation not found")
 		return dbgen.Invitation{}, false
 	case err != nil:
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return dbgen.Invitation{}, false
 	case !CanManageRole(access.Role, invitation.Role):
-		fail(c, http.StatusForbidden, "you can't manage this invitation")
+		web.Fail(c, http.StatusForbidden, "you can't manage this invitation")
 		return dbgen.Invitation{}, false
 	}
 	return invitation, true
@@ -158,12 +160,12 @@ func (h handler) manageableInvitation(c *gin.Context) (dbgen.Invitation, bool) {
 func (h handler) deliver(c *gin.Context, invitation dbgen.Invitation) bool {
 	org, err := h.store.Organization(c.Request.Context(), invitation.OrganizationID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return false
 	}
 	if err := h.deliverer.Deliver(c.Request.Context(), invitation, org.Name); err != nil {
 		slog.Error("deliver invitation", "invitation", invitation.ID, "error", err)
-		fail(c, http.StatusBadGateway, "the invitation was saved, but it couldn't be sent; try resending it")
+		web.Fail(c, http.StatusBadGateway, "the invitation was saved, but it couldn't be sent; try resending it")
 		return false
 	}
 	return true
@@ -173,31 +175,31 @@ func (h handler) deliver(c *gin.Context, invitation dbgen.Invitation) bool {
 
 func (h handler) acceptInvitation(c *gin.Context) {
 	user := auth.CurrentUser(c)
-	invitationID, ok := idParam(c, "invitationId")
+	invitationID, ok := web.IDParam(c, "invitationId")
 	if !ok {
-		fail(c, http.StatusNotFound, "invitation not found")
+		web.Fail(c, http.StatusNotFound, "invitation not found")
 		return
 	}
 
 	orgID, err := h.store.AcceptInvitation(c.Request.Context(), invitationID, user)
 	switch {
 	case errors.Is(err, ErrNotFound):
-		fail(c, http.StatusNotFound, "invitation not found")
+		web.Fail(c, http.StatusNotFound, "invitation not found")
 		return
 	case errors.Is(err, ErrInvitationGone):
-		fail(c, http.StatusGone, "this invitation is no longer valid; ask the organization to send a new one")
+		web.Fail(c, http.StatusGone, "this invitation is no longer valid; ask the organization to send a new one")
 		return
 	case errors.Is(err, ErrSuspended):
-		fail(c, http.StatusForbidden, "organization is suspended")
+		web.Fail(c, http.StatusForbidden, "organization is suspended")
 		return
 	case err != nil:
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 
 	memberships, err := h.memberships(c, user.ID)
 	if err != nil {
-		failInternal(c, err)
+		web.FailInternal(c, err)
 		return
 	}
 	for _, m := range memberships {
@@ -206,21 +208,21 @@ func (h handler) acceptInvitation(c *gin.Context) {
 			return
 		}
 	}
-	failInternal(c, errors.New("accepted invitation but membership not found"))
+	web.FailInternal(c, errors.New("accepted invitation but membership not found"))
 }
 
 func (h handler) declineInvitation(c *gin.Context) {
-	invitationID, ok := idParam(c, "invitationId")
+	invitationID, ok := web.IDParam(c, "invitationId")
 	if !ok {
-		fail(c, http.StatusNotFound, "invitation not found")
+		web.Fail(c, http.StatusNotFound, "invitation not found")
 		return
 	}
 	err := h.store.DeclineInvitation(c.Request.Context(), invitationID, auth.CurrentUser(c))
 	switch {
 	case errors.Is(err, ErrNotFound):
-		fail(c, http.StatusNotFound, "invitation not found")
+		web.Fail(c, http.StatusNotFound, "invitation not found")
 	case err != nil:
-		failInternal(c, err)
+		web.FailInternal(c, err)
 	default:
 		c.Status(http.StatusNoContent)
 	}
