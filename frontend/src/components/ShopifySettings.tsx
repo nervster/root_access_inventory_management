@@ -115,6 +115,15 @@ function Connected({ orgId, connection }: { orgId: number; connection: ShopifyCo
         )}
       </div>
 
+      {!connection.needsReconnect && connection.missingScopes.length > 0 && (
+        <div className="space-y-3">
+          <Notice>
+            Plant Stock needs new permissions from your store ({connection.missingScopes.join(', ')}), for example to see return requests. Connect again to approve them.
+          </Notice>
+          <ConnectForm orgId={orgId} shop={shop} />
+        </div>
+      )}
+
       {connection.needsReconnect ? (
         <div className="space-y-3">
           <ErrorBanner error={new Error('Shopify no longer accepts Plant Stock’s access (was the app uninstalled?). Connect again to fix it.')} />

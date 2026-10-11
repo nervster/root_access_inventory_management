@@ -65,7 +65,8 @@ online. Root Access HTX is the first nursery.
 - [ ] Missed windows: orders not collected in their window are flagged, so staff can remind the customer or ask them to choose a new window; an order that's never collected is cancelled and its plants go straight back on sale
 - [ ] Customers change their pickup window after ordering (the workflow is still being decided)
 - [ ] Picked up is final (no undo): a sale is only reversed by a return
-- [ ] Returns (Shopify Returns; needs the `read_returns`/`write_returns` scopes and a reconnect): a refund only once the plant is physically back (handed over in person, or left at the drop-off table), never for a photo. Return requests form a queue; staff scan the returned plant (which one, when an order had several), it waits for a check, then goes back on sale or is discarded; the refund is issued in Shopify within 1 day of receiving the plant, and the queue flags any past that
+- [x] Returns (Shopify Returns; needs the `read_returns` scope and a reconnect): a refund only once the plant is physically back (handed over in person, or left at the drop-off table), never for a photo. Return requests form a queue; staff scan the returned plant (which one, when an order had several), it waits for a check, then goes back on sale or is discarded; the refund is issued in Shopify within 1 day of receiving the plant, and the queue flags any past that
+- [x] Refunds without a return (Refund clicked instead of Return, or money only) are flagged on the Returns tab until someone reviews them
 - [ ] Cancelled orders, including ones never picked up, put their held plants straight back on sale (they never left)
 - [ ] Register Shopify webhooks (orders, app/uninstalled, privacy topics) for the deployed URL
 - [ ] Nightly sync check that finds and fixes drift between Plant Stock and Shopify

@@ -110,6 +110,7 @@ const (
 	PlantEventTypePhotoDeleted      PlantEventType = "photo_deleted"
 	PlantEventTypeHeldForOrder      PlantEventType = "held_for_order"
 	PlantEventTypeReleasedFromOrder PlantEventType = "released_from_order"
+	PlantEventTypeReturned          PlantEventType = "returned"
 )
 
 func (e *PlantEventType) Scan(src interface{}) error {
@@ -198,6 +199,7 @@ const (
 	PlantStatusForSale   PlantStatus = "for_sale"
 	PlantStatusHeld      PlantStatus = "held"
 	PlantStatusSold      PlantStatus = "sold"
+	PlantStatusReturned  PlantStatus = "returned"
 	PlantStatusDiscarded PlantStatus = "discarded"
 )
 
@@ -341,6 +343,7 @@ type Plant struct {
 	DiscardedAt    *time.Time
 	DiscardReason  *string
 	OrderItemID    *int64
+	ReturnItemID   *int64
 }
 
 type PlantEvent struct {
@@ -416,6 +419,43 @@ type ProductVariant struct {
 	Sku            string
 	PriceCents     *int32
 	CreatedAt      time.Time
+}
+
+type Refund struct {
+	ID              int64
+	OrganizationID  int64
+	OrderID         int64
+	ShopifyRefundID string
+	ShopifyReturnID *string
+	RefundedAt      time.Time
+	AmountCents     *int32
+	Items           *string
+	ReviewedAt      *time.Time
+	ReviewedByName  *string
+}
+
+type Return struct {
+	ID              int64
+	OrganizationID  int64
+	OrderID         int64
+	ShopifyReturnID string
+	Name            string
+	ShopifyStatus   string
+	RequestedAt     time.Time
+	ReceivedAt      *time.Time
+	Refunded        bool
+}
+
+type ReturnItem struct {
+	ID                      int64
+	OrganizationID          int64
+	ReturnID                int64
+	ShopifyReturnLineItemID string
+	OrderItemID             *int64
+	Quantity                int32
+	RefundedQuantity        int32
+	Reason                  *string
+	CustomerNote            *string
 }
 
 type ShopifyConnection struct {

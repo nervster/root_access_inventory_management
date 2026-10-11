@@ -53,6 +53,7 @@ type connectionResponse struct {
 	Configured      bool       `json:"configured"`      // the server has the app's credentials
 	OrdersCheckedAt *time.Time `json:"ordersCheckedAt"` // orders are read up to here
 	OrdersError     *string    `json:"ordersError"`     // why reading orders failed last time
+	MissingScopes   []string   `json:"missingScopes"`   // permissions added since it connected: connect again to grant them
 	Connected       bool       `json:"connected"`
 	Shop            *string    `json:"shop"`
 	NeedsReconnect  bool       `json:"needsReconnect"`
@@ -77,6 +78,7 @@ func (h handler) getConnection(c *gin.Context) {
 		response.LocationID, response.LocationName = connection.LocationID, connection.LocationName
 		response.ConnectedByName, response.ConnectedAt = connection.ConnectedByName, &connection.ConnectedAt
 		response.OrdersCheckedAt, response.OrdersError = connection.OrdersCheckedThrough, connection.OrdersError
+		response.MissingScopes = Token{Scopes: strings.Split(connection.Scopes, ",")}.MissingScopes()
 	}
 	c.JSON(http.StatusOK, response)
 }

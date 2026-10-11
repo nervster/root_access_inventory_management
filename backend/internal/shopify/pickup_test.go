@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,8 +27,15 @@ func (s *shopTest) ordersIn(as, status string) []pickupOrderJSON {
 
 func (s *shopTest) ordersRequest(as, method, path string, wantStatus int) *httptest.ResponseRecorder {
 	s.t.Helper()
+	return s.ordersRequestBody(as, method, path, "", wantStatus)
+}
+
+func (s *shopTest) ordersRequestBody(as, method, path, body string, wantStatus int) *httptest.ResponseRecorder {
+	s.t.Helper()
 	recorder := httptest.NewRecorder()
-	s.ordersRouter(as).ServeHTTP(recorder, httptest.NewRequest(method, fmt.Sprintf("/api/orgs/%d%s", s.org.ID, path), nil))
+	request := httptest.NewRequest(method, fmt.Sprintf("/api/orgs/%d%s", s.org.ID, path), strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	s.ordersRouter(as).ServeHTTP(recorder, request)
 	if recorder.Code != wantStatus {
 		s.t.Fatalf("%s %s as %s: %d, want %d (%s)", method, path, as, recorder.Code, wantStatus, recorder.Body)
 	}

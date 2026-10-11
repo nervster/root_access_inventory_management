@@ -139,7 +139,7 @@ export function ScanPage() {
                       : (s.problem ?? 'Looking up…')}
                   </p>
                 </div>
-                {s.plant && <Badge tone={s.plant.status === 'for_sale' ? 'green' : s.plant.status === 'held' ? 'amber' : s.plant.status === 'growing' ? 'neutral' : 'red'}>{PLANT_STATUS_LABELS[s.plant.status]}</Badge>}
+                {s.plant && <Badge tone={s.plant.status === 'for_sale' ? 'green' : s.plant.status === 'held' || s.plant.status === 'returned' ? 'amber' : s.plant.status === 'growing' ? 'neutral' : 'red'}>{PLANT_STATUS_LABELS[s.plant.status]}</Badge>}
                 {s.problem && <Badge tone="red">Not found</Badge>}
                 <Button variant="ghost" aria-label={`Remove ${s.barcode} from the list`} onClick={() => {
                     inList.current.delete(s.barcode)

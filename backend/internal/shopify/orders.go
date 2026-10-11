@@ -115,6 +115,7 @@ func (s *Store) ImportOrders(ctx context.Context, orgID int64) error {
 	}
 
 	through := started
+	readReturns := canReadReturns(connection.Scopes)
 	var after *string
 	for page := 0; ; page++ {
 		var data struct {
@@ -133,8 +134,14 @@ func (s *Store) ImportOrders(ctx context.Context, orgID int64) error {
 			return s.recordOrdersError(ctx, orgID, err)
 		}
 		for _, order := range data.Orders.Nodes {
-			if err := s.importOrder(ctx, orgID, shop, order); err != nil {
+			status, err := s.importOrder(ctx, orgID, shop, order)
+			if err != nil {
 				return fmt.Errorf("order %s: %w", order.Name, err)
+			}
+			if readReturns && status == "picked_up" { // only fulfilled orders can have returns
+				if err := s.importReturns(ctx, orgID, shop, token, order.ID); err != nil {
+					return fmt.Errorf("returns of %s: %w", order.Name, err)
+				}
 			}
 		}
 
@@ -153,6 +160,23 @@ func (s *Store) ImportOrders(ctx context.Context, orgID int64) error {
 		after = &data.Orders.PageInfo.EndCursor
 	}
 
+	if readReturns {
+		// Unsettled returns, again: a refund may not mark its order changed.
+		var active []string
+		err := db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) (err error) {
+			active, err = q.OrdersWithActiveReturns(ctx, orgID)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+		for _, orderID := range active {
+			if err := s.importReturns(ctx, orgID, shop, token, orderID); err != nil {
+				return fmt.Errorf("returns of %s: %w", orderID, err)
+			}
+		}
+	}
+
 	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
 		return q.SetOrdersChecked(ctx, dbgen.SetOrdersCheckedParams{OrganizationID: orgID, Through: &through})
 	})
@@ -167,18 +191,21 @@ func (s *Store) recordOrdersError(ctx context.Context, orgID int64, cause error)
 }
 
 // importOrder records one order and holds, releases, or sells its plants (one transaction each, so
-// a problem with one order doesn't undo the others).
-func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order shopifyOrder) error {
-	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+// a problem with one order doesn't undo the others). It returns the order's status in Plant Stock
+// ("" if Plant Stock doesn't keep it).
+func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order shopifyOrder) (status string, err error) {
+	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
 		existing, err := q.GetOrderByShopifyID(ctx, dbgen.GetOrderByShopifyIDParams{OrganizationID: orgID, ShopifyOrderID: order.ID})
 		if errors.Is(err, pgx.ErrNoRows) {
 			if order.CancelledAt != nil || orderHandedOver(order.DisplayFulfillmentStatus) {
 				return nil // over before Plant Stock saw it: nothing to hold
 			}
+			status = "open"
 			return s.createOrder(ctx, q, orgID, shop, order)
 		} else if err != nil {
 			return err
 		}
+		status = existing.Status
 
 		err = q.UpdateOrderFromShopify(ctx, dbgen.UpdateOrderFromShopifyParams{
 			OrganizationID: orgID, ID: existing.ID, CancelledAt: order.CancelledAt,
@@ -194,6 +221,7 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 				return err
 			}
 			slog.Info("order cancelled; plants back on sale", "organization", orgID, "order", order.Name, "plants", len(released))
+			status = "cancelled"
 			return q.SetOrderStatus(ctx, dbgen.SetOrderStatusParams{OrganizationID: orgID, ID: existing.ID, Status: "cancelled"})
 		case orderHandedOver(order.DisplayFulfillmentStatus):
 			sold, err := q.SellOrder(ctx, dbgen.SellOrderParams{OrganizationID: orgID, OrderID: existing.ID})
@@ -201,10 +229,12 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 				return err
 			}
 			slog.Info("order fulfilled in Shopify; plants sold", "organization", orgID, "order", order.Name, "plants", len(sold))
+			status = "picked_up"
 			return q.SetOrderStatus(ctx, dbgen.SetOrderStatusParams{OrganizationID: orgID, ID: existing.ID, Status: "picked_up"})
 		}
 		return nil
 	})
+	return status, err
 }
 
 // orderHandedOver reports whether Shopify shows the order as fulfilled (picked up).
@@ -280,7 +310,7 @@ func (s *Store) HandleWebhook(ctx context.Context, topic, shop string) error {
 		return err
 	}
 	switch {
-	case strings.HasPrefix(topic, "orders/"):
+	case strings.HasPrefix(topic, "orders/"), strings.HasPrefix(topic, "returns/"), strings.HasPrefix(topic, "refunds/"):
 		return s.QueueOrderImport(ctx, orgID)
 	case topic == "app/uninstalled":
 		slog.Info("Plant Stock was uninstalled from a store", "organization", orgID, "shop", shop)

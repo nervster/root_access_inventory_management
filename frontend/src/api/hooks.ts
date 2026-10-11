@@ -31,6 +31,8 @@ import type {
   OrderDto,
   OrderStatus,
   OrdersStatusDto,
+  ReturnDto,
+  UnreturnedRefundDto,
   VariegationDto,
 } from './types'
 
@@ -47,6 +49,8 @@ export const queryKeys = {
   shopifyProducts: (orgId: number) => ['orgs', orgId, 'shopify', 'products'] as const,
   orders: (orgId: number, status: OrderStatus) => ['orgs', orgId, 'orders', status] as const,
   ordersStatus: (orgId: number) => ['orgs', orgId, 'orders', 'status'] as const,
+  returns: (orgId: number, show: 'active' | 'done') => ['orgs', orgId, 'orders', 'returns', show] as const,
+  unreturnedRefunds: (orgId: number) => ['orgs', orgId, 'orders', 'returns', 'unreturned-refunds'] as const,
 }
 
 // ── Signed-in user ──────────────────────────────────────────────────────────
@@ -586,5 +590,55 @@ export function useCheckOrders(orgId: number) {
     onSuccess: () => {
       setTimeout(() => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders'] }), 4000)
     },
+  })
+}
+
+// ── Returns ─────────────────────────────────────────────────────────────────
+
+/** Return requests still needing something (active), or finished ones. */
+export function useReturns(orgId: number, show: 'active' | 'done') {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.returns(orgId, show),
+    queryFn: () => api<ReturnDto[]>(`/orgs/${orgId}/returns?show=${show}`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Receiving a returned plant, and settling it after its check. */
+export function useReturnActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const refresh = () => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders', 'returns'] })
+  return {
+    receive: useMutation({
+      mutationFn: ({ returnId, barcode }: { returnId: number; barcode: string }) =>
+        api<void>(`/orgs/${orgId}/returns/${returnId}/receive`, { method: 'POST', json: { barcode } }),
+      onSuccess: refresh,
+    }),
+    check: useMutation({
+      mutationFn: ({ barcode, to, reason }: { barcode: string; to: 'for_sale' | 'growing' | 'discarded'; reason?: string }) =>
+        api<void>(`/orgs/${orgId}/returned-plants/${barcode}/check`, { method: 'POST', json: { to, reason } }),
+      onSuccess: refresh,
+    }),
+  }
+}
+
+/** Refunds issued without a return, not yet reviewed. */
+export function useUnreturnedRefunds(orgId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.unreturnedRefunds(orgId),
+    queryFn: () => api<UnreturnedRefundDto[]>(`/orgs/${orgId}/refunds/unreturned`),
+    refetchInterval: 60_000,
+  })
+}
+
+export function useReviewRefund(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (refundId: number) => api<void>(`/orgs/${orgId}/refunds/${refundId}/reviewed`, { method: 'POST' }),
+    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.unreturnedRefunds(orgId) }),
   })
 }

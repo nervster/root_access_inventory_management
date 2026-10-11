@@ -123,7 +123,7 @@ export interface PotSizeDto {
 }
 
 export interface DashboardDto {
-  plants: { growing: number; forSale: number; held: number; sold: number; discarded: number }
+  plants: { growing: number; forSale: number; held: number; returned: number; sold: number; discarded: number }
   last30Days: { received: number; discarded: number }
   /** The prices of everything for sale right now. */
   forSaleValueCents: number
@@ -135,12 +135,13 @@ export interface DashboardDto {
   potSizes: { id: number; name: string; sellable: boolean; growing: number; forSale: number }[]
 }
 
-export type PlantStatus = 'growing' | 'for_sale' | 'held' | 'sold' | 'discarded'
+export type PlantStatus = 'growing' | 'for_sale' | 'held' | 'sold' | 'returned' | 'discarded'
 export const PLANT_STATUS_LABELS: Record<PlantStatus, string> = {
   growing: 'Growing',
   for_sale: 'For sale',
   held: 'Held for an order',
   sold: 'Sold',
+  returned: 'Returned, to check',
   discarded: 'Discarded',
 }
 
@@ -177,7 +178,7 @@ export interface BatchDto {
   notes: string | null
   createdAt: string
   /** held: bought online, waiting for pickup. */
-  plantCounts: { growing: number; forSale: number; held: number; sold: number; discarded: number }
+  plantCounts: { growing: number; forSale: number; held: number; returned: number; sold: number; discarded: number }
 }
 
 export interface PlantDto {
@@ -242,6 +243,7 @@ export type PlantEventType =
   | 'unmarked_for_sale'
   | 'held_for_order'
   | 'released_from_order'
+  | 'returned'
   | 'sold'
   | 'discarded'
   | 'name_corrected'
@@ -262,6 +264,8 @@ export interface PlantEventDto {
     caption?: string
     /** The online order it was held for or released from, e.g. #1001. */
     order?: string
+    /** The return it came back with, e.g. #1001-R1. */
+    return?: string
   }
   occurredAt: string
   /** Who: their name (their email if they have none); null for system changes. */
@@ -343,6 +347,8 @@ export interface ShopifyConnectionDto {
   ordersCheckedAt: string | null
   /** Why reading orders failed last time. */
   ordersError: string | null
+  /** Permissions added since the store connected: connect again to grant them. */
+  missingScopes: string[]
 }
 
 export interface ShopifyLocationDto {
@@ -399,4 +405,48 @@ export interface OrdersStatusDto {
   connected: boolean
   checkedAt?: string | null
   error?: string | null
+}
+
+/** A customer sending plants back (requested in Shopify). The refund is issued in Shopify, within a day of receiving the plant. */
+export interface ReturnDto {
+  id: number
+  /** e.g. #1001-R1 */
+  name: string
+  orderName: string
+  shopifyStatus: 'REQUESTED' | 'OPEN' | 'CLOSED' | 'DECLINED' | 'CANCELED'
+  requestedAt: string
+  /** When the first plant came back. */
+  receivedAt: string | null
+  /** A day after receiving, until refunded. */
+  refundDueAt: string | null
+  refundOverdue: boolean
+  refunded: boolean
+  /** The order in the Shopify admin, where the refund is issued. */
+  adminUrl: string
+  items: ReturnItemDto[]
+}
+
+export interface ReturnItemDto {
+  id: number
+  title: string
+  potSize: string | null
+  quantity: number
+  reason: string | null
+  customerNote: string | null
+  /** The order's sold plants: which ones came back? */
+  soldBarcodes: string[]
+  /** Received, waiting for a check. */
+  waitingBarcodes: string[]
+  receivedCount: number
+}
+
+/** A refund issued in Shopify without a return: maybe without the plant back, against the rule. */
+export interface UnreturnedRefundDto {
+  id: number
+  orderName: string
+  refundedAt: string
+  amountCents: number | null
+  /** e.g. "1 × Dragon Scale Albo"; null for a money-only refund. */
+  items: string | null
+  adminUrl: string
 }

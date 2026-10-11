@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
 )
@@ -45,6 +46,18 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			{"id": "gid://shopify/Location/1", "name": "Greenhouse"},
 			{"id": "gid://shopify/Location/2", "name": "Market Stall"},
 		}}}
+	case strings.Contains(request.Query, "returns("):
+		var variables struct{ ID string }
+		_ = json.Unmarshal(request.Variables, &variables)
+		nodes := f.returns[variables.ID]
+		if nodes == nil {
+			nodes = []map[string]any{}
+		}
+		refunds := f.refunds[variables.ID]
+		if refunds == nil {
+			refunds = []map[string]any{}
+		}
+		data = map[string]any{"order": map[string]any{"returns": map[string]any{"nodes": nodes}, "refunds": refunds}}
 	case strings.Contains(request.Query, "fulfillmentOrders("):
 		var variables struct{ ID string }
 		_ = json.Unmarshal(request.Variables, &variables)
@@ -87,8 +100,18 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 		var variables struct{ Query string }
 		_ = json.Unmarshal(request.Variables, &variables)
 		f.lastSearch = variables.Query
+		nodes := f.orders
+		if since, ok := strings.CutPrefix(variables.Query, "updated_at:>='"); ok { // like Shopify: only orders changed since
+			from, _ := time.Parse(time.RFC3339, strings.TrimSuffix(since, "'"))
+			nodes = nil
+			for _, o := range f.orders {
+				if updated, _ := time.Parse(time.RFC3339, o["updatedAt"].(string)); !updated.Before(from) {
+					nodes = append(nodes, o)
+				}
+			}
+		}
 		data = map[string]any{"orders": map[string]any{
-			"nodes": f.orders, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "end"},
+			"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "end"},
 		}}
 	case strings.Contains(request.Query, "stagedUploadsCreate("):
 		data = map[string]any{"stagedUploadsCreate": f.stagedUploadsCreate(request.Variables)}
