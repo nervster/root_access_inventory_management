@@ -33,6 +33,7 @@ import type {
   OrdersStatusDto,
   ReturnDto,
   UnreturnedRefundDto,
+  ApprovedRefundDto,
   VariegationDto,
 } from './types'
 
@@ -51,6 +52,7 @@ export const queryKeys = {
   ordersStatus: (orgId: number) => ['orgs', orgId, 'orders', 'status'] as const,
   returns: (orgId: number, show: 'active' | 'done') => ['orgs', orgId, 'orders', 'returns', show] as const,
   unreturnedRefunds: (orgId: number) => ['orgs', orgId, 'orders', 'returns', 'unreturned-refunds'] as const,
+  approvedRefunds: (orgId: number) => ['orgs', orgId, 'orders', 'returns', 'approved-refunds'] as const,
 }
 
 // ── Signed-in user ──────────────────────────────────────────────────────────
@@ -634,11 +636,36 @@ export function useUnreturnedRefunds(orgId: number) {
   })
 }
 
-export function useReviewRefund(orgId: number) {
+/** Refunds without a return approved as special cases, newest first. */
+export function useApprovedRefunds(orgId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.approvedRefunds(orgId),
+    queryFn: () => api<ApprovedRefundDto[]>(`/orgs/${orgId}/refunds/approved`),
+    enabled,
+  })
+}
+
+/** An Owner approves a refund without a return as a special case, saying why. */
+export function useApproveRefund(orgId: number) {
   const api = useApi()
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (refundId: number) => api<void>(`/orgs/${orgId}/refunds/${refundId}/reviewed`, { method: 'POST' }),
-    onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.unreturnedRefunds(orgId) }),
+    mutationFn: ({ refundId, note }: { refundId: number; note: string }) =>
+      api<void>(`/orgs/${orgId}/refunds/${refundId}/approve`, { method: 'POST', json: { note } }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.unreturnedRefunds(orgId) })
+      client.invalidateQueries({ queryKey: queryKeys.approvedRefunds(orgId) })
+    },
+  })
+}
+
+/** Compares the store with Plant Stock now (the worker does it; it also runs nightly at 3 am). */
+export function useCheckDrift(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<void>(`/orgs/${orgId}/shopify/check`, { method: 'POST' }),
+    onSuccess: () => setTimeout(() => client.invalidateQueries({ queryKey: queryKeys.shopify(orgId) }), 5000),
   })
 }

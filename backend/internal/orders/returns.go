@@ -75,7 +75,7 @@ func (s *Store) ReceivePlant(ctx context.Context, orgID, returnID int64, barcode
 }
 
 // CheckReturnedPlant settles a returned plant after its check: back on sale, back to growing, or
-// discarded (with a reason). It fails with ErrNotFound if the plant isn't waiting for a check.
+// discarded (with an optional reason). It fails with ErrNotFound if the plant isn't waiting for a check.
 func (s *Store) CheckReturnedPlant(ctx context.Context, orgID int64, barcode string, to dbgen.PlantStatus, reason *string) error {
 	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
 		_, err := q.CheckReturnedPlant(ctx, dbgen.CheckReturnedPlantParams{
@@ -89,19 +89,29 @@ func (s *Store) CheckReturnedPlant(ctx context.Context, orgID int64, barcode str
 }
 
 // UnreturnedRefunds lists refunds issued without a return (so possibly without the plant back) that
-// nobody has reviewed yet.
-func (s *Store) UnreturnedRefunds(ctx context.Context, orgID int64) (refunds []dbgen.UnreviewedRefundsWithoutReturnRow, err error) {
+// no Owner has approved yet.
+func (s *Store) UnreturnedRefunds(ctx context.Context, orgID int64) (refunds []dbgen.UnapprovedRefundsWithoutReturnRow, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
-		refunds, err = q.UnreviewedRefundsWithoutReturn(ctx, orgID)
+		refunds, err = q.UnapprovedRefundsWithoutReturn(ctx, orgID)
 		return err
 	})
 	return refunds, err
 }
 
-// ReviewRefund records that someone looked into a refund without a return. It fails with ErrNotFound.
-func (s *Store) ReviewRefund(ctx context.Context, orgID, refundID int64) error {
+// ApprovedRefunds lists the refunds without a return approved as special cases, newest first.
+func (s *Store) ApprovedRefunds(ctx context.Context, orgID int64) (refunds []dbgen.ApprovedRefundsWithoutReturnRow, err error) {
+	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		refunds, err = q.ApprovedRefundsWithoutReturn(ctx, orgID)
+		return err
+	})
+	return refunds, err
+}
+
+// ApproveRefund approves a refund without a return as a special case, with a note saying why. It
+// fails with ErrNotFound.
+func (s *Store) ApproveRefund(ctx context.Context, orgID, refundID int64, note string) error {
 	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
-		_, err := q.ReviewRefund(ctx, dbgen.ReviewRefundParams{OrganizationID: orgID, ID: refundID})
+		_, err := q.ApproveRefund(ctx, dbgen.ApproveRefundParams{OrganizationID: orgID, ID: refundID, Note: &note})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -116,7 +126,8 @@ func returnRoutes(org *gin.RouterGroup, h handler) {
 	org.POST("/returns/:returnId/receive", organization.RequirePermission(organization.OrdersPrepare), h.receivePlant)
 	org.POST("/returned-plants/:barcode/check", organization.RequirePermission(organization.OrdersPrepare), h.checkReturnedPlant)
 	org.GET("/refunds/unreturned", organization.RequirePermission(organization.InventoryView), h.unreturnedRefunds)
-	org.POST("/refunds/:refundId/reviewed", organization.RequirePermission(organization.OrdersPrepare), h.reviewRefund)
+	org.GET("/refunds/approved", organization.RequirePermission(organization.InventoryView), h.approvedRefunds)
+	org.POST("/refunds/:refundId/approve", organization.RequirePermission(organization.RefundsApprove), h.approveRefund)
 }
 
 type returnResponse struct {
@@ -204,7 +215,7 @@ func (h handler) receivePlant(c *gin.Context) {
 }
 
 // checkReturnedPlant handles POST /orgs/:orgId/returned-plants/:barcode/check {to, reason}: to is
-// for_sale, growing, or discarded (with a reason).
+// for_sale, growing, or discarded (reason optional).
 func (h handler) checkReturnedPlant(c *gin.Context) {
 	var req struct {
 		To     dbgen.PlantStatus `json:"to"`
@@ -218,11 +229,13 @@ func (h handler) checkReturnedPlant(c *gin.Context) {
 	switch req.To {
 	case dbgen.PlantStatusForSale, dbgen.PlantStatusGrowing:
 	case dbgen.PlantStatusDiscarded:
-		if r := strings.TrimSpace(req.Reason); r != "" && len(r) <= 500 {
-			reason = &r
-		} else {
-			web.Fail(c, http.StatusBadRequest, "say why it's discarded (up to 500 characters)")
+		r := strings.TrimSpace(req.Reason)
+		if len(r) > 500 {
+			web.Fail(c, http.StatusBadRequest, "the reason must be at most 500 characters")
 			return
+		}
+		if r != "" {
+			reason = &r
 		}
 	default:
 		web.Fail(c, http.StatusBadRequest, "to must be for_sale, growing, or discarded")
@@ -264,16 +277,62 @@ func (h handler) unreturnedRefunds(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// reviewRefund handles POST /orgs/:orgId/refunds/:refundId/reviewed.
-func (h handler) reviewRefund(c *gin.Context) {
+type approvedRefundResponse struct {
+	refundResponse
+	ApprovedAt     time.Time `json:"approvedAt"`
+	ApprovedByName *string   `json:"approvedByName"`
+	Note           string    `json:"note"` // why it was approved without a return
+}
+
+// approvedRefunds handles GET /orgs/:orgId/refunds/approved.
+func (h handler) approvedRefunds(c *gin.Context) {
+	refunds, err := h.store.ApprovedRefunds(c.Request.Context(), organization.CurrentAccess(c).OrganizationID)
+	if err != nil {
+		web.FailInternal(c, err)
+		return
+	}
+	response := make([]approvedRefundResponse, len(refunds))
+	for i, f := range refunds {
+		response[i] = approvedRefundResponse{
+			refundResponse: refundResponse{
+				ID: f.ID, OrderName: f.OrderName, RefundedAt: f.RefundedAt, AmountCents: f.AmountCents, Items: f.Items,
+				AdminURL: adminOrderURL(f.Shop, f.ShopifyOrderID),
+			},
+			ApprovedByName: f.ApprovedByName,
+		}
+		if f.ApprovedAt != nil {
+			response[i].ApprovedAt = *f.ApprovedAt
+		}
+		if f.ApprovalNote != nil {
+			response[i].Note = *f.ApprovalNote
+		}
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+// approveRefund handles POST /orgs/:orgId/refunds/:refundId/approve {note}: an Owner approves a
+// refund without a return as a special case, saying why.
+func (h handler) approveRefund(c *gin.Context) {
 	refundID, ok := web.IDParam(c, "refundId")
 	if !ok {
 		web.Fail(c, http.StatusNotFound, "refund not found")
 		return
 	}
-	switch err := h.store.ReviewRefund(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, refundID); {
+	var req struct {
+		Note string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
+		return
+	}
+	note := strings.TrimSpace(req.Note)
+	if note == "" || len(note) > 1000 {
+		web.Fail(c, http.StatusBadRequest, "say why this refund is approved without a return (up to 1000 characters)")
+		return
+	}
+	switch err := h.store.ApproveRefund(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, refundID, note); {
 	case errors.Is(err, ErrNotFound):
-		web.Fail(c, http.StatusNotFound, "no unreviewed refund without a return with that ID")
+		web.Fail(c, http.StatusNotFound, "no unapproved refund without a return with that ID")
 	case err != nil:
 		web.FailInternal(c, err)
 	default:

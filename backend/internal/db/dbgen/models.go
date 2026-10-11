@@ -430,8 +430,9 @@ type Refund struct {
 	RefundedAt      time.Time
 	AmountCents     *int32
 	Items           *string
-	ReviewedAt      *time.Time
-	ReviewedByName  *string
+	ApprovedAt      *time.Time
+	ApprovedByName  *string
+	ApprovalNote    *string
 }
 
 type Return struct {
@@ -474,6 +475,8 @@ type ShopifyConnection struct {
 	ConnectedAt           time.Time
 	OrdersCheckedThrough  *time.Time
 	OrdersError           *string
+	DriftCheckedAt        *time.Time
+	DriftDifferences      []byte
 }
 
 type ShopifyMedium struct {

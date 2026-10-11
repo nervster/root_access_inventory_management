@@ -66,10 +66,10 @@ online. Root Access HTX is the first nursery.
 - [ ] Customers change their pickup window after ordering (the workflow is still being decided)
 - [ ] Picked up is final (no undo): a sale is only reversed by a return
 - [x] Returns (Shopify Returns; needs the `read_returns` scope and a reconnect): a refund only once the plant is physically back (handed over in person, or left at the drop-off table), never for a photo. Return requests form a queue; staff scan the returned plant (which one, when an order had several), it waits for a check, then goes back on sale or is discarded; the refund is issued in Shopify within 1 day of receiving the plant, and the queue flags any past that
-- [x] Refunds without a return (Refund clicked instead of Return, or money only) are flagged on the Returns tab until someone reviews them
+- [x] Refunds without a return (Refund clicked instead of Return, or money only) are flagged on the Returns tab; a special case (the customer keeps the plant) is allowed once an Owner approves it with a note saying why, and approvals stay listed
 - [ ] Cancelled orders, including ones never picked up, put their held plants straight back on sale (they never left)
 - [ ] Register Shopify webhooks (orders, app/uninstalled, privacy topics) for the deployed URL
-- [ ] Nightly sync check that finds and fixes drift between Plant Stock and Shopify
+- [x] Nightly check (3 am, nursery time; or Check now) that finds and fixes drift between Plant Stock and Shopify: missing products, titles, SKUs, prices, stock
 
 ### 4. Lockers and customer emails (optional per nursery)
 - [ ] Confirmation email after each order: pickup window, instructions, and a 4-digit PIN for the locker
@@ -83,7 +83,7 @@ online. Root Access HTX is the first nursery.
 
 ### 5. Growth (later)
 - [ ] Self-serve signup for nurseries, with trials and Stripe billing
-- [ ] Custom roles per nursery (the permission model already supports it)
+- [ ] Permission settings per nursery: each nursery chooses which roles get which permissions (e.g. who approves refunds without a return, who prepares orders, who sees financials) instead of the fixed defaults; custom roles too (the permission model already supports it)
 - [ ] 2FA, more sign-in options
 - [ ] Hosted storefront with Stripe Connect payouts (much later)
 

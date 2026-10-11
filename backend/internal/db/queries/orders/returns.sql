@@ -101,22 +101,32 @@ WHERE r.organization_id = @organization_id
 -- Refunds --
 
 -- name: UpsertRefund :exec
--- Importing a refund again keeps its review.
+-- Importing a refund again keeps its approval.
 INSERT INTO refunds (organization_id, order_id, shopify_refund_id, shopify_return_id, refunded_at, amount_cents, items)
 VALUES (@organization_id, @order_id, @shopify_refund_id, @shopify_return_id, @refunded_at, @amount_cents, @items)
 ON CONFLICT (organization_id, shopify_refund_id) DO UPDATE
 SET shopify_return_id = excluded.shopify_return_id, amount_cents = excluded.amount_cents, items = excluded.items;
 
--- name: UnreviewedRefundsWithoutReturn :many
--- Refunds without a return that nobody has looked into yet, newest first.
+-- name: UnapprovedRefundsWithoutReturn :many
+-- Refunds without a return that no Owner has approved yet, newest first.
 SELECT f.id, f.refunded_at, f.amount_cents, f.items, o.name AS order_name, o.shop, o.shopify_order_id
 FROM refunds f
 JOIN orders o ON o.id = f.order_id
-WHERE f.organization_id = @organization_id AND f.shopify_return_id IS NULL AND f.reviewed_at IS NULL
+WHERE f.organization_id = @organization_id AND f.shopify_return_id IS NULL AND f.approved_at IS NULL
 ORDER BY f.refunded_at DESC;
 
--- name: ReviewRefund :one
+-- name: ApprovedRefundsWithoutReturn :many
+-- The special cases approved so far, newest first.
+SELECT f.id, f.refunded_at, f.amount_cents, f.items, f.approved_at, f.approved_by_name, f.approval_note,
+       o.name AS order_name, o.shop, o.shopify_order_id
+FROM refunds f
+JOIN orders o ON o.id = f.order_id
+WHERE f.organization_id = @organization_id AND f.shopify_return_id IS NULL AND f.approved_at IS NOT NULL
+ORDER BY f.approved_at DESC
+LIMIT 200;
+
+-- name: ApproveRefund :one
 UPDATE refunds
-SET reviewed_at = now(), reviewed_by_name = current_user_name()
-WHERE organization_id = @organization_id AND id = @id AND shopify_return_id IS NULL AND reviewed_at IS NULL
+SET approved_at = now(), approved_by_name = current_user_name(), approval_note = @note
+WHERE organization_id = @organization_id AND id = @id AND shopify_return_id IS NULL AND approved_at IS NULL
 RETURNING id;

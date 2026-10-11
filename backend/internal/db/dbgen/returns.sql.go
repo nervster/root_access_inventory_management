@@ -10,6 +10,81 @@ import (
 	"time"
 )
 
+const approveRefund = `-- name: ApproveRefund :one
+UPDATE refunds
+SET approved_at = now(), approved_by_name = current_user_name(), approval_note = $1
+WHERE organization_id = $2 AND id = $3 AND shopify_return_id IS NULL AND approved_at IS NULL
+RETURNING id
+`
+
+type ApproveRefundParams struct {
+	Note           *string
+	OrganizationID int64
+	ID             int64
+}
+
+func (q *Queries) ApproveRefund(ctx context.Context, arg ApproveRefundParams) (int64, error) {
+	row := q.db.QueryRow(ctx, approveRefund, arg.Note, arg.OrganizationID, arg.ID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const approvedRefundsWithoutReturn = `-- name: ApprovedRefundsWithoutReturn :many
+SELECT f.id, f.refunded_at, f.amount_cents, f.items, f.approved_at, f.approved_by_name, f.approval_note,
+       o.name AS order_name, o.shop, o.shopify_order_id
+FROM refunds f
+JOIN orders o ON o.id = f.order_id
+WHERE f.organization_id = $1 AND f.shopify_return_id IS NULL AND f.approved_at IS NOT NULL
+ORDER BY f.approved_at DESC
+LIMIT 200
+`
+
+type ApprovedRefundsWithoutReturnRow struct {
+	ID             int64
+	RefundedAt     time.Time
+	AmountCents    *int32
+	Items          *string
+	ApprovedAt     *time.Time
+	ApprovedByName *string
+	ApprovalNote   *string
+	OrderName      string
+	Shop           string
+	ShopifyOrderID string
+}
+
+// The special cases approved so far, newest first.
+func (q *Queries) ApprovedRefundsWithoutReturn(ctx context.Context, organizationID int64) ([]ApprovedRefundsWithoutReturnRow, error) {
+	rows, err := q.db.Query(ctx, approvedRefundsWithoutReturn, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApprovedRefundsWithoutReturnRow{}
+	for rows.Next() {
+		var i ApprovedRefundsWithoutReturnRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RefundedAt,
+			&i.AmountCents,
+			&i.Items,
+			&i.ApprovedAt,
+			&i.ApprovedByName,
+			&i.ApprovalNote,
+			&i.OrderName,
+			&i.Shop,
+			&i.ShopifyOrderID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const checkReturnedPlant = `-- name: CheckReturnedPlant :one
 UPDATE plants
 SET status = $1::plant_status, order_item_id = NULL, updated_at = now(),
@@ -280,25 +355,6 @@ func (q *Queries) ReturnItemForPlant(ctx context.Context, arg ReturnItemForPlant
 	return id, err
 }
 
-const reviewRefund = `-- name: ReviewRefund :one
-UPDATE refunds
-SET reviewed_at = now(), reviewed_by_name = current_user_name()
-WHERE organization_id = $1 AND id = $2 AND shopify_return_id IS NULL AND reviewed_at IS NULL
-RETURNING id
-`
-
-type ReviewRefundParams struct {
-	OrganizationID int64
-	ID             int64
-}
-
-func (q *Queries) ReviewRefund(ctx context.Context, arg ReviewRefundParams) (int64, error) {
-	row := q.db.QueryRow(ctx, reviewRefund, arg.OrganizationID, arg.ID)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
 const setReturnRefunded = `-- name: SetReturnRefunded :exec
 UPDATE returns r
 SET refunded = NOT EXISTS (SELECT 1 FROM return_items ri WHERE ri.return_id = r.id AND ri.refunded_quantity < ri.quantity)
@@ -316,15 +372,15 @@ func (q *Queries) SetReturnRefunded(ctx context.Context, arg SetReturnRefundedPa
 	return err
 }
 
-const unreviewedRefundsWithoutReturn = `-- name: UnreviewedRefundsWithoutReturn :many
+const unapprovedRefundsWithoutReturn = `-- name: UnapprovedRefundsWithoutReturn :many
 SELECT f.id, f.refunded_at, f.amount_cents, f.items, o.name AS order_name, o.shop, o.shopify_order_id
 FROM refunds f
 JOIN orders o ON o.id = f.order_id
-WHERE f.organization_id = $1 AND f.shopify_return_id IS NULL AND f.reviewed_at IS NULL
+WHERE f.organization_id = $1 AND f.shopify_return_id IS NULL AND f.approved_at IS NULL
 ORDER BY f.refunded_at DESC
 `
 
-type UnreviewedRefundsWithoutReturnRow struct {
+type UnapprovedRefundsWithoutReturnRow struct {
 	ID             int64
 	RefundedAt     time.Time
 	AmountCents    *int32
@@ -334,16 +390,16 @@ type UnreviewedRefundsWithoutReturnRow struct {
 	ShopifyOrderID string
 }
 
-// Refunds without a return that nobody has looked into yet, newest first.
-func (q *Queries) UnreviewedRefundsWithoutReturn(ctx context.Context, organizationID int64) ([]UnreviewedRefundsWithoutReturnRow, error) {
-	rows, err := q.db.Query(ctx, unreviewedRefundsWithoutReturn, organizationID)
+// Refunds without a return that no Owner has approved yet, newest first.
+func (q *Queries) UnapprovedRefundsWithoutReturn(ctx context.Context, organizationID int64) ([]UnapprovedRefundsWithoutReturnRow, error) {
+	rows, err := q.db.Query(ctx, unapprovedRefundsWithoutReturn, organizationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []UnreviewedRefundsWithoutReturnRow{}
+	items := []UnapprovedRefundsWithoutReturnRow{}
 	for rows.Next() {
-		var i UnreviewedRefundsWithoutReturnRow
+		var i UnapprovedRefundsWithoutReturnRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RefundedAt,
@@ -382,7 +438,7 @@ type UpsertRefundParams struct {
 }
 
 // Refunds --
-// Importing a refund again keeps its review.
+// Importing a refund again keeps its approval.
 func (q *Queries) UpsertRefund(ctx context.Context, arg UpsertRefundParams) error {
 	_, err := q.db.Exec(ctx, upsertRefund,
 		arg.OrganizationID,

@@ -46,6 +46,8 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			{"id": "gid://shopify/Location/1", "name": "Greenhouse"},
 			{"id": "gid://shopify/Location/2", "name": "Market Stall"},
 		}}}
+	case strings.Contains(request.Query, "nodes(ids:"):
+		data = map[string]any{"nodes": f.productNodes(request.Variables)}
 	case strings.Contains(request.Query, "returns("):
 		var variables struct{ ID string }
 		_ = json.Unmarshal(request.Variables, &variables)
@@ -388,4 +390,31 @@ func (p *fakePhotos) Open(_ context.Context, key string) (io.ReadCloser, storage
 		return nil, storage.FileInfo{}, fmt.Errorf("no such photo %s", key)
 	}
 	return io.NopCloser(strings.NewReader(content)), storage.FileInfo{Size: int64(len(content)), ContentType: "image/jpeg"}, nil
+}
+
+// productNodes answers the drift check: products by ID (null for deleted ones), with their variants'
+// SKU, price, and on-hand stock at the location (null where not stocked).
+func (f *fakeShopify) productNodes(raw json.RawMessage) []any {
+	var variables struct {
+		IDs      []string `json:"ids"`
+		Location string   `json:"location"`
+	}
+	_ = json.Unmarshal(raw, &variables)
+	nodes := make([]any, len(variables.IDs))
+	for i, id := range variables.IDs {
+		product, ok := f.products[id]
+		if !ok {
+			continue // nil, like Shopify for a deleted product
+		}
+		var variants []map[string]any
+		for _, v := range product.Variants {
+			var level any
+			if f.stocked[v.InventoryItemID+"@"+variables.Location] {
+				level = map[string]any{"quantities": []map[string]int{{"quantity": f.onHand[v.InventoryItemID+"@"+variables.Location]}}}
+			}
+			variants = append(variants, map[string]any{"sku": v.SKU, "price": v.Price, "inventoryItem": map[string]any{"inventoryLevel": level}})
+		}
+		nodes[i] = map[string]any{"id": product.ID, "title": product.Title, "variants": map[string]any{"nodes": variants}}
+	}
+	return nodes
 }

@@ -2,6 +2,7 @@ package shopify
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +37,7 @@ func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Sto
 	shopify.PUT("/location", h.setLocation)
 	shopify.POST("/sync", h.syncAll)
 	shopify.GET("/products", h.listProducts)
+	shopify.POST("/check", h.checkDrift)
 
 	// Orders: any member who sees inventory can see whether they're arriving, and check now.
 	orders := signedIn.Group("/orgs/:orgId/shopify/orders", organization.RequireMember(orgs))
@@ -54,6 +56,8 @@ type connectionResponse struct {
 	OrdersCheckedAt *time.Time `json:"ordersCheckedAt"` // orders are read up to here
 	OrdersError     *string    `json:"ordersError"`     // why reading orders failed last time
 	MissingScopes   []string   `json:"missingScopes"`   // permissions added since it connected: connect again to grant them
+	DriftCheckedAt  *time.Time `json:"driftCheckedAt"`  // the last nightly check
+	DriftFound      []string   `json:"driftFound"`      // what it found different (and fixed), in words
 	Connected       bool       `json:"connected"`
 	Shop            *string    `json:"shop"`
 	NeedsReconnect  bool       `json:"needsReconnect"`
@@ -79,6 +83,11 @@ func (h handler) getConnection(c *gin.Context) {
 		response.ConnectedByName, response.ConnectedAt = connection.ConnectedByName, &connection.ConnectedAt
 		response.OrdersCheckedAt, response.OrdersError = connection.OrdersCheckedThrough, connection.OrdersError
 		response.MissingScopes = Token{Scopes: strings.Split(connection.Scopes, ",")}.MissingScopes()
+		response.DriftCheckedAt = connection.DriftCheckedAt
+		if err := json.Unmarshal(connection.DriftDifferences, &response.DriftFound); err != nil {
+			web.FailInternal(c, err)
+			return
+		}
 	}
 	c.JSON(http.StatusOK, response)
 }
@@ -226,6 +235,18 @@ func failShopify(c *gin.Context, err error) bool {
 		web.FailInternal(c, err)
 	}
 	return true
+}
+
+// checkDrift handles POST /orgs/:orgId/shopify/check: compare the store with Plant Stock now.
+func (h handler) checkDrift(c *gin.Context) {
+	switch err := h.store.QueueDriftCheck(c.Request.Context(), organization.CurrentAccess(c).OrganizationID); {
+	case errors.Is(err, ErrNotConnected):
+		web.Fail(c, http.StatusNotFound, "no store is connected")
+	case err != nil:
+		web.FailInternal(c, err)
+	default:
+		c.Status(http.StatusAccepted)
+	}
 }
 
 // syncAll handles POST /orgs/:orgId/shopify/sync: push every product again (the worker does it).

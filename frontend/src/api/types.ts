@@ -22,6 +22,7 @@ export const Permissions = {
   ListingsManage: 'listings.manage',
   FinancialsView: 'financials.view',
   OrdersPrepare: 'orders.prepare',
+  RefundsApprove: 'refunds.approve',
 } as const
 export type Permission = (typeof Permissions)[keyof typeof Permissions]
 
@@ -349,6 +350,10 @@ export interface ShopifyConnectionDto {
   ordersError: string | null
   /** Permissions added since the store connected: connect again to grant them. */
   missingScopes: string[]
+  /** When the nightly check last ran (it compares the store with Plant Stock and fixes differences). */
+  driftCheckedAt: string | null
+  /** What it found different, and fixed, in words. */
+  driftFound: string[] | null
 }
 
 export interface ShopifyLocationDto {
@@ -449,4 +454,12 @@ export interface UnreturnedRefundDto {
   /** e.g. "1 × Dragon Scale Albo"; null for a money-only refund. */
   items: string | null
   adminUrl: string
+}
+
+/** A refund without a return that an Owner approved as a special case. */
+export interface ApprovedRefundDto extends UnreturnedRefundDto {
+  approvedAt: string
+  approvedByName: string | null
+  /** Why it was approved without a return. */
+  note: string
 }

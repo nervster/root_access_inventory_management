@@ -79,6 +79,14 @@ func run() error {
 			}
 		})
 	})
+	// Every 10 minutes, queue the nightly drift check for stores where it's now 3 am.
+	loops.Go(func() {
+		every(ctx, 10*time.Minute, func() {
+			if err := shopify.QueueDriftChecks(ctx, pool); err != nil && ctx.Err() == nil {
+				slog.Error("queueing drift checks failed", "error", err)
+			}
+		})
+	})
 	loops.Wait() // both return once ctx ends (and running jobs finish)
 
 	slog.Info("worker stopped")

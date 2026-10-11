@@ -3,6 +3,7 @@ package shopify
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -143,8 +144,8 @@ func TestReturnedPlantDiscardedOrRegrown(t *testing.T) {
 	s.receive(path, plants[0], 204)
 	s.receive(path, plants[1], 204)
 
-	s.check(plants[0], `{"to":"discarded"}`, 400) // a discard needs a reason
-	s.check(plants[0], `{"to":"discarded","reason":"Root rot"}`, 204)
+	s.check(plants[0], fmt.Sprintf(`{"to":"discarded","reason":%q}`, strings.Repeat("x", 501)), 400)
+	s.check(plants[0], `{"to":"discarded","reason":" Root rot "}`, 204)
 	s.check(plants[1], `{"to":"growing"}`, 204)
 	var reason string
 	if err := s.db.QueryRow(t.Context(), "SELECT discard_reason FROM plants WHERE barcode = $1", plants[0]).Scan(&reason); err != nil || reason != "Root rot" {
@@ -237,14 +238,30 @@ func TestRefundWithoutReturnIsFlagged(t *testing.T) {
 		t.Error("a refund without a return changed the plant; it should stay sold until it's back")
 	}
 
-	// Reviewed: no longer flagged, even when Shopify sends it again.
-	s.ordersRequest("viewer", "POST", fmt.Sprintf("/refunds/%d/reviewed", items.ID), 403)
-	s.ordersRequest("staff", "POST", fmt.Sprintf("/refunds/%d/reviewed", items.ID), 204)
-	s.ordersRequest("staff", "POST", fmt.Sprintf("/refunds/%d/reviewed", items.ID), 404)
+	// Approved as a special case, by an Owner, saying why: no longer flagged (even when Shopify sends
+	// it again), and listed with the approvals.
+	approve := func(as, body string, wantStatus int) {
+		t.Helper()
+		s.ordersRequestBody(as, "POST", fmt.Sprintf("/refunds/%d/approve", items.ID), body, wantStatus)
+	}
+	approve("admin", `{"note":"Arrived damaged"}`, 403) // only Owners
+	approve("staff", `{"note":"Arrived damaged"}`, 403)
+	approve("owner", `{"note":"   "}`, 400) // a note is required
+	approve("owner", `{"note":" Arrived damaged, photo checked; customer kept it "}`, 204)
+	approve("owner", `{"note":"again"}`, 404)
 	order["updatedAt"] = time.Now().UTC().Format(time.RFC3339)
 	s.importOrders()
 	if flagged := s.unreturnedRefunds(); len(flagged) != 1 || flagged[0].ID != moneyOnly.ID {
-		t.Errorf("after reviewing one: %+v, want only the money-only refund", flagged)
+		t.Errorf("after approving one: %+v, want only the money-only refund", flagged)
+	}
+	var approved []struct {
+		ID             int64
+		Note           string
+		ApprovedByName *string
+	}
+	_ = json.Unmarshal(s.ordersRequest("viewer", "GET", "/refunds/approved", 200).Body.Bytes(), &approved)
+	if len(approved) != 1 || approved[0].ID != items.ID || approved[0].Note != "Arrived damaged, photo checked; customer kept it" || *approved[0].ApprovedByName != "Pat owner" {
+		t.Errorf("approved = %+v, want the refund with the note, by Pat owner", approved)
 	}
 }
 
