@@ -22,6 +22,7 @@ import type {
   PlantNameDto,
   PlantWithHistoryDto,
   ProductDto,
+  CorrectionResult,
   RepotResult,
   SaleResult,
   VariegationDto,
@@ -250,13 +251,17 @@ export function useBatch(orgId: number, batchId: number) {
   })
 }
 
-/** Plant names containing search (2+ characters), from the shared list and the nursery's own. */
-export function usePlantNames(orgId: number, search: string) {
+/**
+ * Plant names containing search (2+ characters), from the shared list and the nursery's own. Families
+ * are left out unless includeFamilies (for choosing where a new genus goes).
+ */
+export function usePlantNames(orgId: number, search: string, includeFamilies = false) {
   const api = useApi()
   const term = search.trim()
   return useQuery({
-    queryKey: inventoryKeys.plantNames(orgId, term),
-    queryFn: () => api<PlantNameDto[]>(`/orgs/${orgId}/plant-names?search=${encodeURIComponent(term)}`),
+    queryKey: [...inventoryKeys.plantNames(orgId, term), includeFamilies],
+    queryFn: () =>
+      api<PlantNameDto[]>(`/orgs/${orgId}/plant-names?search=${encodeURIComponent(term)}${includeFamilies ? '&includeFamilies=true' : ''}`),
     enabled: term.length >= 2,
     staleTime: 5 * 60_000,
   })
@@ -310,6 +315,23 @@ export function usePlantActions(orgId: number) {
     discard: useMutation({
       mutationFn: (body: { barcodes: string[]; reason?: string }) =>
         api<{ discarded: number }>(`/orgs/${orgId}/plants/discard`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    /** Fix name and/or variegation. Leave a field out to keep it; variegationId null means none. */
+    correct: useMutation({
+      mutationFn: (body: { batchId?: number; barcodes?: string[]; plantNameId?: number; variegationId?: number | null }) =>
+        api<CorrectionResult>(`/orgs/${orgId}/plants/correct`, { method: 'POST', json: body }),
+      onSuccess,
+    }),
+    setNotes: useMutation({
+      mutationFn: ({ barcode, notes }: { barcode: string; notes: string }) =>
+        api<PlantWithHistoryDto>(`/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}`, { method: 'PATCH', json: { notes } }),
+      onSuccess,
+    }),
+    /** Fix a batch's details. Leave a field out to keep it; "" clears text; unitCostCents null clears it. */
+    updateBatch: useMutation({
+      mutationFn: ({ batchId, ...body }: { batchId: number; source?: string; notes?: string; receivedOn?: string; unitCostCents?: number | null }) =>
+        api<BatchWithPlantsDto>(`/orgs/${orgId}/batches/${batchId}`, { method: 'PATCH', json: body }),
       onSuccess,
     }),
   }
@@ -420,4 +442,21 @@ export function useProductPhotoCandidates(orgId: number, productId: number, enab
     queryFn: () => api<PhotoCandidateDto[]>(`/orgs/${orgId}/products/${productId}/photo-candidates`),
     enabled,
   })
+}
+
+/** Adding the nursery's own plant names and variegations to the shared lists. */
+export function useNameActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return {
+    addPlantName: useMutation({
+      mutationFn: (body: { parentId?: number; rank: PlantNameDto['rank']; name: string; notes?: string }) =>
+        api<PlantNameDto>(`/orgs/${orgId}/plant-names`, { method: 'POST', json: body }),
+      onSuccess: () => client.invalidateQueries({ queryKey: ['orgs', orgId, 'plant-names'] }),
+    }),
+    addVariegation: useMutation({
+      mutationFn: (body: { name: string; notes?: string }) => api<VariegationDto>(`/orgs/${orgId}/variegations`, { method: 'POST', json: body }),
+      onSuccess: () => client.invalidateQueries({ queryKey: inventoryKeys.variegations(orgId) }),
+    }),
+  }
 }

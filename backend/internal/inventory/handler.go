@@ -30,14 +30,21 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, p
 	org.DELETE("/pot-sizes/:potSizeId", edit, h.deletePotSize)
 
 	org.GET("/plant-names", view, h.searchPlantNames)
+	org.POST("/plant-names", edit, h.addPlantName)
+	org.DELETE("/plant-names/:plantNameId", edit, h.deletePlantName)
 	org.GET("/variegations", view, h.listVariegations)
+	org.POST("/variegations", edit, h.addVariegation)
+	org.DELETE("/variegations/:variegationId", edit, h.deleteVariegation)
 
 	org.GET("/batches", view, h.listBatches)
 	org.POST("/batches", edit, h.createBatch)
 	org.GET("/batches/:batchId", view, h.getBatch)
+	org.PATCH("/batches/:batchId", edit, h.updateBatch)
 
 	org.GET("/plants", view, h.listPlants)
 	org.GET("/plants/by-barcode/:barcode", view, h.getPlantByBarcode)
+	org.PATCH("/plants/by-barcode/:barcode", edit, h.updatePlant)
+	org.POST("/plants/correct", edit, h.correctPlants)
 
 	org.GET("/plants/by-barcode/:barcode/photos", view, h.listPlantPhotos)
 	org.POST("/plants/by-barcode/:barcode/photos/upload-link", edit, h.photoUploadLink)

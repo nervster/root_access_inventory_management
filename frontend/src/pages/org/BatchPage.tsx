@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { useBatch, useMembership, usePlantActions, usePotSizes } from '../../api/hooks'
 import { can } from '../../api/roles'
-import { Permissions, PLANT_STATUS_LABELS, type PlantDto, type PlantStatus } from '../../api/types'
+import { Permissions, PLANT_STATUS_LABELS, type BatchDto, type PlantDto, type PlantStatus } from '../../api/types'
+import { CorrectPlantsForm } from '../../components/CorrectPlantsForm'
 import { NewVariants } from '../../components/NewVariants'
-import { Badge, Button, Card, ErrorBanner, LinkButton, Loading, Notice, PageHeader, Select } from '../../components/ui'
-import { formatDay, formatMoney } from '../../lib/format'
+import { Badge, Button, Card, ErrorBanner, Field, Input, LinkButton, Loading, Notice, PageHeader, Select } from '../../components/ui'
+import { dollarsToCents, formatDay, formatMoney } from '../../lib/format'
 
 /** One batch: what arrived, where its plants are now, and actions for the whole batch. */
 export function BatchPage() {
@@ -66,6 +67,18 @@ export function BatchPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           {can(membership, Permissions.InventoryEdit) && <RepotBatch orgId={orgId} batchId={b.id} />}
           {can(membership, Permissions.ListingsManage) && <MarkBatchForSale orgId={orgId} batchId={b.id} />}
+        </div>
+      )}
+
+      {can(membership, Permissions.InventoryEdit) && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <EditBatchDetails orgId={orgId} batch={b} seesCost={can(membership, Permissions.FinancialsView)} />
+          {living > 0 && (
+            <Card title="Correct the whole batch">
+              <p className="mb-3 text-xs text-stone-500">If the batch isn't what it was labeled as. Its living plants are corrected too.</p>
+              <CorrectPlantsForm orgId={orgId} target={{ batchId: b.id }} />
+            </Card>
+          )}
         </div>
       )}
 
@@ -157,6 +170,90 @@ function MarkBatchForSale({ orgId, batchId }: { orgId: number; batchId: number }
           {result.skipped.unsellablePot > 0 && <p className="text-stone-600 dark:text-stone-400">{result.skipped.unsellablePot} are still in a pot that can't be sold.</p>}
           <NewVariants orgId={orgId} variants={result.newVariants} />
         </div>
+      )}
+    </Card>
+  )
+}
+
+/** Fix a batch's details: where it came from, notes, the date it arrived, and (Owners) its cost. */
+function EditBatchDetails({ orgId, batch, seesCost }: { orgId: number; batch: BatchDto; seesCost: boolean }) {
+  const { updateBatch } = usePlantActions(orgId)
+  const [editing, setEditing] = useState(false)
+  const [source, setSource] = useState('')
+  const [notes, setNotes] = useState('')
+  const [receivedOn, setReceivedOn] = useState('')
+  const [cost, setCost] = useState('')
+
+  const start = () => {
+    setSource(batch.source ?? '')
+    setNotes(batch.notes ?? '')
+    setReceivedOn(batch.receivedOn)
+    setCost(batch.unitCostCents != null ? (batch.unitCostCents / 100).toFixed(2) : '')
+    updateBatch.reset()
+    setEditing(true)
+  }
+
+  const save = () =>
+    updateBatch.mutate(
+      {
+        batchId: batch.id,
+        source,
+        notes,
+        receivedOn,
+        ...(seesCost ? { unitCostCents: cost === '' ? null : dollarsToCents(cost) } : {}),
+      },
+      { onSuccess: () => setEditing(false) },
+    )
+
+  return (
+    <Card title="Batch details" actions={!editing && <Button variant="ghost" onClick={start}>Edit</Button>}>
+      {editing ? (
+        <div className="space-y-3">
+          <Field label="From (lab or seller)">
+            <Input maxLength={200} value={source} onChange={(e) => setSource(e.target.value)} />
+          </Field>
+          <Field label="Received">
+            <Input type="date" required value={receivedOn} onChange={(e) => setReceivedOn(e.target.value)} />
+          </Field>
+          {seesCost && (
+            <Field label="Cost per plant ($)" hint="Leave empty if unknown. Only Owners see this.">
+              <Input type="number" inputMode="decimal" min={0} step="0.01" value={cost} onChange={(e) => setCost(e.target.value)} />
+            </Field>
+          )}
+          <Field label="Notes">
+            <Input maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </Field>
+          <ErrorBanner error={updateBatch.error} />
+          <div className="flex gap-2">
+            <Button disabled={updateBatch.isPending || !receivedOn} onClick={save}>
+              Save
+            </Button>
+            <Button variant="secondary" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <dl className="space-y-1 text-sm">
+          <div>
+            <dt className="inline text-stone-500">From: </dt>
+            <dd className="inline">{batch.source ?? '—'}</dd>
+          </div>
+          <div>
+            <dt className="inline text-stone-500">Received: </dt>
+            <dd className="inline">{formatDay(batch.receivedOn)}</dd>
+          </div>
+          {seesCost && (
+            <div>
+              <dt className="inline text-stone-500">Cost per plant: </dt>
+              <dd className="inline">{batch.unitCostCents != null ? formatMoney(batch.unitCostCents) : '—'}</dd>
+            </div>
+          )}
+          <div>
+            <dt className="inline text-stone-500">Notes: </dt>
+            <dd className="inline">{batch.notes ?? '—'}</dd>
+          </div>
+        </dl>
       )}
     </Card>
   )

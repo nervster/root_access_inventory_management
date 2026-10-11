@@ -56,3 +56,21 @@ LEFT JOIN variegations v ON v.id = b.variegation_id
 LEFT JOIN plants p ON p.batch_id = b.id
 WHERE b.organization_id = @organization_id AND b.id = @id
 GROUP BY b.id, pn.full_name, v.name;
+
+-- name: UpdateBatch :one
+-- Fixes a batch's details. NULL keeps a value; an empty source or notes clears it; the cost changes
+-- only when @set_cost (to @unit_cost_cents, which may be NULL for unknown).
+UPDATE batches
+SET source          = CASE WHEN sqlc.narg(source)::text IS NULL THEN source ELSE nullif(sqlc.narg(source), '') END,
+    notes           = CASE WHEN sqlc.narg(notes)::text IS NULL THEN notes ELSE nullif(sqlc.narg(notes), '') END,
+    received_on     = coalesce(sqlc.narg(received_on)::date, received_on),
+    unit_cost_cents = CASE WHEN @set_cost::boolean THEN sqlc.narg(unit_cost_cents)::integer ELSE unit_cost_cents END
+WHERE organization_id = @organization_id AND id = @id
+RETURNING id;
+
+-- name: SetBatchPlantName :exec
+-- After correcting a whole batch, what the batch itself says it is.
+UPDATE batches
+SET plant_name_id  = coalesce(sqlc.narg(plant_name_id)::bigint, plant_name_id),
+    variegation_id = CASE WHEN @set_variegation::boolean THEN sqlc.narg(variegation_id)::bigint ELSE variegation_id END
+WHERE organization_id = @organization_id AND id = @id;

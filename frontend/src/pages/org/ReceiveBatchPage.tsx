@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { useMembership, usePlantActions, usePotSizes, useVariegations } from '../../api/hooks'
+import { useMembership, usePlantActions, usePotSizes } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, type PlantNameDto } from '../../api/types'
 import { PlantNamePicker } from '../../components/PlantNamePicker'
+import { VariegationSelect } from '../../components/VariegationSelect'
 import { Button, Card, ErrorBanner, Field, Input, Loading, PageHeader, Select } from '../../components/ui'
 
 /** Receive a batch: NMS creates one plant per unit, each with its own barcode. */
@@ -12,7 +13,6 @@ export function ReceiveBatchPage() {
   const navigate = useNavigate()
   const membership = useMembership(orgId)
   const potSizes = usePotSizes(orgId)
-  const variegations = useVariegations(orgId)
   const { receiveBatch } = usePlantActions(orgId)
 
   const [plantName, setPlantName] = useState<PlantNameDto | null>(null)
@@ -65,16 +65,7 @@ export function ReceiveBatchPage() {
       <Card>
         <form onSubmit={submit} className="space-y-4">
           <PlantNamePicker orgId={orgId} value={plantName} onChange={setPlantName} />
-          <Field label="Variegation">
-            <Select value={variegationId} onChange={(e) => setVariegationId(e.target.value)}>
-              <option value="">None</option>
-              {variegations.data?.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <VariegationSelect orgId={orgId} value={variegationId} onChange={setVariegationId} />
           <div className="grid grid-cols-2 gap-3">
             <Field label="How many plants">
               <Input type="number" inputMode="numeric" required min={1} max={500} value={quantity} onChange={(e) => setQuantity(e.target.value)} />

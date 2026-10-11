@@ -29,7 +29,7 @@ type plantNameResponse struct {
 }
 
 func (h handler) searchPlantNames(c *gin.Context) {
-	names, err := h.store.SearchPlantNames(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, c.Query("search"))
+	names, err := h.store.SearchPlantNames(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, c.Query("search"), c.Query("includeFamilies") == "true")
 	if err != nil {
 		web.FailInternal(c, err)
 		return

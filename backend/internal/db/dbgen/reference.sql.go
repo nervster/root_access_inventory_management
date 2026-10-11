@@ -9,6 +9,96 @@ import (
 	"context"
 )
 
+const createPlantName = `-- name: CreatePlantName :one
+INSERT INTO plant_names (organization_id, parent_id, rank, name, full_name, notes)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, organization_id, parent_id, rank, name, full_name, notes, created_at
+`
+
+type CreatePlantNameParams struct {
+	OrganizationID *int64
+	ParentID       *int64
+	Rank           PlantRank
+	Name           string
+	FullName       string
+	Notes          *string
+}
+
+func (q *Queries) CreatePlantName(ctx context.Context, arg CreatePlantNameParams) (PlantName, error) {
+	row := q.db.QueryRow(ctx, createPlantName,
+		arg.OrganizationID,
+		arg.ParentID,
+		arg.Rank,
+		arg.Name,
+		arg.FullName,
+		arg.Notes,
+	)
+	var i PlantName
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ParentID,
+		&i.Rank,
+		&i.Name,
+		&i.FullName,
+		&i.Notes,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createVariegation = `-- name: CreateVariegation :one
+INSERT INTO variegations (organization_id, name, notes)
+VALUES ($1, $2, $3)
+RETURNING id, organization_id, name, notes, created_at
+`
+
+type CreateVariegationParams struct {
+	OrganizationID *int64
+	Name           string
+	Notes          *string
+}
+
+func (q *Queries) CreateVariegation(ctx context.Context, arg CreateVariegationParams) (Variegation, error) {
+	row := q.db.QueryRow(ctx, createVariegation, arg.OrganizationID, arg.Name, arg.Notes)
+	var i Variegation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Notes,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const deletePlantName = `-- name: DeletePlantName :execrows
+DELETE FROM plant_names
+WHERE id = $1
+`
+
+// Only the nursery's own names (Row-Level Security hides the shared list from changes).
+func (q *Queries) DeletePlantName(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deletePlantName, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteVariegation = `-- name: DeleteVariegation :execrows
+DELETE FROM variegations
+WHERE id = $1
+`
+
+func (q *Queries) DeleteVariegation(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteVariegation, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getPlantName = `-- name: GetPlantName :one
 SELECT id, organization_id, parent_id, rank, name, full_name, notes, created_at FROM plant_names
 WHERE id = $1
@@ -79,20 +169,53 @@ func (q *Queries) ListVariegations(ctx context.Context) ([]Variegation, error) {
 	return items, nil
 }
 
+const plantNameUnder = `-- name: PlantNameUnder :one
+SELECT id, organization_id, parent_id, rank, name, full_name, notes, created_at FROM plant_names
+WHERE parent_id IS NOT DISTINCT FROM $1::bigint AND lower(name) = lower($2)
+LIMIT 1
+`
+
+type PlantNameUnderParams struct {
+	ParentID *int64
+	Name     string
+}
+
+// A name already under @parent_id (shared or this nursery's own), to refuse duplicates.
+func (q *Queries) PlantNameUnder(ctx context.Context, arg PlantNameUnderParams) (PlantName, error) {
+	row := q.db.QueryRow(ctx, plantNameUnder, arg.ParentID, arg.Name)
+	var i PlantName
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ParentID,
+		&i.Rank,
+		&i.Name,
+		&i.FullName,
+		&i.Notes,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const searchPlantNames = `-- name: SearchPlantNames :many
 
 SELECT id, organization_id, parent_id, rank, name, full_name, notes, created_at FROM plant_names
-WHERE rank <> 'family' AND full_name ILIKE '%' || $1::text || '%'
+WHERE (rank <> 'family' OR $1::boolean) AND full_name ILIKE '%' || $2::text || '%'
 ORDER BY length(full_name), full_name
 LIMIT 50
 `
 
+type SearchPlantNamesParams struct {
+	IncludeFamilies bool
+	Term            string
+}
+
 // Plant names and variegations: the shared list plus the nursery's own (Row-Level Security
 // decides which rows are visible, so these run inside db.InTenant).
 // Every part of the full name matches, e.g. "dragon" finds Alocasia baginda 'Dragon Scale'.
-// Genera and finer ranks only (not families), shortest names first.
-func (q *Queries) SearchPlantNames(ctx context.Context, term string) ([]PlantName, error) {
-	rows, err := q.db.Query(ctx, searchPlantNames, term)
+// Families only when @include_families (when choosing where a new genus goes); shortest names first.
+func (q *Queries) SearchPlantNames(ctx context.Context, arg SearchPlantNamesParams) ([]PlantName, error) {
+	rows, err := q.db.Query(ctx, searchPlantNames, arg.IncludeFamilies, arg.Term)
 	if err != nil {
 		return nil, err
 	}
@@ -118,4 +241,23 @@ func (q *Queries) SearchPlantNames(ctx context.Context, term string) ([]PlantNam
 		return nil, err
 	}
 	return items, nil
+}
+
+const variegationNamed = `-- name: VariegationNamed :one
+SELECT id, organization_id, name, notes, created_at FROM variegations
+WHERE lower(name) = lower($1)
+LIMIT 1
+`
+
+func (q *Queries) VariegationNamed(ctx context.Context, name string) (Variegation, error) {
+	row := q.db.QueryRow(ctx, variegationNamed, name)
+	var i Variegation
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Name,
+		&i.Notes,
+		&i.CreatedAt,
+	)
+	return i, err
 }

@@ -1,12 +1,14 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ApiError } from '../../api/client'
-import { usePlant } from '../../api/hooks'
-import { PLANT_STATUS_LABELS } from '../../api/types'
+import { useMembership, usePlant, usePlantActions } from '../../api/hooks'
+import { can } from '../../api/roles'
+import { Permissions, PLANT_STATUS_LABELS } from '../../api/types'
 import { NotFound } from '../../components/Guards'
 import { PlantActions } from '../../components/PlantActions'
 import { PlantHistory } from '../../components/PlantHistory'
 import { PlantPhotos } from '../../components/PlantPhotos'
-import { Badge, Card, ErrorBanner, Loading, PageHeader } from '../../components/ui'
+import { Badge, Button, Card, ErrorBanner, Loading, PageHeader } from '../../components/ui'
 import { formatDate } from '../../lib/format'
 
 /** One plant: where it came from, where it is now, its photos, and everything that happened to it. */
@@ -51,7 +53,7 @@ export function PlantPage() {
             </Detail>
           )}
         </dl>
-        {p.notes && <p className="mt-3 text-sm">{p.notes}</p>}
+        <PlantNotes orgId={orgId} barcode={p.barcode} notes={p.notes} />
       </Card>
 
       {living && (
@@ -76,6 +78,54 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
     <div>
       <dt className="text-stone-500">{label}</dt>
       <dd className="mt-0.5">{children}</dd>
+    </div>
+  )
+}
+
+/** The plant's notes (e.g. pests and treatments). People who edit inventory can change them. */
+function PlantNotes({ orgId, barcode, notes }: { orgId: number; barcode: string; notes: string | null }) {
+  const canEdit = can(useMembership(orgId), Permissions.InventoryEdit)
+  const { setNotes } = usePlantActions(orgId)
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(notes ?? '')
+
+  if (!editing)
+    return (
+      <div className="mt-3 flex items-start justify-between gap-2 text-sm">
+        <p className={notes ? '' : 'text-stone-500 italic'}>{notes ?? 'No notes'}</p>
+        {canEdit && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setText(notes ?? '')
+              setEditing(true)
+            }}
+          >
+            Edit notes
+          </Button>
+        )}
+      </div>
+    )
+
+  return (
+    <div className="mt-3 space-y-2">
+      <textarea
+        aria-label="Notes"
+        rows={3}
+        maxLength={2000}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        className="block w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/30 focus:outline-none dark:border-stone-700 dark:bg-stone-950"
+      />
+      <ErrorBanner error={setNotes.error} />
+      <div className="flex gap-2">
+        <Button disabled={setNotes.isPending} onClick={() => setNotes.mutate({ barcode, notes: text }, { onSuccess: () => setEditing(false) })}>
+          Save notes
+        </Button>
+        <Button variant="secondary" onClick={() => setEditing(false)}>
+          Cancel
+        </Button>
+      </div>
     </div>
   )
 }

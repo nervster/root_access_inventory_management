@@ -3,6 +3,7 @@ import { useMembership, usePlantActions, usePotSizes } from '../api/hooks'
 import { can } from '../api/roles'
 import { Permissions } from '../api/types'
 import type { NewVariantDto } from '../api/types'
+import { CorrectPlantsForm } from './CorrectPlantsForm'
 import { NewVariants } from './NewVariants'
 import { Button, ErrorBanner, Input, Notice, Select } from './ui'
 
@@ -17,6 +18,7 @@ export function PlantActions({ orgId, barcodes, onDone }: { orgId: number; barco
   const actions = usePlantActions(orgId)
   const [potSizeId, setPotSizeId] = useState('')
   const [discarding, setDiscarding] = useState(false)
+  const [correcting, setCorrecting] = useState(false)
   const [reason, setReason] = useState('')
   const [done, setDone] = useState<string | null>(null)
   const [newVariants, setNewVariants] = useState<NewVariantDto[]>([])
@@ -93,12 +95,29 @@ export function PlantActions({ orgId, barcodes, onDone }: { orgId: number; barco
             </Button>
           </>
         )}
+        {canEdit && !correcting && (
+          <Button variant="secondary" disabled={busy} onClick={() => setCorrecting(true)}>
+            Correct name…
+          </Button>
+        )}
         {canEdit && !discarding && (
           <Button variant="danger" disabled={busy} onClick={() => setDiscarding(true)}>
             Discard…
           </Button>
         )}
       </div>
+
+      {correcting && (
+        <div className="space-y-2 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium">Correct the name or variegation of {plants}</p>
+            <Button variant="ghost" onClick={() => setCorrecting(false)}>
+              Close
+            </Button>
+          </div>
+          <CorrectPlantsForm orgId={orgId} target={{ barcodes }} onDone={onDone} />
+        </div>
+      )}
 
       {discarding && (
         <div className="space-y-2 rounded-lg border border-red-200 p-3 dark:border-red-900">

@@ -10,6 +10,60 @@ import (
 	"time"
 )
 
+const correctPlants = `-- name: CorrectPlants :many
+UPDATE plants
+SET plant_name_id  = coalesce($1::bigint, plant_name_id),
+    variegation_id = CASE WHEN $2::boolean THEN $3::bigint ELSE variegation_id END,
+    updated_at     = now()
+WHERE organization_id = $4
+  AND status IN ('growing', 'for_sale')
+  AND ($5::bigint IS NULL OR batch_id = $5)
+  AND ($6::text[] IS NULL OR barcode = ANY($6::text[]))
+  AND (plant_name_id IS DISTINCT FROM coalesce($1::bigint, plant_name_id)
+       OR ($2 AND variegation_id IS DISTINCT FROM $3::bigint))
+RETURNING id
+`
+
+type CorrectPlantsParams struct {
+	PlantNameID    *int64
+	SetVariegation bool
+	VariegationID  *int64
+	OrganizationID int64
+	BatchID        *int64
+	Barcodes       []string
+}
+
+// Fixes the name and/or variegation of growing and for-sale plants (a batch, or the listed
+// barcodes). A NULL @plant_name_id keeps the name; the variegation changes only when
+// @set_variegation (to @variegation_id, which may be NULL for none). Plants already right aren't
+// touched; the history trigger records each correction. Returns the corrected plants' IDs.
+func (q *Queries) CorrectPlants(ctx context.Context, arg CorrectPlantsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, correctPlants,
+		arg.PlantNameID,
+		arg.SetVariegation,
+		arg.VariegationID,
+		arg.OrganizationID,
+		arg.BatchID,
+		arg.Barcodes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const discardPlants = `-- name: DiscardPlants :many
 UPDATE plants
 SET status = 'discarded', discarded_at = now(), discard_reason = $1, updated_at = now()
@@ -331,4 +385,25 @@ func (q *Queries) MovePlantsToPot(ctx context.Context, arg MovePlantsToPotParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const updatePlantNotes = `-- name: UpdatePlantNotes :one
+UPDATE plants
+SET notes = nullif($1::text, ''), updated_at = now()
+WHERE organization_id = $2 AND barcode = $3
+RETURNING id
+`
+
+type UpdatePlantNotesParams struct {
+	Notes          string
+	OrganizationID int64
+	Barcode        string
+}
+
+// An empty note clears it.
+func (q *Queries) UpdatePlantNotes(ctx context.Context, arg UpdatePlantNotesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, updatePlantNotes, arg.Notes, arg.OrganizationID, arg.Barcode)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }

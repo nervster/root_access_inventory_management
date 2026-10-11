@@ -185,10 +185,11 @@ func (s *Store) PlantByBarcode(ctx context.Context, orgID int64, barcode string)
 
 // --- Plant names and variegations: the shared list plus the nursery's own ---
 
-// SearchPlantNames finds up to 50 names (genus or finer) containing term, shortest first.
-func (s *Store) SearchPlantNames(ctx context.Context, orgID int64, term string) (names []dbgen.PlantName, err error) {
+// SearchPlantNames finds up to 50 names containing term, shortest first: genus or finer, plus
+// families when includeFamilies (for choosing where a new genus goes).
+func (s *Store) SearchPlantNames(ctx context.Context, orgID int64, term string, includeFamilies bool) (names []dbgen.PlantName, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
-		names, err = q.SearchPlantNames(ctx, strings.TrimSpace(term))
+		names, err = q.SearchPlantNames(ctx, dbgen.SearchPlantNamesParams{Term: strings.TrimSpace(term), IncludeFamilies: includeFamilies})
 		return err
 	})
 	return names, err

@@ -17,7 +17,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for decisions, what's built, and what's n
 ```
 backend/
   cmd/api/          entry point: main.go wires everything together
-  internal/         feature packages (organizations/, plants/, …) and shared platform/ code
+  internal/         feature packages (auth/, organization/, inventory/) and shared platform/ code
   internal/db/      Postgres: migrations/ (goose), queries/<domain>/ (SQL) → sqlc generates dbgen/ (never edit)
   Dockerfile        production image (static binary on distroless, non-root)
 frontend/
@@ -34,8 +34,9 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
     (Sessions → Customize session token): `{"email": "{{user.primary_email_address}}", "name": "{{user.full_name}}"}`
   - `PLATFORM_ADMIN_EMAILS`: your sign-in email, so you can create nurseries (`/api/platform/...`)
   - `VITE_CLERK_PUBLISHABLE_KEY`: Clerk publishable key (`pk_test_…`), only for building the web container
-- `frontend/.env.development.local` (git-ignored) with `VITE_CLERK_PUBLISHABLE_KEY=pk_test_…` for `npm run dev`
   - `LOCALSTACK_AUTH_TOKEN`: a free [LocalStack](https://app.localstack.cloud) account, for the local S3/SQS stand-in
+  - `S3_ENDPOINT=http://localhost:4566`: keeps photos in LocalStack (leave it out when deployed, to use real S3)
+- `frontend/.env.development.local` (git-ignored) with `VITE_CLERK_PUBLISHABLE_KEY=pk_test_…` for `npm run dev`
 
 ## Local development
 ```sh
@@ -45,7 +46,9 @@ cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api to :808
 ```
 Open http://localhost:5173. Health check: `GET /api/health`. Email the app sends (e.g. invitations) lands in
 Mailpit at http://localhost:8025, never in real inboxes. Signed-in user: `GET /api/me`
-(send the Clerk session token as `Authorization: Bearer <token>`).
+(send the Clerk session token as `Authorization: Bearer <token>`). Photos go to LocalStack; the API creates
+the `nms-photos` bucket there when it starts. Phone cameras (scanning, photos) need https, so locally use
+the laptop's webcam at localhost.
 
 The API runs database migrations when it starts. To change the schema or queries (from `backend/`):
 ```sh
@@ -64,5 +67,7 @@ docker compose --profile app up -d --build
 ```sh
 cd backend && make test                    # needs `docker compose up -d`; uses a separate nms_test database
 ```
+Tests run against real Postgres (and LocalStack for the storage test, which is skipped when LocalStack
+isn't running), each inside a transaction that's rolled back.
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the backend checks and tests, the
 frontend lint and build, and both Docker builds on every pull request into `staging` or `main`.

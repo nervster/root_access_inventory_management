@@ -295,3 +295,67 @@ func (q *Queries) ReserveInventoryNumbers(ctx context.Context, arg ReserveInvent
 	err := row.Scan(&i.BarcodePrefix, &i.FirstPlantNumber, &i.BatchNumber)
 	return i, err
 }
+
+const setBatchPlantName = `-- name: SetBatchPlantName :exec
+UPDATE batches
+SET plant_name_id  = coalesce($1::bigint, plant_name_id),
+    variegation_id = CASE WHEN $2::boolean THEN $3::bigint ELSE variegation_id END
+WHERE organization_id = $4 AND id = $5
+`
+
+type SetBatchPlantNameParams struct {
+	PlantNameID    *int64
+	SetVariegation bool
+	VariegationID  *int64
+	OrganizationID int64
+	ID             int64
+}
+
+// After correcting a whole batch, what the batch itself says it is.
+func (q *Queries) SetBatchPlantName(ctx context.Context, arg SetBatchPlantNameParams) error {
+	_, err := q.db.Exec(ctx, setBatchPlantName,
+		arg.PlantNameID,
+		arg.SetVariegation,
+		arg.VariegationID,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
+const updateBatch = `-- name: UpdateBatch :one
+UPDATE batches
+SET source          = CASE WHEN $1::text IS NULL THEN source ELSE nullif($1, '') END,
+    notes           = CASE WHEN $2::text IS NULL THEN notes ELSE nullif($2, '') END,
+    received_on     = coalesce($3::date, received_on),
+    unit_cost_cents = CASE WHEN $4::boolean THEN $5::integer ELSE unit_cost_cents END
+WHERE organization_id = $6 AND id = $7
+RETURNING id
+`
+
+type UpdateBatchParams struct {
+	Source         *string
+	Notes          *string
+	ReceivedOn     *time.Time
+	SetCost        bool
+	UnitCostCents  *int32
+	OrganizationID int64
+	ID             int64
+}
+
+// Fixes a batch's details. NULL keeps a value; an empty source or notes clears it; the cost changes
+// only when @set_cost (to @unit_cost_cents, which may be NULL for unknown).
+func (q *Queries) UpdateBatch(ctx context.Context, arg UpdateBatchParams) (int64, error) {
+	row := q.db.QueryRow(ctx, updateBatch,
+		arg.Source,
+		arg.Notes,
+		arg.ReceivedOn,
+		arg.SetCost,
+		arg.UnitCostCents,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}

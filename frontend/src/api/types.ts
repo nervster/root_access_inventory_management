@@ -211,6 +211,14 @@ export interface RepotResult {
   newVariants: NewVariantDto[]
 }
 
+export interface CorrectionResult {
+  corrected: number
+  /** Already right. */
+  unchanged: number
+  /** SKUs created for for-sale plants that are now a different product. */
+  newVariants: NewVariantDto[]
+}
+
 export interface SaleResult {
   marked: number
   alreadyForSale: number

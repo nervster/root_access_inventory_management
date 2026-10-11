@@ -6,7 +6,7 @@ online. Root Access HTX is the first nursery.
 ## Decisions
 | Topic | Decision |
 |---|---|
-| Backend | Go with Gin. Feature packages (`internal/plants`, `internal/organizations`, …) plus shared `internal/platform` |
+| Backend | Go with Gin. Feature packages (`internal/auth`, `internal/organization`, `internal/inventory`) plus shared `internal/platform`; SQL via sqlc (`internal/db`) |
 | Frontend | React + TypeScript (Vite), served by its own nginx container |
 | Data | PostgreSQL (main database), Valkey (cache), AWS S3 (plant photos), AWS SQS (background jobs) |
 | Local dev | Docker Compose: Postgres, Valkey, LocalStack (S3 + SQS). Go and Vite run on the host |
@@ -19,29 +19,41 @@ online. Root Access HTX is the first nursery.
 | Source of truth | NMS's database is the master record for plants, photos, and sales; Shopify is one sales channel |
 | Employees | Team members are people with logins. No tracking of employees who don't sign in |
 | Mobile | Responsive web app/PWA; staff add plants and photos from their phones |
+| Inventory | Tissue-culture batches → one plant per barcode (`RAH-000123`) → grown on through the nursery's pot sizes → for sale. A product is a plant name + variegation; it has one SKU per sellable pot size (Shopify product + variants). Marking plants for sale creates them; prices are set after. Stock is counted from for-sale plants, never typed in |
+| Plant names | Shared list (family → genus → species → cultivar, plus variegations), read-only; each nursery can add its own names on top |
+| Photos | Phones upload straight to S3 (LocalStack locally) with short-lived signed links; private bucket, per-nursery paths. Plant photos form a growth timeline; a product's images are chosen from them |
+| History | Every change to a plant (received, moved, for sale, discarded, corrected, photos) is recorded by Postgres triggers, with who by name. History can't be edited |
 
 ## Phases
 
-### 1. Foundation (in progress)
+### 1. Foundation
 - [x] Scaffold: Go API (Gin) and React app, each with a production Dockerfile; Compose with Postgres, Valkey, LocalStack
 - [x] Config, Postgres connection, migrations (pgx, sqlc, goose; migrations run at API startup)
 - [x] Organizations, users, memberships, invitations; Clerk sign-in; tenant isolation (Row-Level Security); permissions
 - [x] Platform admin: create/suspend nurseries, fix memberships, user lookup; no access to business data (API; admins listed in `PLATFORM_ADMIN_EMAILS`)
 - [x] Web app: sign-in, accept invitations, nursery switcher, Team page, settings, Platform section
       (ported from the earlier .NET branch to the Go API)
-- [ ] CI: GitHub Actions running build and tests
+- [x] CI: GitHub Actions running build and tests
 
-### 2. Inventory
-- [ ] Plants (SKU unique per nursery, species, variety, source, acquired date, cost, status), sales, listings,
-      all tenant-owned
-- [ ] Photo uploads from phones straight to S3; growth timeline per plant (per-nursery paths)
-- [ ] Plant list, detail, and add/edit screens built for phones
-- [ ] Reports: profit per plant, sales over time (Owner only)
-- [ ] Audit log: who changed what, when
+### 2. Inventory: tissue culture → for sale
+- [x] Plant names: shared list (281 names, 6 variegations); nurseries add their own
+- [x] Pot sizes per nursery, each sellable or grow-on only (e.g. the Tissue Culture Cup)
+- [x] Receive batches: one plant per barcode, printable QR labels (letter paper, Avery 5160 layout)
+- [x] Grow on: repot whole batches or scanned plants; discard with a reason; correct a plant's or a batch's name or variegation; plant notes; edit batch details
+- [x] Scan labels with the phone camera (or type / handheld scanner) and act on the scanned plants
+- [x] Products and SKUs created by marking plants for sale; prices, title, description, product type, tags; live stock per SKU
+- [x] Photos from phones straight to S3; growth timeline per plant; ordered product images chosen from plant photos
+- [x] Plant history (audit log) recorded by Postgres triggers, with who by name
+- [x] Dashboard: for-sale value, plants to mark for sale or price, growth pipeline by pot size
+- [ ] Reports: profit per plant, sales over time (Owner only), once sales arrive (Phase 3)
+- [ ] Price-change history (audit log for products and prices)
+- [ ] Non-plant products (soil mix, merch) with stock counts
+- [ ] The plant names still marked CHECK in `backend/internal/db/seed/plant_names.csv`
+- [ ] Customers picking a specific plant from its photos
 
 ### 3. Shopify, per nursery
 - [ ] Shopify app with OAuth install, so each nursery connects its own store; tokens encrypted at rest
-- [ ] Push listings, photos, prices, and stock (quantity 1 per unique plant) to Shopify
+- [ ] Push products, SKUs (variants), images, prices, and stock to Shopify; SKUs without a price stay off it
 - [ ] Order and refund webhooks mark plants sold or available again (idempotent), processed via SQS
 - [ ] Nightly sync check that finds and fixes drift between NMS and Shopify
 
@@ -59,4 +71,5 @@ online. Root Access HTX is the first nursery.
 ### Deployment (alongside Phase 1–2)
 - [ ] Kubernetes manifests (API, web, ingress), managed Postgres, managed Valkey/Redis, real S3 and SQS
 - [ ] Production Clerk instance on our own domain; production email provider
+- [ ] S3 bucket for photos, private, with CORS allowing the web app's origin; HTTPS everywhere (phone cameras need it)
 - [ ] Replace LocalStack if NMS becomes commercial (its free plan is non-commercial)

@@ -65,3 +65,27 @@ UPDATE plants
 SET status = 'discarded', discarded_at = now(), discard_reason = @reason, updated_at = now()
 WHERE organization_id = @organization_id AND barcode = ANY(@barcodes::text[]) AND status IN ('growing', 'for_sale')
 RETURNING barcode;
+
+-- name: CorrectPlants :many
+-- Fixes the name and/or variegation of growing and for-sale plants (a batch, or the listed
+-- barcodes). A NULL @plant_name_id keeps the name; the variegation changes only when
+-- @set_variegation (to @variegation_id, which may be NULL for none). Plants already right aren't
+-- touched; the history trigger records each correction. Returns the corrected plants' IDs.
+UPDATE plants
+SET plant_name_id  = coalesce(sqlc.narg(plant_name_id)::bigint, plant_name_id),
+    variegation_id = CASE WHEN @set_variegation::boolean THEN sqlc.narg(variegation_id)::bigint ELSE variegation_id END,
+    updated_at     = now()
+WHERE organization_id = @organization_id
+  AND status IN ('growing', 'for_sale')
+  AND (sqlc.narg(batch_id)::bigint IS NULL OR batch_id = sqlc.narg(batch_id))
+  AND (sqlc.narg(barcodes)::text[] IS NULL OR barcode = ANY(sqlc.narg(barcodes)::text[]))
+  AND (plant_name_id IS DISTINCT FROM coalesce(sqlc.narg(plant_name_id)::bigint, plant_name_id)
+       OR (@set_variegation AND variegation_id IS DISTINCT FROM sqlc.narg(variegation_id)::bigint))
+RETURNING id;
+
+-- name: UpdatePlantNotes :one
+-- An empty note clears it.
+UPDATE plants
+SET notes = nullif(@notes::text, ''), updated_at = now()
+WHERE organization_id = @organization_id AND barcode = @barcode
+RETURNING id;
