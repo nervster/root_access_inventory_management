@@ -36,7 +36,7 @@ export function Layout() {
       <header className="border-b border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900">
         <div className="mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
           <Link to="/" className="text-lg font-bold tracking-tight text-emerald-800 dark:text-emerald-400">
-            NMS
+            Plant Stock
           </Link>
           {memberships.length > 1 && (
             <select

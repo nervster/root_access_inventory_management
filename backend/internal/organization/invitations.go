@@ -166,7 +166,7 @@ type SignUpInviter interface {
 	InviteToSignUp(ctx context.Context, email, redirectURL string) (registered bool, err error)
 }
 
-// Deliverer sends invitations. People new to NMS get a sign-up invitation from Clerk (sign-up is
+// Deliverer sends invitations. People new to Plant Stock get a sign-up invitation from Clerk (sign-up is
 // invite-only); people who already have an account get an email from us.
 type Deliverer struct {
 	SignUp SignUpInviter
@@ -184,7 +184,7 @@ func (d Deliverer) Deliver(ctx context.Context, invitation dbgen.Invitation, org
 	return d.Email.Send(ctx, email.Message{
 		To:      invitation.Email,
 		Subject: fmt.Sprintf("You're invited to join %s", orgName),
-		Text: fmt.Sprintf(`You've been invited to join %s on NMS (Nursery Management System) as %s.
+		Text: fmt.Sprintf(`You've been invited to join %s on Plant Stock as %s.
 
 Sign in to accept: %s/
 

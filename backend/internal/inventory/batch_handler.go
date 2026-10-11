@@ -25,7 +25,7 @@ type plantNameResponse struct {
 	Rank     dbgen.PlantRank `json:"rank"`
 	FullName string          `json:"fullName"` // Alocasia baginda 'Dragon Scale'
 	Notes    *string         `json:"notes"`    // e.g. the trade name
-	Shared   bool            `json:"shared"`   // from NMS's shared list, not this nursery's own
+	Shared   bool            `json:"shared"`   // from Plant Stock's shared list, not this nursery's own
 }
 
 func (h handler) searchPlantNames(c *gin.Context) {

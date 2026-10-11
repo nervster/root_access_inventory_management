@@ -7,7 +7,7 @@ import { PlantNamePicker } from '../../components/PlantNamePicker'
 import { VariegationSelect } from '../../components/VariegationSelect'
 import { Button, Card, ErrorBanner, Field, Input, Loading, PageHeader, Select } from '../../components/ui'
 
-/** Receive a batch: NMS creates one plant per unit, each with its own barcode. */
+/** Receive a batch: Plant Stock creates one plant per unit, each with its own barcode. */
 export function ReceiveBatchPage() {
   const orgId = Number(useParams().orgId)
   const navigate = useNavigate()

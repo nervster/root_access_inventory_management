@@ -57,7 +57,7 @@ func Load() (Config, error) {
 		SMTPAddr:       getEnv("SMTP_ADDR", "localhost:1025"),
 		SMTPUsername:   os.Getenv("SMTP_USERNAME"),
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
-		EmailFrom:      getEnv("EMAIL_FROM", "NMS <no-reply@localhost>"),
+		EmailFrom:      getEnv("EMAIL_FROM", "Plant Stock <no-reply@localhost>"),
 
 		S3Bucket:         getEnv("S3_BUCKET", "nms-photos"),
 		AWSRegion:        getEnv("AWS_REGION", "us-east-1"),

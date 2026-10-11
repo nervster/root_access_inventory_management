@@ -1,4 +1,4 @@
-# NMS Roadmap
+# Plant Stock Roadmap
 
 **Goal:** a web app where any independent garden or nursery can manage its plants, team, and photos, and sell
 online. Root Access HTX is the first nursery.
@@ -15,8 +15,8 @@ online. Root Access HTX is the first nursery.
 | Sign-in | Clerk handles identity only (email + password/code, Google). Invite-only (Restricted sign-up mode) |
 | Access | Roles (Owner, Admin, Staff, Viewer) map to permissions; endpoints check permissions. Only Owners see financials |
 | Onboarding | Platform admin creates each nursery and invites its first Owner. Self-serve signup and billing come later |
-| Selling | Each nursery connects its own Shopify store. A storefront hosted by NMS is a much later phase |
-| Source of truth | NMS's database is the master record for plants, photos, and sales; Shopify is one sales channel |
+| Selling | Each nursery connects its own Shopify store. A storefront hosted by Plant Stock is a much later phase |
+| Source of truth | Plant Stock's database is the master record for plants, photos, and sales; Shopify is one sales channel |
 | Employees | Team members are people with logins. No tracking of employees who don't sign in |
 | Mobile | Responsive web app/PWA; staff add plants and photos from their phones |
 | Inventory | Tissue-culture batches → one plant per barcode (`RAH-000123`) → grown on through the nursery's pot sizes → for sale. A product is a plant name + variegation; it has one SKU per sellable pot size (Shopify product + variants). Marking plants for sale creates them; prices are set after. Stock is counted from for-sale plants, never typed in |
@@ -55,7 +55,7 @@ online. Root Access HTX is the first nursery.
 - [ ] Shopify app with OAuth install, so each nursery connects its own store; tokens encrypted at rest
 - [ ] Push products, SKUs (variants), images, prices, and stock to Shopify; SKUs without a price stay off it
 - [ ] Order and refund webhooks mark plants sold or available again (idempotent), processed via SQS
-- [ ] Nightly sync check that finds and fixes drift between NMS and Shopify
+- [ ] Nightly sync check that finds and fixes drift between Plant Stock and Shopify
 
 ### 4. Pickup and lockers (optional per nursery)
 - [ ] Pickup PIN emails to customers after an order
@@ -72,4 +72,4 @@ online. Root Access HTX is the first nursery.
 - [ ] Kubernetes manifests (API, web, ingress), managed Postgres, managed Valkey/Redis, real S3 and SQS
 - [ ] Production Clerk instance on our own domain; production email provider
 - [ ] S3 bucket for photos, private, with CORS allowing the web app's origin; HTTPS everywhere (phone cameras need it)
-- [ ] Replace LocalStack if NMS becomes commercial (its free plan is non-commercial)
+- [ ] Replace LocalStack if Plant Stock becomes commercial (its free plan is non-commercial)

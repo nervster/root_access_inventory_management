@@ -11,10 +11,10 @@ import (
 // TestSMTPSendsToMailpit sends a real message through Mailpit (docker compose up -d) and reads it
 // back through Mailpit's API.
 func TestSMTPSendsToMailpit(t *testing.T) {
-	subject := "NMS test " + time.Now().Format(time.RFC3339Nano)
-	sender := SMTP{Addr: "localhost:1025", From: "NMS <no-reply@localhost>"}
+	subject := "Plant Stock test " + time.Now().Format(time.RFC3339Nano)
+	sender := SMTP{Addr: "localhost:1025", From: "Plant Stock <no-reply@localhost>"}
 
-	err := sender.Send(t.Context(), Message{To: "owner@example.com", Subject: subject, Text: "Hello\nfrom NMS"})
+	err := sender.Send(t.Context(), Message{To: "owner@example.com", Subject: subject, Text: "Hello\nfrom Plant Stock"})
 	if err != nil {
 		t.Fatalf("send (is Mailpit running? docker compose up -d): %v", err)
 	}
