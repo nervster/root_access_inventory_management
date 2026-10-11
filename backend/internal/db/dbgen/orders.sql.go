@@ -74,6 +74,39 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 	return id, err
 }
 
+const getOrder = `-- name: GetOrder :one
+SELECT id, organization_id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status, shopify_updated_at, created_at, ready_at, ready_by_name, picked_up_at, picked_up_by_name FROM orders
+WHERE organization_id = $1 AND id = $2
+`
+
+type GetOrderParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+func (q *Queries) GetOrder(ctx context.Context, arg GetOrderParams) (Order, error) {
+	row := q.db.QueryRow(ctx, getOrder, arg.OrganizationID, arg.ID)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Shop,
+		&i.ShopifyOrderID,
+		&i.Name,
+		&i.Status,
+		&i.PlacedAt,
+		&i.CancelledAt,
+		&i.ShopifyFulfillmentStatus,
+		&i.ShopifyUpdatedAt,
+		&i.CreatedAt,
+		&i.ReadyAt,
+		&i.ReadyByName,
+		&i.PickedUpAt,
+		&i.PickedUpByName,
+	)
+	return i, err
+}
+
 const getOrderByShopifyID = `-- name: GetOrderByShopifyID :one
 
 SELECT id, status FROM orders
@@ -162,7 +195,7 @@ SELECT i.id, i.order_id, i.title, i.sku, i.quantity, i.price_cents, i.variant_id
 FROM order_items i
 LEFT JOIN product_variants v ON v.id = i.variant_id
 LEFT JOIN pot_sizes ps ON ps.id = v.pot_size_id
-LEFT JOIN plants p ON p.order_item_id = i.id AND p.status = 'held'
+LEFT JOIN plants p ON p.order_item_id = i.id AND p.status IN ('held', 'sold')
 WHERE i.organization_id = $1 AND i.order_id = ANY($2::bigint[])
 GROUP BY i.id, ps.name
 ORDER BY i.order_id, i.id
@@ -185,7 +218,7 @@ type ListOrderItemsRow struct {
 	HeldBarcodes []string
 }
 
-// The orders' items, each with its pot size and the barcodes of the plants held for it.
+// The orders' items, each with its pot size and the barcodes of its plants (held, or sold once picked up).
 func (q *Queries) ListOrderItems(ctx context.Context, arg ListOrderItemsParams) ([]ListOrderItemsRow, error) {
 	rows, err := q.db.Query(ctx, listOrderItems, arg.OrganizationID, arg.OrderIds)
 	if err != nil {
@@ -217,7 +250,8 @@ func (q *Queries) ListOrderItems(ctx context.Context, arg ListOrderItemsParams) 
 }
 
 const listOrders = `-- name: ListOrders :many
-SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status
+SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status,
+       ready_at, ready_by_name, picked_up_at, picked_up_by_name
 FROM orders
 WHERE organization_id = $1 AND status = $2
 ORDER BY placed_at DESC, id DESC
@@ -238,6 +272,10 @@ type ListOrdersRow struct {
 	PlacedAt                 time.Time
 	CancelledAt              *time.Time
 	ShopifyFulfillmentStatus *string
+	ReadyAt                  *time.Time
+	ReadyByName              *string
+	PickedUpAt               *time.Time
+	PickedUpByName           *string
 }
 
 func (q *Queries) ListOrders(ctx context.Context, arg ListOrdersParams) ([]ListOrdersRow, error) {
@@ -258,6 +296,10 @@ func (q *Queries) ListOrders(ctx context.Context, arg ListOrdersParams) ([]ListO
 			&i.PlacedAt,
 			&i.CancelledAt,
 			&i.ShopifyFulfillmentStatus,
+			&i.ReadyAt,
+			&i.ReadyByName,
+			&i.PickedUpAt,
+			&i.PickedUpByName,
 		); err != nil {
 			return nil, err
 		}
@@ -267,6 +309,67 @@ func (q *Queries) ListOrders(ctx context.Context, arg ListOrdersParams) ([]ListO
 		return nil, err
 	}
 	return items, nil
+}
+
+const markOrderNotReady = `-- name: MarkOrderNotReady :one
+UPDATE orders
+SET status = 'open', ready_at = NULL, ready_by_name = NULL
+WHERE organization_id = $1 AND id = $2 AND status = 'ready_for_pickup'
+RETURNING id
+`
+
+type MarkOrderNotReadyParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+// Back to "to prepare" (e.g. marked ready by mistake). Nothing else changed when it was marked ready.
+func (q *Queries) MarkOrderNotReady(ctx context.Context, arg MarkOrderNotReadyParams) (int64, error) {
+	row := q.db.QueryRow(ctx, markOrderNotReady, arg.OrganizationID, arg.ID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const markOrderPickedUp = `-- name: MarkOrderPickedUp :one
+UPDATE orders
+SET status = 'picked_up', picked_up_at = now(), picked_up_by_name = current_user_name()
+WHERE organization_id = $1 AND id = $2 AND status IN ('open', 'ready_for_pickup')
+RETURNING id
+`
+
+type MarkOrderPickedUpParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+// From ready, or straight from open (a bigger order handed over in person). The worker then fulfills
+// it in Shopify and sells its plants (FulfillOrder).
+func (q *Queries) MarkOrderPickedUp(ctx context.Context, arg MarkOrderPickedUpParams) (int64, error) {
+	row := q.db.QueryRow(ctx, markOrderPickedUp, arg.OrganizationID, arg.ID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const markOrderReady = `-- name: MarkOrderReady :one
+UPDATE orders
+SET status = 'ready_for_pickup', ready_at = now(), ready_by_name = current_user_name()
+WHERE organization_id = $1 AND id = $2 AND status = 'open'
+RETURNING id
+`
+
+type MarkOrderReadyParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+// In the locker (or set aside for an in-person pickup).
+func (q *Queries) MarkOrderReady(ctx context.Context, arg MarkOrderReadyParams) (int64, error) {
+	row := q.db.QueryRow(ctx, markOrderReady, arg.OrganizationID, arg.ID)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const queueOrderImports = `-- name: QueueOrderImports :exec

@@ -299,6 +299,10 @@ type Order struct {
 	ShopifyFulfillmentStatus *string
 	ShopifyUpdatedAt         time.Time
 	CreatedAt                time.Time
+	ReadyAt                  *time.Time
+	ReadyByName              *string
+	PickedUpAt               *time.Time
+	PickedUpByName           *string
 }
 
 type OrderItem struct {

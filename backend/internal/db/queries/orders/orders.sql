@@ -74,21 +74,48 @@ WHERE plants.organization_id = @organization_id AND plants.status = 'held'
   AND plants.order_item_id IN (SELECT oi.id FROM order_items oi WHERE oi.order_id = @order_id)
 RETURNING barcode;
 
+-- name: MarkOrderReady :one
+-- In the locker (or set aside for an in-person pickup).
+UPDATE orders
+SET status = 'ready_for_pickup', ready_at = now(), ready_by_name = current_user_name()
+WHERE organization_id = @organization_id AND id = @id AND status = 'open'
+RETURNING id;
+
+-- name: MarkOrderNotReady :one
+-- Back to "to prepare" (e.g. marked ready by mistake). Nothing else changed when it was marked ready.
+UPDATE orders
+SET status = 'open', ready_at = NULL, ready_by_name = NULL
+WHERE organization_id = @organization_id AND id = @id AND status = 'ready_for_pickup'
+RETURNING id;
+
+-- name: MarkOrderPickedUp :one
+-- From ready, or straight from open (a bigger order handed over in person). The worker then fulfills
+-- it in Shopify and sells its plants (FulfillOrder).
+UPDATE orders
+SET status = 'picked_up', picked_up_at = now(), picked_up_by_name = current_user_name()
+WHERE organization_id = @organization_id AND id = @id AND status IN ('open', 'ready_for_pickup')
+RETURNING id;
+
+-- name: GetOrder :one
+SELECT * FROM orders
+WHERE organization_id = @organization_id AND id = @id;
+
 -- name: ListOrders :many
-SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status
+SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status,
+       ready_at, ready_by_name, picked_up_at, picked_up_by_name
 FROM orders
 WHERE organization_id = @organization_id AND status = @status
 ORDER BY placed_at DESC, id DESC
 LIMIT 200;
 
 -- name: ListOrderItems :many
--- The orders' items, each with its pot size and the barcodes of the plants held for it.
+-- The orders' items, each with its pot size and the barcodes of its plants (held, or sold once picked up).
 SELECT i.id, i.order_id, i.title, i.sku, i.quantity, i.price_cents, i.variant_id, ps.name AS pot_size,
        coalesce(array_agg(p.barcode ORDER BY p.barcode) FILTER (WHERE p.id IS NOT NULL), '{}')::text[] AS held_barcodes
 FROM order_items i
 LEFT JOIN product_variants v ON v.id = i.variant_id
 LEFT JOIN pot_sizes ps ON ps.id = v.pot_size_id
-LEFT JOIN plants p ON p.order_item_id = i.id AND p.status = 'held'
+LEFT JOIN plants p ON p.order_item_id = i.id AND p.status IN ('held', 'sold')
 WHERE i.organization_id = @organization_id AND i.order_id = ANY(@order_ids::bigint[])
 GROUP BY i.id, ps.name
 ORDER BY i.order_id, i.id;

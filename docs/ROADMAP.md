@@ -22,6 +22,7 @@ online. Root Access HTX is the first nursery.
 | Inventory | Tissue-culture batches → one plant per barcode (`RAH-000123`) → grown on through the nursery's pot sizes → for sale. A product is a plant name + variegation; it has one SKU per sellable pot size (Shopify product + variants). Marking plants for sale creates them; prices are set after. Stock is counted from for-sale plants, never typed in |
 | Plant names | Shared list (family → genus → species → cultivar, plus variegations), read-only; each nursery can add its own names on top |
 | Photos | Phones upload straight to S3 (LocalStack locally) with short-lived signed links; private bucket, per-nursery paths. Plant photos form a growth timeline; a product's images are chosen from them |
+| Pickup | Online orders are picked up from a locker, in a window the customer chooses at checkout. Staff are notified of each order and have 8 hours from purchase to get it ready in a locker. For now there's one locker (up to 4 plants, one order at a time); bigger orders are a regular in-person pickup. The locker has a manual PIN pad: Plant Stock generates a 4-digit PIN per order, staff set it when loading, and reset it for the next order. Later, customers get a confirmation email with pickup instructions and the PIN. The pickup-window rules live in the Shopify theme repo |
 | History | Every change to a plant (received, moved, for sale, discarded, corrected, photos) is recorded by Postgres triggers, with who by name. History can't be edited |
 
 ## Phases
@@ -56,15 +57,28 @@ online. Root Access HTX is the first nursery.
 - [x] Background jobs: outbox table + SQS worker (`cmd/worker`), with retries and a dead-letter queue
 - [x] Push products, SKUs (variants), images, prices, and stock to Shopify; SKUs without a price stay off it
 - [x] Orders arrive (checked each minute, plus webhooks once deployed) and hold specific plants until pickup; cancelled orders put them back on sale; Orders page lists what to pull
-- [ ] Pickup by scanning the held plants (sold, and fulfilled in Shopify)
-- [ ] Refunds: returned plants wait for a check before going back on sale
+- [ ] Pickup window: the customer chooses a date and window (and an optional note) in the cart; Plant Stock stores them with the order
+- [ ] Working hours: the nursery's hours for each week, which change week to week (copy last week's, then adjust); "ready by" counts only these hours
+- [ ] New-order email to team members who turned it on in their settings, with the order's "ready by" deadline: 8 working hours after purchase (push notifications later)
+- [x] Ready for pickup, then picked up: team members who prepare orders (permission `orders.prepare`: Owners, Admins, Staff) mark each step on the Orders page; picked up fulfills the order in Shopify (without emailing the customer), then sells its plants. Bigger orders can be marked picked up in person
+- [ ] Prepare orders: sorted by "ready by", with overdue ones flagged; staff scan the held plants to confirm them; orders of up to 4 plants get a generated 4-digit locker PIN for staff to set (reset for the next order)
+- [ ] Missed windows: orders not collected in their window are flagged, so staff can remind the customer or ask them to choose a new window; an order that's never collected is cancelled and its plants go straight back on sale
+- [ ] Customers change their pickup window after ordering (the workflow is still being decided)
+- [ ] Picked up is final (no undo): a sale is only reversed by a return
+- [ ] Returns (Shopify Returns; needs the `read_returns`/`write_returns` scopes and a reconnect): a refund only once the plant is physically back (handed over in person, or left at the drop-off table), never for a photo. Return requests form a queue; staff scan the returned plant (which one, when an order had several), it waits for a check, then goes back on sale or is discarded; the refund is issued in Shopify within 1 day of receiving the plant, and the queue flags any past that
+- [ ] Cancelled orders, including ones never picked up, put their held plants straight back on sale (they never left)
 - [ ] Register Shopify webhooks (orders, app/uninstalled, privacy topics) for the deployed URL
 - [ ] Nightly sync check that finds and fixes drift between Plant Stock and Shopify
 
-### 4. Pickup and lockers (optional per nursery)
-- [ ] Pickup PIN emails to customers after an order
-- [ ] Locations (greenhouses, locker sites)
-- [ ] Lockers with temperature, humidity, and PIN control
+### 4. Lockers and customer emails (optional per nursery)
+- [ ] Confirmation email after each order: pickup window, instructions, and a 4-digit PIN for the locker
+- [ ] Locations (greenhouses, locker sites), each with its lockers and compartments
+- [ ] More lockers: an order can use several, and a locker can hold more than one order
+- [ ] Customers mark their order picked up (from the email)
+- [ ] Locker temperature and humidity
+- [ ] Thank-you email when an order is picked up
+- [ ] Pickup reminders, and an email if the window is missed
+- [ ] Push notifications to staff for new orders
 
 ### 5. Growth (later)
 - [ ] Self-serve signup for nurseries, with trials and Stripe billing

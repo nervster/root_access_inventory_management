@@ -23,6 +23,8 @@ const (
 	InventoryEdit  Permission = "inventory.edit"  // add and edit plants and photos
 	ListingsManage Permission = "listings.manage" // publish listings, set prices, sync channels
 	FinancialsView Permission = "financials.view" // purchase cost, sale proceeds, fees, profit
+
+	OrdersPrepare Permission = "orders.prepare" // mark online orders ready for pickup, and picked up
 )
 
 // rolePermissions is each role's default permission set, listed in a fixed order for API responses.
@@ -31,13 +33,16 @@ var rolePermissions = map[dbgen.OrgRole][]Permission{
 		OrganizationView, OrganizationManage, IntegrationsManage,
 		TeamView, TeamManage, RolesManage,
 		InventoryView, InventoryEdit, ListingsManage, FinancialsView,
+		OrdersPrepare,
 	},
 	dbgen.OrgRoleAdmin: {
 		OrganizationView, TeamView, TeamManage,
 		InventoryView, InventoryEdit, ListingsManage,
+		OrdersPrepare,
 	},
 	dbgen.OrgRoleStaff: {
 		OrganizationView, TeamView, InventoryView, InventoryEdit,
+		OrdersPrepare,
 	},
 	dbgen.OrgRoleViewer: {
 		OrganizationView, TeamView, InventoryView,

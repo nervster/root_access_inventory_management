@@ -14,6 +14,7 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
+	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/jobs"
 )
 
@@ -30,10 +31,11 @@ const potSizeOption = "Pot size"
 // JobHandlers are the Shopify jobs the worker runs.
 func (s *Store) JobHandlers() map[string]jobs.Handler {
 	return map[string]jobs.Handler{
-		JobSyncProduct:  s.syncProductJob,
-		JobSyncAll:      s.syncAllJob,
-		JobSyncStock:    s.syncStockJob,
-		JobImportOrders: s.importOrdersJob,
+		JobSyncProduct:         s.syncProductJob,
+		JobSyncAll:             s.syncAllJob,
+		JobSyncStock:           s.syncStockJob,
+		JobImportOrders:        s.importOrdersJob,
+		orders.JobFulfillOrder: s.fulfillOrderJob,
 	}
 }
 

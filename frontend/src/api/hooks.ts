@@ -556,6 +556,27 @@ export function useOrdersStatus(orgId: number) {
   })
 }
 
+/** Moving an order along: ready for pickup (in the locker), then picked up. */
+export function useOrderActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const refresh = () => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders'] })
+  return {
+    ready: useMutation({
+      mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/ready`, { method: 'POST' }),
+      onSuccess: refresh,
+    }),
+    notReady: useMutation({
+      mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/not-ready`, { method: 'POST' }),
+      onSuccess: refresh,
+    }),
+    pickedUp: useMutation({
+      mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/picked-up`, { method: 'POST' }),
+      onSuccess: refresh,
+    }),
+  }
+}
+
 /** Reads new orders from Shopify now (instead of within the minute); refreshes the list shortly after. */
 export function useCheckOrders(orgId: number) {
   const api = useApi()

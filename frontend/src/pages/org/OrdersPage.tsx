@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { useCheckOrders, useMembership, useOrders, useOrdersStatus } from '../../api/hooks'
+import { useCheckOrders, useMembership, useOrderActions, useOrders, useOrdersStatus } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, type OrderDto, type OrderItemDto, type OrderStatus } from '../../api/types'
 import { Badge, Button, Card, ErrorBanner, Loading, Notice, PageHeader } from '../../components/ui'
 import { formatDate, formatMoney } from '../../lib/format'
 
 const TABS: { status: OrderStatus; label: string }[] = [
-  { status: 'open', label: 'To pick up' },
+  { status: 'open', label: 'To prepare' },
+  { status: 'ready_for_pickup', label: 'Ready for pickup' },
   { status: 'picked_up', label: 'Picked up' },
   { status: 'cancelled', label: 'Cancelled' },
 ]
@@ -23,7 +24,10 @@ export function OrdersPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Orders" subtitle="Bought online, waiting for pickup. The plants listed are held for each order." />
+      <PageHeader
+        title="Orders"
+        subtitle="Bought online. Pull the plants listed for each order, put it in the locker, and mark it ready; once the customer has it, mark it picked up."
+      />
       <ImportStatus orgId={orgId} />
 
       <div role="tablist" className="flex gap-1">
@@ -50,7 +54,7 @@ export function OrdersPage() {
       ) : orders.error ? (
         <ErrorBanner error={orders.error} />
       ) : orders.data.length === 0 ? (
-        <p className="py-6 text-center text-sm text-stone-500">{status === 'open' ? 'No orders waiting for pickup.' : 'None yet.'}</p>
+        <p className="py-6 text-center text-sm text-stone-500">{EMPTY[status]}</p>
       ) : (
         <ul className="space-y-3">
           {orders.data.map((order) => (
@@ -100,6 +104,13 @@ function ImportStatus({ orgId }: { orgId: number }) {
   )
 }
 
+const EMPTY: Record<OrderStatus, string> = {
+  open: 'No orders to prepare.',
+  ready_for_pickup: 'No orders waiting in the locker.',
+  picked_up: 'None yet.',
+  cancelled: 'None yet.',
+}
+
 function OrderCard({ orgId, order }: { orgId: number; order: OrderDto }) {
   return (
     <Card
@@ -113,6 +124,8 @@ function OrderCard({ orgId, order }: { orgId: number; order: OrderDto }) {
       <p className="-mt-2 mb-3 text-xs text-stone-500">
         Placed {formatDate(order.placedAt)}
         {order.cancelledAt && <> · cancelled {formatDate(order.cancelledAt)}</>}
+        {order.readyAt && <> · ready {formatDate(order.readyAt)}{order.readyByName && ` by ${order.readyByName}`}</>}
+        {order.pickedUpAt && <> · picked up {formatDate(order.pickedUpAt)}{order.pickedUpByName && ` (marked by ${order.pickedUpByName})`}</>}
       </p>
       <ul className="divide-y divide-stone-200 dark:divide-stone-800">
         {order.items.map((item) => (
@@ -121,7 +134,50 @@ function OrderCard({ orgId, order }: { orgId: number; order: OrderDto }) {
           </li>
         ))}
       </ul>
+      <OrderButtons orgId={orgId} order={order} />
     </Card>
+  )
+}
+
+/** The next step for an order, for those who prepare orders. */
+function OrderButtons({ orgId, order }: { orgId: number; order: OrderDto }) {
+  const membership = useMembership(orgId)
+  const actions = useOrderActions(orgId)
+  if (!can(membership, Permissions.OrdersPrepare) || (order.status !== 'open' && order.status !== 'ready_for_pickup')) return null
+
+  const busy = actions.ready.isPending || actions.notReady.isPending || actions.pickedUp.isPending
+  const plants = order.items.flatMap((item) => item.heldBarcodes)
+  const pickedUp = () =>
+    window.confirm(
+      `Mark ${order.name} picked up?\n\n${plants.length ? `${plants.join(', ')} will be sold. ` : ''}` +
+        'This can’t be undone: if the customer never got it, it can only be reversed by a return.',
+    ) && actions.pickedUp.mutate(order.id)
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-stone-200 pt-3 dark:border-stone-800">
+      <ErrorBanner error={actions.ready.error ?? actions.notReady.error ?? actions.pickedUp.error} />
+      <div className="flex flex-wrap gap-2">
+        {order.status === 'open' ? (
+          <>
+            <Button disabled={busy} onClick={() => actions.ready.mutate(order.id)}>
+              Ready for pickup
+            </Button>
+            <Button variant="secondary" disabled={busy} onClick={pickedUp}>
+              Picked up in person
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button disabled={busy} onClick={pickedUp}>
+              Picked up
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => actions.notReady.mutate(order.id)}>
+              Back to “To prepare”
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

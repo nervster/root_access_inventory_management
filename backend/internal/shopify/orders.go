@@ -2,6 +2,7 @@ package shopify
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -183,8 +184,8 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 			OrganizationID: orgID, ID: existing.ID, CancelledAt: order.CancelledAt,
 			ShopifyFulfillmentStatus: &order.DisplayFulfillmentStatus, ShopifyUpdatedAt: order.UpdatedAt,
 		})
-		if err != nil || existing.Status != "open" {
-			return err
+		if err != nil || (existing.Status != "open" && existing.Status != "ready_for_pickup") {
+			return err // picked up or cancelled already: nothing more to do
 		}
 		switch {
 		case order.CancelledAt != nil:
@@ -284,6 +285,111 @@ func (s *Store) HandleWebhook(ctx context.Context, topic, shop string) error {
 	case topic == "app/uninstalled":
 		slog.Info("Plant Stock was uninstalled from a store", "organization", orgID, "shop", shop)
 		s.markNeedsReconnect(ctx, orgID)
+	}
+	return nil
+}
+
+func (s *Store) fulfillOrderJob(ctx context.Context, job jobs.Job) error {
+	var payload struct {
+		OrderID int64 `json:"orderId"`
+	}
+	if err := json.Unmarshal(job.Payload, &payload); err != nil {
+		return err
+	}
+	return s.FulfillOrder(ctx, job.OrganizationID, payload.OrderID)
+}
+
+const fulfillmentOrdersQuery = `query FulfillmentOrders($id: ID!) {
+  order(id: $id) { fulfillmentOrders(first: 10) { nodes { id status } } }
+}`
+
+const fulfillMutation = `mutation Fulfill($fulfillment: FulfillmentInput!) {
+  fulfillmentCreate(fulfillment: $fulfillment) {
+    fulfillment { id }
+    userErrors { field message }
+  }
+}`
+
+// FulfillOrder finishes a picked-up order: it's fulfilled in Shopify (without emailing the
+// customer), then its held plants are sold. In that order: Shopify subtracts fulfilled stock from on
+// hand itself, so selling first would make the stock sync subtract the plants a second time. Already
+// fulfilled in Shopify is fine; a failure is retried, the plants staying held meanwhile.
+func (s *Store) FulfillOrder(ctx context.Context, orgID, orderID int64) error {
+	var order dbgen.Order
+	err := db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) (err error) {
+		order, err = q.GetOrder(ctx, dbgen.GetOrderParams{OrganizationID: orgID, ID: orderID})
+		return err
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if order.Status != "picked_up" {
+		return nil // e.g. cancelled since
+	}
+
+	shop, token, err := s.accessToken(ctx, orgID)
+	switch {
+	case errors.Is(err, ErrNotConnected):
+		// The store was disconnected: nothing to tell Shopify; just sell the plants.
+	case err != nil:
+		return err
+	case shop != order.Shop:
+		// Connected to a different store now; the order belongs to the old one.
+	default:
+		if err := s.fulfillOnShopify(ctx, shop, token, order); err != nil {
+			return err
+		}
+	}
+
+	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		sold, err := q.SellOrder(ctx, dbgen.SellOrderParams{OrganizationID: orgID, OrderID: orderID})
+		slog.Info("order picked up; plants sold", "organization", orgID, "order", order.Name, "plants", len(sold))
+		return err
+	})
+}
+
+func (s *Store) fulfillOnShopify(ctx context.Context, shop, token string, order dbgen.Order) error {
+	var data struct {
+		Order *struct {
+			FulfillmentOrders struct {
+				Nodes []struct{ ID, Status string } `json:"nodes"`
+			} `json:"fulfillmentOrders"`
+		} `json:"order"`
+	}
+	if err := s.app.GraphQL(ctx, shop, token, fulfillmentOrdersQuery, map[string]any{"id": order.ShopifyOrderID}, &data); err != nil {
+		return err
+	}
+	if data.Order == nil {
+		return nil // deleted in Shopify
+	}
+	var open []map[string]string
+	for _, fo := range data.Order.FulfillmentOrders.Nodes {
+		if fo.Status == "OPEN" || fo.Status == "IN_PROGRESS" {
+			open = append(open, map[string]string{"fulfillmentOrderId": fo.ID})
+		}
+	}
+	if len(open) == 0 {
+		return nil // fulfilled in Shopify already (or nothing to fulfill)
+	}
+
+	var result struct {
+		FulfillmentCreate struct {
+			Fulfillment *struct{ ID string }       `json:"fulfillment"`
+			UserErrors  []struct{ Message string } `json:"userErrors"`
+		} `json:"fulfillmentCreate"`
+	}
+	variables := map[string]any{"fulfillment": map[string]any{"lineItemsByFulfillmentOrder": open, "notifyCustomer": false}}
+	if err := s.app.GraphQL(ctx, shop, token, fulfillMutation, variables, &result); err != nil {
+		return err
+	}
+	if result.FulfillmentCreate.Fulfillment == nil {
+		message := "no fulfillment returned"
+		if len(result.FulfillmentCreate.UserErrors) > 0 {
+			message = result.FulfillmentCreate.UserErrors[0].Message
+		}
+		return fmt.Errorf("shopify fulfill %s: %s", order.Name, message)
 	}
 	return nil
 }

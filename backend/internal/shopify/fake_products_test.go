@@ -45,6 +45,40 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			{"id": "gid://shopify/Location/1", "name": "Greenhouse"},
 			{"id": "gid://shopify/Location/2", "name": "Market Stall"},
 		}}}
+	case strings.Contains(request.Query, "fulfillmentOrders("):
+		var variables struct{ ID string }
+		_ = json.Unmarshal(request.Variables, &variables)
+		status := "OPEN"
+		if f.fulfilled[variables.ID] {
+			status = "CLOSED"
+		}
+		data = map[string]any{"order": map[string]any{"fulfillmentOrders": map[string]any{
+			"nodes": []map[string]string{{"id": variables.ID + "/FulfillmentOrder", "status": status}}}}}
+	case strings.Contains(request.Query, "fulfillmentCreate("):
+		var variables struct {
+			Fulfillment struct {
+				LineItemsByFulfillmentOrder []struct{ FulfillmentOrderID string }
+				NotifyCustomer              *bool
+			}
+		}
+		_ = json.Unmarshal(request.Variables, &variables)
+		if f.fulfillFail || variables.Fulfillment.NotifyCustomer == nil || *variables.Fulfillment.NotifyCustomer {
+			data = map[string]any{"fulfillmentCreate": map[string]any{"fulfillment": nil, "userErrors": []gqlError{{Message: "can't fulfill (or would email the customer)"}}}}
+			break
+		}
+		if f.fulfilled == nil {
+			f.fulfilled = map[string]bool{}
+		}
+		for _, fo := range variables.Fulfillment.LineItemsByFulfillmentOrder {
+			orderID := strings.TrimSuffix(fo.FulfillmentOrderID, "/FulfillmentOrder")
+			f.fulfilled[orderID] = true
+			for _, o := range f.orders {
+				if o["id"] == orderID {
+					o["displayFulfillmentStatus"] = "FULFILLED"
+				}
+			}
+		}
+		data = map[string]any{"fulfillmentCreate": map[string]any{"fulfillment": map[string]string{"id": f.id("Fulfillment")}, "userErrors": []gqlError{}}}
 	case strings.Contains(request.Query, "orders("):
 		if f.ordersError != "" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": nil, "errors": []map[string]string{{"message": f.ordersError}}})

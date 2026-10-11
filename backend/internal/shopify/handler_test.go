@@ -47,6 +47,8 @@ type fakeShopify struct {
 	orders      []map[string]any // the store's orders, as the Admin API returns them
 	ordersError string           // when set, the orders query fails with this message
 	lastSearch  string           // the last orders query's search
+	fulfilled   map[string]bool  // orders fulfilled through the API, by ID (never notifying the customer)
+	fulfillFail bool             // when set, fulfillmentCreate fails
 
 	stocked     map[string]bool // "item@location" pairs an SKU is stocked at
 	onHand      map[string]int  // by "item@location"

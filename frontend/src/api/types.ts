@@ -21,6 +21,7 @@ export const Permissions = {
   InventoryEdit: 'inventory.edit',
   ListingsManage: 'listings.manage',
   FinancialsView: 'financials.view',
+  OrdersPrepare: 'orders.prepare',
 } as const
 export type Permission = (typeof Permissions)[keyof typeof Permissions]
 
@@ -360,7 +361,7 @@ export interface ShopifyProductStatusDto {
   error: string | null
 }
 
-export type OrderStatus = 'open' | 'picked_up' | 'cancelled'
+export type OrderStatus = 'open' | 'ready_for_pickup' | 'picked_up' | 'cancelled'
 
 /** An online order, and the plants held for it until pickup. */
 export interface OrderDto {
@@ -371,6 +372,11 @@ export interface OrderDto {
   placedAt: string
   cancelledAt: string | null
   shopifyFulfillmentStatus: string | null
+  readyAt: string | null
+  /** Who marked it ready for pickup, by name. */
+  readyByName: string | null
+  pickedUpAt: string | null
+  pickedUpByName: string | null
   /** The order in the Shopify admin. */
   adminUrl: string
   items: OrderItemDto[]
