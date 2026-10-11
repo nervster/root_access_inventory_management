@@ -42,6 +42,10 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 		data = map[string]any{"productSet": f.productSet(request.Variables)}
 	case strings.Contains(request.Query, "productUpdate("):
 		data = map[string]any{"productUpdate": f.productUpdate(request.Variables)}
+	case strings.Contains(request.Query, "inventoryActivate("):
+		data = map[string]any{"inventoryActivate": f.inventoryActivate(request.Variables)}
+	case strings.Contains(request.Query, "inventorySetQuantities("):
+		data = map[string]any{"inventorySetQuantities": f.inventorySetQuantities(request.Variables)}
 	default:
 		http.Error(w, "unexpected query", http.StatusBadRequest)
 		return
@@ -166,4 +170,62 @@ func (s *shopTest) onlyProduct() *fakeProduct {
 		return p
 	}
 	return nil
+}
+
+func (f *fakeShopify) inventoryItemExists(id string) bool {
+	for _, p := range f.products {
+		for _, v := range p.Variants {
+			if v.InventoryItemID == id {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (f *fakeShopify) inventoryActivate(raw json.RawMessage) map[string]any {
+	var variables struct{ InventoryItemID, LocationID, IdempotencyKey string }
+	_ = json.Unmarshal(raw, &variables)
+	if !f.inventoryItemExists(variables.InventoryItemID) || variables.IdempotencyKey == "" {
+		return map[string]any{"inventoryLevel": nil, "userErrors": []gqlError{{Message: "Inventory item does not exist"}}}
+	}
+	if f.stocked == nil {
+		f.stocked, f.onHand = map[string]bool{}, map[string]int{}
+	}
+	f.stocked[variables.InventoryItemID+"@"+variables.LocationID] = true
+	f.activations++
+	return map[string]any{"inventoryLevel": map[string]string{"id": "gid://shopify/InventoryLevel/1"}, "userErrors": []gqlError{}}
+}
+
+func (f *fakeShopify) inventorySetQuantities(raw json.RawMessage) map[string]any {
+	var variables struct {
+		IdempotencyKey string `json:"idempotencyKey"`
+		Input          struct {
+			Name, Reason, ReferenceDocumentURI string
+			Quantities                         []map[string]any
+		} `json:"input"`
+	}
+	_ = json.Unmarshal(raw, &variables)
+	fail := func(code, message string) map[string]any {
+		return map[string]any{"inventoryAdjustmentGroup": nil, "userErrors": []gqlError{{Field: []string{"input"}, Message: message, Code: code}}}
+	}
+	if variables.Input.Name != "on_hand" || variables.Input.Reason == "" || variables.IdempotencyKey == "" {
+		return fail("INVALID_NAME", "want on_hand, a reason, and an idempotency key")
+	}
+	for _, q := range variables.Input.Quantities {
+		item, location := q["inventoryItemId"].(string), q["locationId"].(string)
+		if from, present := q["changeFromQuantity"]; !present || from != nil {
+			return fail("CHANGE_FROM_QUANTITY_STALE", "want changeFromQuantity: null")
+		}
+		if !f.inventoryItemExists(item) {
+			return fail("INVALID_INVENTORY_ITEM", "The specified inventory item could not be found.")
+		}
+		if !f.stocked[item+"@"+location] {
+			return fail("ITEM_NOT_STOCKED_AT_LOCATION", "The specified inventory item is not stocked at the location.")
+		}
+	}
+	for _, q := range variables.Input.Quantities {
+		f.onHand[q["inventoryItemId"].(string)+"@"+q["locationId"].(string)] = int(q["quantity"].(float64))
+	}
+	return map[string]any{"inventoryAdjustmentGroup": map[string]string{"id": "gid://shopify/InventoryAdjustmentGroup/1"}, "userErrors": []gqlError{}}
 }

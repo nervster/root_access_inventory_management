@@ -10,6 +10,25 @@ import (
 	"time"
 )
 
+const forgetOtherShopifyVariants = `-- name: ForgetOtherShopifyVariants :exec
+DELETE FROM shopify_variants
+WHERE shop = $1
+  AND variant_id IN (SELECT id FROM product_variants WHERE product_id = $2)
+  AND NOT variant_id = ANY($3::bigint[])
+`
+
+type ForgetOtherShopifyVariantsParams struct {
+	Shop      string
+	ProductID int64
+	Keep      []int64
+}
+
+// The product's variants no longer on the store (unpriced since, or replaced).
+func (q *Queries) ForgetOtherShopifyVariants(ctx context.Context, arg ForgetOtherShopifyVariantsParams) error {
+	_, err := q.db.Exec(ctx, forgetOtherShopifyVariants, arg.Shop, arg.ProductID, arg.Keep)
+	return err
+}
+
 const forgetShopifyProduct = `-- name: ForgetShopifyProduct :exec
 DELETE FROM shopify_products WHERE product_id = $1 AND shop = $2
 `
@@ -224,6 +243,11 @@ func (q *Queries) SaveShopifySyncError(ctx context.Context, arg SaveShopifySyncE
 const saveShopifyVariant = `-- name: SaveShopifyVariant :exec
 INSERT INTO shopify_variants (organization_id, variant_id, shop, shopify_variant_id, shopify_inventory_item_id)
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (variant_id, shop) DO UPDATE
+SET shopify_variant_id        = excluded.shopify_variant_id,
+    shopify_inventory_item_id = excluded.shopify_inventory_item_id,
+    stocked_location_id       = CASE WHEN shopify_variants.shopify_inventory_item_id = excluded.shopify_inventory_item_id
+                                     THEN shopify_variants.stocked_location_id END
 `
 
 type SaveShopifyVariantParams struct {
@@ -234,6 +258,7 @@ type SaveShopifyVariantParams struct {
 	ShopifyInventoryItemID string
 }
 
+// Where its stock is kept carries over, unless it's a different Shopify variant now.
 func (q *Queries) SaveShopifyVariant(ctx context.Context, arg SaveShopifyVariantParams) error {
 	_, err := q.db.Exec(ctx, saveShopifyVariant,
 		arg.OrganizationID,
@@ -243,6 +268,81 @@ func (q *Queries) SaveShopifyVariant(ctx context.Context, arg SaveShopifyVariant
 		arg.ShopifyInventoryItemID,
 	)
 	return err
+}
+
+const setShopifyVariantStockedAt = `-- name: SetShopifyVariantStockedAt :exec
+UPDATE shopify_variants
+SET stocked_location_id = $1
+WHERE shop = $2 AND variant_id = ANY($3::bigint[])
+`
+
+type SetShopifyVariantStockedAtParams struct {
+	LocationID *string
+	Shop       string
+	VariantIds []int64
+}
+
+func (q *Queries) SetShopifyVariantStockedAt(ctx context.Context, arg SetShopifyVariantStockedAtParams) error {
+	_, err := q.db.Exec(ctx, setShopifyVariantStockedAt, arg.LocationID, arg.Shop, arg.VariantIds)
+	return err
+}
+
+const stockToSync = `-- name: StockToSync :many
+
+SELECT v.id, v.sku, sv.shopify_inventory_item_id, sv.stocked_location_id,
+       (SELECT count(*) FROM plants p
+        WHERE p.organization_id = pr.organization_id
+          AND p.plant_name_id = pr.plant_name_id
+          AND p.variegation_id IS NOT DISTINCT FROM pr.variegation_id
+          AND p.pot_size_id = v.pot_size_id
+          AND p.status = 'for_sale')::integer AS stock
+FROM product_variants v
+JOIN products pr ON pr.id = v.product_id
+JOIN shopify_variants sv ON sv.variant_id = v.id AND sv.shop = $1
+WHERE v.organization_id = $2 AND v.product_id = $3
+ORDER BY v.id
+`
+
+type StockToSyncParams struct {
+	Shop           string
+	OrganizationID int64
+	ProductID      int64
+}
+
+type StockToSyncRow struct {
+	ID                     int64
+	Sku                    string
+	ShopifyInventoryItemID string
+	StockedLocationID      *string
+	Stock                  int32
+}
+
+// Stock --
+// The product's SKUs on the store, each with its stock: how many of its plants are for sale.
+func (q *Queries) StockToSync(ctx context.Context, arg StockToSyncParams) ([]StockToSyncRow, error) {
+	rows, err := q.db.Query(ctx, stockToSync, arg.Shop, arg.OrganizationID, arg.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StockToSyncRow{}
+	for rows.Next() {
+		var i StockToSyncRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Sku,
+			&i.ShopifyInventoryItemID,
+			&i.StockedLocationID,
+			&i.Stock,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const variantsToSync = `-- name: VariantsToSync :many

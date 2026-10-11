@@ -423,6 +423,7 @@ type ShopifyVariant struct {
 	Shop                   string
 	ShopifyVariantID       string
 	ShopifyInventoryItemID string
+	StockedLocationID      *string
 }
 
 type User struct {

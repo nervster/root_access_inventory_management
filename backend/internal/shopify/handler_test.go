@@ -38,6 +38,10 @@ type fakeShopify struct {
 	products map[string]*fakeProduct // the store's products, by ID
 	nextID   int
 	refuse   string // when set, productSet refuses every product with this message
+
+	stocked     map[string]bool // "item@location" pairs an SKU is stocked at
+	onHand      map[string]int  // by "item@location"
+	activations int
 }
 
 func (f *fakeShopify) ServeHTTP(w http.ResponseWriter, r *http.Request) {

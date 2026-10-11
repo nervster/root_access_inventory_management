@@ -179,7 +179,8 @@ func (s *Store) Locations(ctx context.Context, orgID int64) ([]Location, error) 
 	return data.Locations.Nodes, err
 }
 
-// SetLocation chooses where customers pick up. It fails with ErrLocationNotFound.
+// SetLocation chooses where customers pick up, and moves the stock on Shopify there. It fails
+// with ErrLocationNotFound.
 func (s *Store) SetLocation(ctx context.Context, orgID int64, locationID string) (Location, error) {
 	locations, err := s.Locations(ctx, orgID)
 	if err != nil {
@@ -188,7 +189,11 @@ func (s *Store) SetLocation(ctx context.Context, orgID int64, locationID string)
 	for _, location := range locations {
 		if location.ID == locationID {
 			return location, db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
-				return q.SetShopifyLocation(ctx, dbgen.SetShopifyLocationParams{OrganizationID: orgID, LocationID: &location.ID, LocationName: &location.Name})
+				err := q.SetShopifyLocation(ctx, dbgen.SetShopifyLocationParams{OrganizationID: orgID, LocationID: &location.ID, LocationName: &location.Name})
+				if err != nil {
+					return err
+				}
+				return jobs.Enqueue(ctx, q, orgID, JobSyncAll, struct{}{}) // stock goes to the new location
 			})
 		}
 	}

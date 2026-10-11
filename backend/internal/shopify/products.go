@@ -31,6 +31,7 @@ func (s *Store) JobHandlers() map[string]jobs.Handler {
 	return map[string]jobs.Handler{
 		JobSyncProduct: s.syncProductJob,
 		JobSyncAll:     s.syncAllJob,
+		JobSyncStock:   s.syncStockJob,
 	}
 }
 
@@ -298,18 +299,17 @@ func (p productSync) save(ctx context.Context, result productSetResult) error {
 		return err
 	}
 
-	if err := p.q.ForgetShopifyVariants(ctx, dbgen.ForgetShopifyVariantsParams{Shop: p.shop, ProductID: p.product.ID}); err != nil {
-		return err
-	}
 	bySKU := map[string]int64{}
 	for _, v := range p.variants {
 		bySKU[v.Sku] = v.ID
 	}
+	keep := []int64{}
 	for _, node := range result.Product.Variants.Nodes {
 		variantID, ok := bySKU[node.SKU]
 		if !ok {
 			continue
 		}
+		keep = append(keep, variantID)
 		err := p.q.SaveShopifyVariant(ctx, dbgen.SaveShopifyVariantParams{
 			OrganizationID: p.orgID, VariantID: variantID, Shop: p.shop,
 			ShopifyVariantID: node.ID, ShopifyInventoryItemID: node.InventoryItem.ID,
@@ -318,7 +318,11 @@ func (p productSync) save(ctx context.Context, result productSetResult) error {
 			return err
 		}
 	}
-	return nil
+	if err := p.q.ForgetOtherShopifyVariants(ctx, dbgen.ForgetOtherShopifyVariantsParams{Shop: p.shop, ProductID: p.product.ID, Keep: keep}); err != nil {
+		return err
+	}
+	// New SKUs start with no stock on the store; this sets it.
+	return jobs.Enqueue(ctx, p.q, p.orgID, JobSyncStock, map[string]int64{"productId": p.product.ID})
 }
 
 // descriptionHTML turns the plain-text description into Shopify's HTML: a paragraph per blank-line

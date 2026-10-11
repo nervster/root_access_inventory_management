@@ -43,8 +43,43 @@ WHERE shop = @shop
   AND variant_id IN (SELECT id FROM product_variants WHERE product_id = @product_id);
 
 -- name: SaveShopifyVariant :exec
+-- Where its stock is kept carries over, unless it's a different Shopify variant now.
 INSERT INTO shopify_variants (organization_id, variant_id, shop, shopify_variant_id, shopify_inventory_item_id)
-VALUES (@organization_id, @variant_id, @shop, @shopify_variant_id, @shopify_inventory_item_id);
+VALUES (@organization_id, @variant_id, @shop, @shopify_variant_id, @shopify_inventory_item_id)
+ON CONFLICT (variant_id, shop) DO UPDATE
+SET shopify_variant_id        = excluded.shopify_variant_id,
+    shopify_inventory_item_id = excluded.shopify_inventory_item_id,
+    stocked_location_id       = CASE WHEN shopify_variants.shopify_inventory_item_id = excluded.shopify_inventory_item_id
+                                     THEN shopify_variants.stocked_location_id END;
+
+-- name: ForgetOtherShopifyVariants :exec
+-- The product's variants no longer on the store (unpriced since, or replaced).
+DELETE FROM shopify_variants
+WHERE shop = @shop
+  AND variant_id IN (SELECT id FROM product_variants WHERE product_id = @product_id)
+  AND NOT variant_id = ANY(@keep::bigint[]);
+
+-- Stock --
+
+-- name: StockToSync :many
+-- The product's SKUs on the store, each with its stock: how many of its plants are for sale.
+SELECT v.id, v.sku, sv.shopify_inventory_item_id, sv.stocked_location_id,
+       (SELECT count(*) FROM plants p
+        WHERE p.organization_id = pr.organization_id
+          AND p.plant_name_id = pr.plant_name_id
+          AND p.variegation_id IS NOT DISTINCT FROM pr.variegation_id
+          AND p.pot_size_id = v.pot_size_id
+          AND p.status = 'for_sale')::integer AS stock
+FROM product_variants v
+JOIN products pr ON pr.id = v.product_id
+JOIN shopify_variants sv ON sv.variant_id = v.id AND sv.shop = @shop
+WHERE v.organization_id = @organization_id AND v.product_id = @product_id
+ORDER BY v.id;
+
+-- name: SetShopifyVariantStockedAt :exec
+UPDATE shopify_variants
+SET stocked_location_id = sqlc.narg(location_id)
+WHERE shop = @shop AND variant_id = ANY(@variant_ids::bigint[]);
 
 -- name: ProductsToSync :many
 -- Every product worth pushing: with a price, or already on Shopify (to update or take off sale).
