@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -110,7 +111,17 @@ func (s *Store) SyncProduct(ctx context.Context, orgID, productID int64) error {
 			return err
 		}
 
-		sync := productSync{q: q, app: s.app, orgID: orgID, shop: shop, token: token, product: product, variants: variants}
+		images, err := q.PhotosToSync(ctx, dbgen.PhotosToSyncParams{Shop: shop, OrganizationID: orgID, ProductID: productID})
+		if err != nil {
+			return err
+		}
+		hasMedia, err := q.HasShopifyMedia(ctx, dbgen.HasShopifyMediaParams{ProductID: productID, Shop: shop})
+		if err != nil {
+			return err
+		}
+
+		sync := productSync{q: q, app: s.app, photos: s.photos, orgID: orgID, shop: shop, token: token,
+			product: product, variants: variants, images: images, hasMedia: hasMedia}
 		return sync.run(ctx)
 	})
 }
@@ -122,8 +133,11 @@ type productSync struct {
 	orgID    int64
 	shop     string
 	token    string
+	photos   PhotoSource
 	product  dbgen.ProductToSyncRow
 	variants []dbgen.VariantsToSyncRow
+	images   []dbgen.PhotosToSyncRow // the chosen photos, in order
+	hasMedia bool                    // Plant Stock has put images on the store's copy before
 }
 
 func (p productSync) run(ctx context.Context) error {
@@ -141,22 +155,38 @@ func (p productSync) run(ctx context.Context) error {
 	if len(priced) == 0 {
 		return p.takeOffSale(ctx) // every SKU lost its price
 	}
-	result, err := p.productSet(ctx, p.productInput(priced, !onStore))
+	files, sendFiles, err := p.files(ctx, false)
+	if err != nil {
+		return err
+	}
+	result, err := p.productSet(ctx, p.productInput(priced, !onStore, files, sendFiles))
 
-	// Deleted on the store (by someone in Shopify): Plant Stock is the record, so create it again.
-	if result.hasError("NOT_FOUND", "PRODUCT_DOES_NOT_EXIST") {
+	switch {
+	case err != nil:
+	case result.hasError("NOT_FOUND", "PRODUCT_DOES_NOT_EXIST"):
+		// Deleted on the store (by someone in Shopify): Plant Stock is the record, so create it again.
 		slog.Info("product was deleted on Shopify; creating it again", "organization", p.orgID, "product", p.product.ID)
 		p.product.ShopifyProductID = nil
 		for i := range priced {
 			priced[i].ShopifyVariantID = nil
 		}
-		result, err = p.productSet(ctx, p.productInput(priced, true))
-	} else if result.hasError("PRODUCT_VARIANT_DOES_NOT_EXIST") {
+		if files, sendFiles, err = p.files(ctx, true); err != nil {
+			return err
+		}
+		result, err = p.productSet(ctx, p.productInput(priced, true, files, sendFiles))
+	case result.hasError("PRODUCT_VARIANT_DOES_NOT_EXIST"):
 		// A variant was deleted on the store: send them all as new.
 		for i := range priced {
 			priced[i].ShopifyVariantID = nil
 		}
-		result, err = p.productSet(ctx, p.productInput(priced, false))
+		result, err = p.productSet(ctx, p.productInput(priced, false, files, sendFiles))
+	case result.hasFieldError("files"):
+		// An image was deleted on the store: upload them all again.
+		slog.Info("an image was deleted on Shopify; uploading the product's images again", "organization", p.orgID, "product", p.product.ID)
+		if files, sendFiles, err = p.files(ctx, true); err != nil {
+			return err
+		}
+		result, err = p.productSet(ctx, p.productInput(priced, false, files, sendFiles))
 	}
 	if err != nil {
 		return err
@@ -168,7 +198,7 @@ func (p productSync) run(ctx context.Context) error {
 			OrganizationID: p.orgID, ProductID: p.product.ID, Shop: p.shop, SyncError: &message,
 		})
 	}
-	return p.save(ctx, result)
+	return p.save(ctx, result, sendFiles)
 }
 
 const takeOffSaleMutation = `mutation TakeOffSale($product: ProductUpdateInput!) {
@@ -204,7 +234,7 @@ func (p productSync) takeOffSale(ctx context.Context) error {
 
 // productInput is the store's copy of the product. Variants are matched by their Shopify IDs;
 // ones left out are deleted from the store.
-func (p productSync) productInput(priced []dbgen.VariantsToSyncRow, create bool) map[string]any {
+func (p productSync) productInput(priced []dbgen.VariantsToSyncRow, create bool, files []map[string]any, sendFiles bool) map[string]any {
 	potSizes := make([]map[string]string, len(priced))
 	variants := make([]map[string]any, len(priced))
 	for i, v := range priced {
@@ -231,6 +261,9 @@ func (p productSync) productInput(priced []dbgen.VariantsToSyncRow, create bool)
 	if create {
 		input["status"] = "DRAFT" // the Owner checks it and publishes it in Shopify
 	}
+	if sendFiles {
+		input["files"] = files // the images, in order; ones left out are removed from the store
+	}
 	return input
 }
 
@@ -239,6 +272,7 @@ const productSetMutation = `mutation SyncProduct($input: ProductSetInput!, $iden
     product {
       id
       variants(first: 250) { nodes { id sku inventoryItem { id } } }
+      media(first: 250) { nodes { id } }
     }
     userErrors { field message code }
   }
@@ -256,12 +290,27 @@ type productSetResult struct {
 				} `json:"inventoryItem"`
 			} `json:"nodes"`
 		} `json:"variants"`
+		Media struct {
+			Nodes []struct {
+				ID string `json:"id"`
+			} `json:"nodes"`
+		} `json:"media"`
 	} `json:"product"`
 	UserErrors []struct {
 		Field   []string `json:"field"`
 		Message string   `json:"message"`
 		Code    string   `json:"code"`
 	} `json:"userErrors"`
+}
+
+// hasFieldError reports whether Shopify refused something under input.<field>.
+func (r productSetResult) hasFieldError(field string) bool {
+	for _, e := range r.UserErrors {
+		if slices.Contains(e.Field, field) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r productSetResult) hasError(codes ...string) bool {
@@ -288,7 +337,7 @@ func (p productSync) productSet(ctx context.Context, input map[string]any) (prod
 }
 
 // save records which Shopify product and variants the product's are, matching variants by SKU.
-func (p productSync) save(ctx context.Context, result productSetResult) error {
+func (p productSync) save(ctx context.Context, result productSetResult, filesSent bool) error {
 	if result.Product == nil {
 		return errors.New("shopify productSet returned no product")
 	}
@@ -320,6 +369,15 @@ func (p productSync) save(ctx context.Context, result productSetResult) error {
 	}
 	if err := p.q.ForgetOtherShopifyVariants(ctx, dbgen.ForgetOtherShopifyVariantsParams{Shop: p.shop, ProductID: p.product.ID, Keep: keep}); err != nil {
 		return err
+	}
+	if filesSent {
+		mediaIDs := make([]string, len(result.Product.Media.Nodes))
+		for i, node := range result.Product.Media.Nodes {
+			mediaIDs[i] = node.ID
+		}
+		if err := p.saveMedia(ctx, mediaIDs); err != nil {
+			return err
+		}
 	}
 	// New SKUs start with no stock on the store; this sets it.
 	return jobs.Enqueue(ctx, p.q, p.orgID, JobSyncStock, map[string]int64{"productId": p.product.ID})

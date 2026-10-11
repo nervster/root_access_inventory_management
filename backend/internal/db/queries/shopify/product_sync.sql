@@ -97,3 +97,27 @@ FROM shopify_products sp
 JOIN products p ON p.id = sp.product_id
 WHERE sp.organization_id = @organization_id AND sp.shop = @shop
 ORDER BY sp.sync_error IS NULL, p.title;
+
+-- Images --
+
+-- name: PhotosToSync :many
+-- The product's chosen photos in order, with the Shopify image each became, if already pushed.
+SELECT pp.photo_id, ph.storage_key, sm.shopify_media_id
+FROM product_photos pp
+JOIN plant_photos ph ON ph.id = pp.photo_id
+LEFT JOIN shopify_media sm ON sm.product_id = pp.product_id AND sm.photo_id = pp.photo_id AND sm.shop = @shop
+WHERE pp.organization_id = @organization_id AND pp.product_id = @product_id
+ORDER BY pp.position;
+
+-- name: HasShopifyMedia :one
+-- Whether Plant Stock has put images on the store's copy (then it keeps them matching, even at none).
+SELECT EXISTS (SELECT 1 FROM shopify_media WHERE product_id = @product_id AND shop = @shop);
+
+-- name: SaveShopifyMedia :exec
+INSERT INTO shopify_media (organization_id, product_id, photo_id, shop, shopify_media_id)
+VALUES (@organization_id, @product_id, @photo_id, @shop, @shopify_media_id)
+ON CONFLICT (product_id, photo_id, shop) DO UPDATE SET shopify_media_id = excluded.shopify_media_id;
+
+-- name: ForgetOtherShopifyMedia :exec
+DELETE FROM shopify_media
+WHERE product_id = @product_id AND shop = @shop AND NOT photo_id = ANY(@keep::bigint[]);

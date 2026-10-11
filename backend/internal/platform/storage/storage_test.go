@@ -65,4 +65,15 @@ func TestLocalStackRoundTrip(t *testing.T) {
 	if !bytes.Equal(downloaded, photo) {
 		t.Errorf("downloaded %q, want %q", downloaded, photo)
 	}
+
+	// The API reads it too (the worker, to upload photos to Shopify).
+	file, info, err := s.Open(ctx, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, _ := io.ReadAll(file)
+	file.Close()
+	if !bytes.Equal(read, photo) || info.Size != int64(len(photo)) || info.ContentType != "image/jpeg" {
+		t.Errorf("Open read %q (%+v), want the photo as image/jpeg", read, info)
+	}
 }

@@ -38,25 +38,26 @@ type Store struct {
 	conn   db.Conn
 	app    *App // nil when Shopify isn't set up (no SHOPIFY_CLIENT_ID)
 	sealer *Sealer
+	photos PhotoSource // for uploading product images
 }
 
-func NewStore(conn db.Conn, app *App, sealer *Sealer) *Store {
-	return &Store{conn: conn, app: app, sealer: sealer}
+func NewStore(conn db.Conn, app *App, sealer *Sealer, photos PhotoSource) *Store {
+	return &Store{conn: conn, app: app, sealer: sealer, photos: photos}
 }
 
 // FromConfig sets up the Shopify app from the server's settings. Without SHOPIFY_CLIENT_ID,
 // Shopify is off and Settings says so.
-func FromConfig(cfg config.Config, conn db.Conn) (*Store, error) {
+func FromConfig(cfg config.Config, conn db.Conn, photos PhotoSource) (*Store, error) {
 	if cfg.ShopifyClientID == "" {
 		slog.Warn("Shopify is off (no SHOPIFY_CLIENT_ID)")
-		return NewStore(conn, nil, nil), nil
+		return NewStore(conn, nil, nil, photos), nil
 	}
 	sealer, err := NewSealer(cfg.ShopifyTokenKey)
 	if err != nil {
 		return nil, err
 	}
 	app := NewApp(cfg.ShopifyClientID, cfg.ShopifyClientSecret, strings.TrimSuffix(cfg.AppURL, "/")+callbackPath)
-	return NewStore(conn, app, sealer), nil
+	return NewStore(conn, app, sealer, photos), nil
 }
 
 // Configured reports whether the server has the Shopify app's credentials.

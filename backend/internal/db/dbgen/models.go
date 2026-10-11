@@ -400,6 +400,14 @@ type ShopifyConnection struct {
 	ConnectedAt           time.Time
 }
 
+type ShopifyMedium struct {
+	OrganizationID int64
+	ProductID      int64
+	PhotoID        int64
+	Shop           string
+	ShopifyMediaID string
+}
+
 type ShopifyOauthState struct {
 	State          string
 	OrganizationID int64

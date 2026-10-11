@@ -65,7 +65,7 @@ func run() error {
 		}
 	}
 
-	shopifyStore, err := shopify.FromConfig(cfg, pool)
+	shopifyStore, err := shopify.FromConfig(cfg, pool, photos)
 	if err != nil {
 		return err
 	}

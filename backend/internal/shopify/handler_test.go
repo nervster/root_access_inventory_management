@@ -39,6 +39,10 @@ type fakeShopify struct {
 	nextID   int
 	refuse   string // when set, productSet refuses every product with this message
 
+	baseURL     string            // the fake's own address, for staged upload targets
+	uploads     map[string]string // staged uploads: resource URL → content
+	uploadCount int
+
 	stocked     map[string]bool // "item@location" pairs an SKU is stocked at
 	onHand      map[string]int  // by "item@location"
 	activations int
@@ -74,6 +78,8 @@ func (f *fakeShopify) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.graphQL(w, r)
+	case "/staged-upload":
+		f.stagedUpload(w, r)
 	default:
 		http.NotFound(w, r)
 	}
@@ -88,6 +94,7 @@ type shopTest struct {
 	users   map[string]dbgen.User
 	fake    *fakeShopify
 	app     *App // signs callbacks as Shopify would
+	photos  *fakePhotos
 	store   *Store
 	cookies map[string]string // state cookie per user, as their browser would keep it
 }
@@ -132,13 +139,15 @@ func newShopTest(t *testing.T) *shopTest {
 
 	server := httptest.NewServer(s.fake)
 	t.Cleanup(server.Close)
+	s.fake.baseURL = server.URL
 	app := NewApp("test-client", "test-secret", "http://localhost:5173/api/shopify/callback")
 	app.shopURL = func(string) string { return server.URL }
 	sealer, err := NewSealer(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.app, s.store = app, NewStore(tx, app, sealer)
+	s.photos = &fakePhotos{files: map[string]string{}}
+	s.app, s.store = app, NewStore(tx, app, sealer, s.photos)
 	return s
 }
 
@@ -387,7 +396,7 @@ func TestTokenRefresh(t *testing.T) {
 
 func TestNotConfigured(t *testing.T) {
 	s := newShopTest(t)
-	s.store = NewStore(s.db, nil, nil)
+	s.store = NewStore(s.db, nil, nil, nil)
 	if got := s.connection("owner"); got.Configured {
 		t.Errorf("connection = %+v, want not configured", got)
 	}

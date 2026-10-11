@@ -1,10 +1,14 @@
 package shopify
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
 )
 
 // fakeProduct is a product on the fake store.
@@ -12,7 +16,10 @@ type fakeProduct struct {
 	ID, Title, DescriptionHTML, ProductType, Status string
 	Tags                                            []string
 	Variants                                        []fakeVariant
+	Media                                           []fakeMedia // the product's images, in order
 }
+
+type fakeMedia struct{ ID, Content string }
 
 type fakeVariant struct {
 	ID, InventoryItemID, SKU, Price, PotSize string
@@ -38,6 +45,8 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			{"id": "gid://shopify/Location/1", "name": "Greenhouse"},
 			{"id": "gid://shopify/Location/2", "name": "Market Stall"},
 		}}}
+	case strings.Contains(request.Query, "stagedUploadsCreate("):
+		data = map[string]any{"stagedUploadsCreate": f.stagedUploadsCreate(request.Variables)}
 	case strings.Contains(request.Query, "productSet("):
 		data = map[string]any{"productSet": f.productSet(request.Variables)}
 	case strings.Contains(request.Query, "productUpdate("):
@@ -71,6 +80,11 @@ func (f *fakeShopify) productSet(raw json.RawMessage) map[string]any {
 				Name   string `json:"name"`
 				Values []struct{ Name string }
 			} `json:"productOptions"`
+			Files *[]struct {
+				ID             string `json:"id"`
+				OriginalSource string `json:"originalSource"`
+				ContentType    string `json:"contentType"`
+			} `json:"files"`
 			Variants []struct {
 				ID           string `json:"id"`
 				Price        string `json:"price"`
@@ -128,6 +142,28 @@ func (f *fakeShopify) productSet(raw json.RawMessage) map[string]any {
 		variants = append(variants, variant)
 	}
 
+	media := product.Media
+	if input.Files != nil { // the images, replaced by the list sent
+		existingMedia := map[string]fakeMedia{}
+		for _, m := range product.Media {
+			existingMedia[m.ID] = m
+		}
+		media = []fakeMedia{}
+		for i, file := range *input.Files {
+			if content, ok := f.uploads[file.OriginalSource]; ok && file.ContentType == "IMAGE" {
+				media = append(media, fakeMedia{ID: f.id("MediaImage"), Content: content})
+			} else if m, ok := existingMedia[file.ID]; ok && file.OriginalSource == "" {
+				media = append(media, m) // kept as it is
+			} else if m, ok := existingMedia[file.OriginalSource]; ok {
+				media = append(media, fakeMedia{ID: f.id("MediaImage"), Content: m.Content}) // like Shopify: a new copy
+			} else {
+				return map[string]any{"product": nil, "userErrors": []gqlError{{
+					Field: []string{"input", "files", fmt.Sprint(i), "originalSource"}, Message: "File does not exist", Code: "INVALID_INPUT"}}}
+			}
+		}
+	}
+	product.Media = media
+
 	product.Title, product.DescriptionHTML, product.ProductType, product.Tags = input.Title, input.DescriptionHTML, input.ProductType, input.Tags
 	if input.Status != "" {
 		product.Status = input.Status
@@ -139,8 +175,13 @@ func (f *fakeShopify) productSet(raw json.RawMessage) map[string]any {
 	for i, v := range variants {
 		nodes[i] = map[string]any{"id": v.ID, "sku": v.SKU, "inventoryItem": map[string]string{"id": v.InventoryItemID}}
 	}
+	mediaNodes := make([]map[string]string, len(product.Media))
+	for i, m := range product.Media {
+		mediaNodes[i] = map[string]string{"id": m.ID}
+	}
 	return map[string]any{
-		"product":    map[string]any{"id": product.ID, "variants": map[string]any{"nodes": nodes}},
+		"product": map[string]any{"id": product.ID, "variants": map[string]any{"nodes": nodes},
+			"media": map[string]any{"nodes": mediaNodes}},
 		"userErrors": []gqlError{},
 	}
 }
@@ -228,4 +269,55 @@ func (f *fakeShopify) inventorySetQuantities(raw json.RawMessage) map[string]any
 		f.onHand[q["inventoryItemId"].(string)+"@"+q["locationId"].(string)] = int(q["quantity"].(float64))
 	}
 	return map[string]any{"inventoryAdjustmentGroup": map[string]string{"id": "gid://shopify/InventoryAdjustmentGroup/1"}, "userErrors": []gqlError{}}
+}
+
+func (f *fakeShopify) stagedUploadsCreate(raw json.RawMessage) map[string]any {
+	var variables struct {
+		Input []struct{ Resource, Filename, MimeType, HTTPMethod, FileSize string }
+	}
+	_ = json.Unmarshal(raw, &variables)
+	targets := []map[string]any{}
+	for _, in := range variables.Input {
+		if in.Resource != "IMAGE" || in.HTTPMethod != "POST" || in.MimeType == "" || in.FileSize == "" {
+			return map[string]any{"stagedTargets": nil, "userErrors": []gqlError{{Message: "bad staged upload input"}}}
+		}
+		key := f.id("Upload")
+		targets = append(targets, map[string]any{
+			"url":         f.baseURL + "/staged-upload",
+			"resourceUrl": "https://shopify-staged-uploads.example/" + key,
+			"parameters":  []map[string]string{{"name": "key", "value": key}, {"name": "policy", "value": "signed"}},
+		})
+	}
+	return map[string]any{"stagedTargets": targets, "userErrors": []gqlError{}}
+}
+
+// stagedUpload is the storage behind a staged target: a form with the target's parameters, then the file.
+func (f *fakeShopify) stagedUpload(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(1 << 20); err != nil || r.FormValue("policy") != "signed" {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "no file", http.StatusBadRequest)
+		return
+	}
+	content, _ := io.ReadAll(file)
+	if f.uploads == nil {
+		f.uploads = map[string]string{}
+	}
+	f.uploads["https://shopify-staged-uploads.example/"+r.FormValue("key")] = string(content)
+	f.uploadCount++
+	w.WriteHeader(http.StatusCreated)
+}
+
+// fakePhotos stands in for S3: photo content by storage key, all JPEGs.
+type fakePhotos struct{ files map[string]string }
+
+func (p *fakePhotos) Open(_ context.Context, key string) (io.ReadCloser, storage.FileInfo, error) {
+	content, ok := p.files[key]
+	if !ok {
+		return nil, storage.FileInfo{}, fmt.Errorf("no such photo %s", key)
+	}
+	return io.NopCloser(strings.NewReader(content)), storage.FileInfo{Size: int64(len(content)), ContentType: "image/jpeg"}, nil
 }

@@ -10,6 +10,22 @@ import (
 	"time"
 )
 
+const forgetOtherShopifyMedia = `-- name: ForgetOtherShopifyMedia :exec
+DELETE FROM shopify_media
+WHERE product_id = $1 AND shop = $2 AND NOT photo_id = ANY($3::bigint[])
+`
+
+type ForgetOtherShopifyMediaParams struct {
+	ProductID int64
+	Shop      string
+	Keep      []int64
+}
+
+func (q *Queries) ForgetOtherShopifyMedia(ctx context.Context, arg ForgetOtherShopifyMediaParams) error {
+	_, err := q.db.Exec(ctx, forgetOtherShopifyMedia, arg.ProductID, arg.Shop, arg.Keep)
+	return err
+}
+
 const forgetOtherShopifyVariants = `-- name: ForgetOtherShopifyVariants :exec
 DELETE FROM shopify_variants
 WHERE shop = $1
@@ -58,6 +74,23 @@ type ForgetShopifyVariantsParams struct {
 func (q *Queries) ForgetShopifyVariants(ctx context.Context, arg ForgetShopifyVariantsParams) error {
 	_, err := q.db.Exec(ctx, forgetShopifyVariants, arg.Shop, arg.ProductID)
 	return err
+}
+
+const hasShopifyMedia = `-- name: HasShopifyMedia :one
+SELECT EXISTS (SELECT 1 FROM shopify_media WHERE product_id = $1 AND shop = $2)
+`
+
+type HasShopifyMediaParams struct {
+	ProductID int64
+	Shop      string
+}
+
+// Whether Plant Stock has put images on the store's copy (then it keeps them matching, even at none).
+func (q *Queries) HasShopifyMedia(ctx context.Context, arg HasShopifyMediaParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasShopifyMedia, arg.ProductID, arg.Shop)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const listShopifyProducts = `-- name: ListShopifyProducts :many
@@ -118,6 +151,50 @@ SELECT pg_advisory_xact_lock(hashtext('shopify.sync_product'), mod($1::bigint, 2
 func (q *Queries) LockProductSync(ctx context.Context, productID int64) error {
 	_, err := q.db.Exec(ctx, lockProductSync, productID)
 	return err
+}
+
+const photosToSync = `-- name: PhotosToSync :many
+
+SELECT pp.photo_id, ph.storage_key, sm.shopify_media_id
+FROM product_photos pp
+JOIN plant_photos ph ON ph.id = pp.photo_id
+LEFT JOIN shopify_media sm ON sm.product_id = pp.product_id AND sm.photo_id = pp.photo_id AND sm.shop = $1
+WHERE pp.organization_id = $2 AND pp.product_id = $3
+ORDER BY pp.position
+`
+
+type PhotosToSyncParams struct {
+	Shop           string
+	OrganizationID int64
+	ProductID      int64
+}
+
+type PhotosToSyncRow struct {
+	PhotoID        int64
+	StorageKey     string
+	ShopifyMediaID *string
+}
+
+// Images --
+// The product's chosen photos in order, with the Shopify image each became, if already pushed.
+func (q *Queries) PhotosToSync(ctx context.Context, arg PhotosToSyncParams) ([]PhotosToSyncRow, error) {
+	rows, err := q.db.Query(ctx, photosToSync, arg.Shop, arg.OrganizationID, arg.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PhotosToSyncRow{}
+	for rows.Next() {
+		var i PhotosToSyncRow
+		if err := rows.Scan(&i.PhotoID, &i.StorageKey, &i.ShopifyMediaID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const productToSync = `-- name: ProductToSync :one
@@ -190,6 +267,31 @@ func (q *Queries) ProductsToSync(ctx context.Context, arg ProductsToSyncParams) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveShopifyMedia = `-- name: SaveShopifyMedia :exec
+INSERT INTO shopify_media (organization_id, product_id, photo_id, shop, shopify_media_id)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (product_id, photo_id, shop) DO UPDATE SET shopify_media_id = excluded.shopify_media_id
+`
+
+type SaveShopifyMediaParams struct {
+	OrganizationID int64
+	ProductID      int64
+	PhotoID        int64
+	Shop           string
+	ShopifyMediaID string
+}
+
+func (q *Queries) SaveShopifyMedia(ctx context.Context, arg SaveShopifyMediaParams) error {
+	_, err := q.db.Exec(ctx, saveShopifyMedia,
+		arg.OrganizationID,
+		arg.ProductID,
+		arg.PhotoID,
+		arg.Shop,
+		arg.ShopifyMediaID,
+	)
+	return err
 }
 
 const saveShopifyProduct = `-- name: SaveShopifyProduct :exec

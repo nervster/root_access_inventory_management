@@ -184,7 +184,7 @@ function ProductsOnShopify({ orgId }: { orgId: number }) {
         <div>
           <p className="text-sm font-medium">Products on Shopify</p>
           <p className="text-xs text-stone-500">
-            Products with a price go to Shopify automatically. New ones arrive as drafts for you to check and publish there.
+            Products with a price go to Shopify automatically, with their photos and stock. New ones arrive as drafts for you to check and publish there.
           </p>
         </div>
         <Button variant="secondary" disabled={sync.isPending} onClick={() => sync.mutate()}>

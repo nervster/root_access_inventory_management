@@ -16,6 +16,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/jobs"
+	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
 	"github.com/nervster/root_access_inventory_management/backend/internal/shopify"
 )
 
@@ -51,7 +52,12 @@ func run() error {
 		return err
 	}
 
-	shopifyStore, err := shopify.FromConfig(cfg, pool)
+	// Photos, to upload product images to Shopify.
+	photos, err := storage.New(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.AWSRegion, Endpoint: cfg.S3Endpoint})
+	if err != nil {
+		return err
+	}
+	shopifyStore, err := shopify.FromConfig(cfg, pool, photos)
 	if err != nil {
 		return err
 	}
