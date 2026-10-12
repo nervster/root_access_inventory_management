@@ -31,6 +31,9 @@ import type {
   OrderDto,
   OrderStatus,
   OrdersStatusDto,
+  ReturnDto,
+  UnreturnedRefundDto,
+  ApprovedRefundDto,
   VariegationDto,
 } from './types'
 
@@ -47,6 +50,9 @@ export const queryKeys = {
   shopifyProducts: (orgId: number) => ['orgs', orgId, 'shopify', 'products'] as const,
   orders: (orgId: number, status: OrderStatus) => ['orgs', orgId, 'orders', status] as const,
   ordersStatus: (orgId: number) => ['orgs', orgId, 'orders', 'status'] as const,
+  returns: (orgId: number, show: 'active' | 'done') => ['orgs', orgId, 'orders', 'returns', show] as const,
+  unreturnedRefunds: (orgId: number) => ['orgs', orgId, 'orders', 'returns', 'unreturned-refunds'] as const,
+  approvedRefunds: (orgId: number) => ['orgs', orgId, 'orders', 'returns', 'approved-refunds'] as const,
 }
 
 // ── Signed-in user ──────────────────────────────────────────────────────────
@@ -586,5 +592,80 @@ export function useCheckOrders(orgId: number) {
     onSuccess: () => {
       setTimeout(() => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders'] }), 4000)
     },
+  })
+}
+
+// ── Returns ─────────────────────────────────────────────────────────────────
+
+/** Return requests still needing something (active), or finished ones. */
+export function useReturns(orgId: number, show: 'active' | 'done') {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.returns(orgId, show),
+    queryFn: () => api<ReturnDto[]>(`/orgs/${orgId}/returns?show=${show}`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Receiving a returned plant, and settling it after its check. */
+export function useReturnActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const refresh = () => client.invalidateQueries({ queryKey: ['orgs', orgId, 'orders', 'returns'] })
+  return {
+    receive: useMutation({
+      mutationFn: ({ returnId, barcode }: { returnId: number; barcode: string }) =>
+        api<void>(`/orgs/${orgId}/returns/${returnId}/receive`, { method: 'POST', json: { barcode } }),
+      onSuccess: refresh,
+    }),
+    check: useMutation({
+      mutationFn: ({ barcode, to, reason }: { barcode: string; to: 'for_sale' | 'growing' | 'discarded'; reason?: string }) =>
+        api<void>(`/orgs/${orgId}/returned-plants/${barcode}/check`, { method: 'POST', json: { to, reason } }),
+      onSuccess: refresh,
+    }),
+  }
+}
+
+/** Refunds issued without a return, not yet reviewed. */
+export function useUnreturnedRefunds(orgId: number) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.unreturnedRefunds(orgId),
+    queryFn: () => api<UnreturnedRefundDto[]>(`/orgs/${orgId}/refunds/unreturned`),
+    refetchInterval: 60_000,
+  })
+}
+
+/** Refunds without a return approved as special cases, newest first. */
+export function useApprovedRefunds(orgId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: queryKeys.approvedRefunds(orgId),
+    queryFn: () => api<ApprovedRefundDto[]>(`/orgs/${orgId}/refunds/approved`),
+    enabled,
+  })
+}
+
+/** An Owner approves a refund without a return as a special case, saying why. */
+export function useApproveRefund(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ refundId, note }: { refundId: number; note: string }) =>
+      api<void>(`/orgs/${orgId}/refunds/${refundId}/approve`, { method: 'POST', json: { note } }),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: queryKeys.unreturnedRefunds(orgId) })
+      client.invalidateQueries({ queryKey: queryKeys.approvedRefunds(orgId) })
+    },
+  })
+}
+
+/** Compares the store with Plant Stock now (the worker does it; it also runs nightly at 3 am). */
+export function useCheckDrift(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: () => api<void>(`/orgs/${orgId}/shopify/check`, { method: 'POST' }),
+    onSuccess: () => setTimeout(() => client.invalidateQueries({ queryKey: queryKeys.shopify(orgId) }), 5000),
   })
 }

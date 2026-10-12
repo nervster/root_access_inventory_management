@@ -63,7 +63,7 @@ func (h handler) dashboard(c *gin.Context) {
 		return
 	}
 	response := dashboardResponse{
-		Plants:            plantCountsJSON{Growing: d.Statuses.Growing, ForSale: d.Statuses.ForSale, Held: d.Statuses.Held, Sold: d.Statuses.Sold, Discarded: d.Statuses.Discarded},
+		Plants:            plantCountsJSON{Growing: d.Statuses.Growing, ForSale: d.Statuses.ForSale, Held: d.Statuses.Held, Returned: d.Statuses.Returned, Sold: d.Statuses.Sold, Discarded: d.Statuses.Discarded},
 		Last30Days:        last30DaysJSON{Received: d.Statuses.ReceivedLast30Days, Discarded: d.Statuses.DiscardedLast30Days},
 		ForSaleValueCents: d.Readiness.ForSaleValueCents,
 		ReadyToMark:       d.Readiness.ReadyToMark,

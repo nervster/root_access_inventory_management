@@ -44,11 +44,13 @@ type fakeShopify struct {
 	uploads     map[string]string // staged uploads: resource URL → content
 	uploadCount int
 
-	orders      []map[string]any // the store's orders, as the Admin API returns them
-	ordersError string           // when set, the orders query fails with this message
-	lastSearch  string           // the last orders query's search
-	fulfilled   map[string]bool  // orders fulfilled through the API, by ID (never notifying the customer)
-	fulfillFail bool             // when set, fulfillmentCreate fails
+	orders      []map[string]any            // the store's orders, as the Admin API returns them
+	ordersError string                      // when set, the orders query fails with this message
+	lastSearch  string                      // the last orders query's search
+	fulfilled   map[string]bool             // orders fulfilled through the API, by ID (never notifying the customer)
+	fulfillFail bool                        // when set, fulfillmentCreate fails
+	returns     map[string][]map[string]any // returns by order ID, as the Admin API returns them
+	refunds     map[string][]map[string]any // refunds by order ID
 
 	stocked     map[string]bool // "item@location" pairs an SKU is stocked at
 	onHand      map[string]int  // by "item@location"

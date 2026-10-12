@@ -119,6 +119,7 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 	org.POST("/orders/:orderId/ready", organization.RequirePermission(organization.OrdersPrepare), h.markReady)
 	org.POST("/orders/:orderId/not-ready", organization.RequirePermission(organization.OrdersPrepare), h.markNotReady)
 	org.POST("/orders/:orderId/picked-up", organization.RequirePermission(organization.OrdersPrepare), h.markPickedUp)
+	returnRoutes(org, h)
 }
 
 type handler struct{ store *Store }

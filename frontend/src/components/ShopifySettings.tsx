@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useSearchParams } from 'react-router'
 import {
+  useCheckDrift,
   useConnectShopify,
   useDisconnectShopify,
   useSetShopifyLocation,
@@ -115,6 +116,15 @@ function Connected({ orgId, connection }: { orgId: number; connection: ShopifyCo
         )}
       </div>
 
+      {!connection.needsReconnect && connection.missingScopes.length > 0 && (
+        <div className="space-y-3">
+          <Notice>
+            Plant Stock needs new permissions from your store ({connection.missingScopes.join(', ')}), for example to see return requests. Connect again to approve them.
+          </Notice>
+          <ConnectForm orgId={orgId} shop={shop} />
+        </div>
+      )}
+
       {connection.needsReconnect ? (
         <div className="space-y-3">
           <ErrorBanner error={new Error('Shopify no longer accepts Plant Stock’s access (was the app uninstalled?). Connect again to fix it.')} />
@@ -135,6 +145,7 @@ function Connected({ orgId, connection }: { orgId: number; connection: ShopifyCo
           )}
           <PickupLocation orgId={orgId} connection={connection} />
           <ProductsOnShopify orgId={orgId} />
+          <NightlyCheck orgId={orgId} connection={connection} />
         </>
       )}
 
@@ -231,6 +242,45 @@ function ProductsOnShopify({ orgId }: { orgId: number }) {
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  )
+}
+
+/** The nightly check: Plant Stock compares the store with itself and fixes any difference. */
+function NightlyCheck({ orgId, connection }: { orgId: number; connection: ShopifyConnectionDto }) {
+  const check = useCheckDrift(orgId)
+  const found = connection.driftFound ?? []
+
+  return (
+    <div className="space-y-2 border-t border-stone-200 pt-4 dark:border-stone-800">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Nightly check</p>
+          <p className="text-xs text-stone-500">
+            Each night at 3 am, Plant Stock compares your store with itself (products, SKUs, prices, stock) and fixes anything that differs.
+          </p>
+        </div>
+        <Button variant="secondary" disabled={check.isPending || check.isSuccess} onClick={() => check.mutate()}>
+          {check.isPending ? 'Queuing…' : check.isSuccess ? 'Checking…' : 'Check now'}
+        </Button>
+      </div>
+      <ErrorBanner error={check.error} />
+      {!connection.driftCheckedAt ? (
+        <p className="text-sm text-stone-500">Hasn’t run yet.</p>
+      ) : found.length === 0 ? (
+        <p className="text-sm text-stone-600 dark:text-stone-400">Last ran {formatDate(connection.driftCheckedAt)}: everything matched.</p>
+      ) : (
+        <div className="space-y-1 text-sm">
+          <p className="text-stone-600 dark:text-stone-400">
+            Last ran {formatDate(connection.driftCheckedAt)}: fixed {found.length} difference{found.length === 1 ? '' : 's'}.
+          </p>
+          <ul className="list-disc space-y-0.5 pl-5 text-stone-600 dark:text-stone-400">
+            {found.map((difference) => (
+              <li key={difference}>{difference}</li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   )

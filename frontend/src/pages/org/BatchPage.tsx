@@ -21,7 +21,7 @@ export function BatchPage() {
   if (batch.isPending) return <Loading />
   if (batch.error) return <ErrorBanner error={batch.error} />
   const { batch: b, plants } = batch.data
-  const { growing, forSale, held, sold, discarded } = b.plantCounts
+  const { growing, forSale, held, returned, sold, discarded } = b.plantCounts
   const living = growing + forSale
 
   // Group plants by their current pot, smallest pot first.
@@ -55,6 +55,7 @@ export function BatchPage() {
           [growing, 'growing'],
           [forSale, 'for sale'],
           [held, 'held for orders'],
+          [returned, 'returned, to check'],
           [sold, 'sold'],
           [discarded, 'discarded'],
         ]
@@ -100,6 +101,7 @@ const statusTone: Record<PlantStatus, 'neutral' | 'green' | 'red' | 'amber'> = {
   growing: 'neutral',
   for_sale: 'green',
   held: 'amber',
+  returned: 'amber',
   sold: 'amber',
   discarded: 'red',
 }

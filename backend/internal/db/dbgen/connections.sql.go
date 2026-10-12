@@ -52,7 +52,7 @@ func (q *Queries) DeleteShopifyConnection(ctx context.Context, organizationID in
 
 const getShopifyConnection = `-- name: GetShopifyConnection :one
 
-SELECT organization_id, shop, scopes, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, needs_reconnect, location_id, location_name, connected_by, connected_by_name, connected_at, orders_checked_through, orders_error FROM shopify_connections
+SELECT organization_id, shop, scopes, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, needs_reconnect, location_id, location_name, connected_by, connected_by_name, connected_at, orders_checked_through, orders_error, drift_checked_at, drift_differences FROM shopify_connections
 WHERE organization_id = $1
 `
 
@@ -76,12 +76,14 @@ func (q *Queries) GetShopifyConnection(ctx context.Context, organizationID int64
 		&i.ConnectedAt,
 		&i.OrdersCheckedThrough,
 		&i.OrdersError,
+		&i.DriftCheckedAt,
+		&i.DriftDifferences,
 	)
 	return i, err
 }
 
 const lockShopifyConnection = `-- name: LockShopifyConnection :one
-SELECT organization_id, shop, scopes, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, needs_reconnect, location_id, location_name, connected_by, connected_by_name, connected_at, orders_checked_through, orders_error FROM shopify_connections
+SELECT organization_id, shop, scopes, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, needs_reconnect, location_id, location_name, connected_by, connected_by_name, connected_at, orders_checked_through, orders_error, drift_checked_at, drift_differences FROM shopify_connections
 WHERE organization_id = $1
 FOR UPDATE
 `
@@ -106,6 +108,8 @@ func (q *Queries) LockShopifyConnection(ctx context.Context, organizationID int6
 		&i.ConnectedAt,
 		&i.OrdersCheckedThrough,
 		&i.OrdersError,
+		&i.DriftCheckedAt,
+		&i.DriftDifferences,
 	)
 	return i, err
 }
@@ -139,7 +143,7 @@ SET shop                     = excluded.shop,
     connected_by             = excluded.connected_by,
     connected_by_name        = excluded.connected_by_name,
     connected_at             = now()
-RETURNING organization_id, shop, scopes, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, needs_reconnect, location_id, location_name, connected_by, connected_by_name, connected_at, orders_checked_through, orders_error
+RETURNING organization_id, shop, scopes, access_token, access_token_expires_at, refresh_token, refresh_token_expires_at, needs_reconnect, location_id, location_name, connected_by, connected_by_name, connected_at, orders_checked_through, orders_error, drift_checked_at, drift_differences
 `
 
 type SaveShopifyConnectionParams struct {
@@ -180,6 +184,8 @@ func (q *Queries) SaveShopifyConnection(ctx context.Context, arg SaveShopifyConn
 		&i.ConnectedAt,
 		&i.OrdersCheckedThrough,
 		&i.OrdersError,
+		&i.DriftCheckedAt,
+		&i.DriftDifferences,
 	)
 	return i, err
 }

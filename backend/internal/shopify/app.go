@@ -33,6 +33,7 @@ var Scopes = []string{
 	"read_orders",     // see what sold
 	"write_merchant_managed_fulfillment_orders", // mark pickups as done
 	"write_publications",                        // put products on the online store
+	"read_returns",                              // see return requests, to receive the plants and track refunds
 }
 
 var (
@@ -151,6 +152,12 @@ type Token struct {
 
 // HasScopes reports whether the store granted everything Plant Stock asks for.
 func (t Token) HasScopes() bool {
+	return len(t.MissingScopes()) == 0
+}
+
+// MissingScopes lists what Plant Stock asks for that the store didn't grant (a store connected before
+// a scope was added must connect again to grant it).
+func (t Token) MissingScopes() []string {
 	granted := map[string]bool{}
 	for _, scope := range t.Scopes {
 		granted[scope] = true
@@ -158,12 +165,13 @@ func (t Token) HasScopes() bool {
 			granted["read_"+read] = true
 		}
 	}
+	missing := []string{}
 	for _, scope := range Scopes {
 		if !granted[scope] {
-			return false
+			missing = append(missing, scope)
 		}
 	}
-	return true
+	return missing
 }
 
 // ExchangeCode trades the one-time code from the callback for the store's tokens.

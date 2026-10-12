@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
 )
@@ -45,6 +46,20 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			{"id": "gid://shopify/Location/1", "name": "Greenhouse"},
 			{"id": "gid://shopify/Location/2", "name": "Market Stall"},
 		}}}
+	case strings.Contains(request.Query, "nodes(ids:"):
+		data = map[string]any{"nodes": f.productNodes(request.Variables)}
+	case strings.Contains(request.Query, "returns("):
+		var variables struct{ ID string }
+		_ = json.Unmarshal(request.Variables, &variables)
+		nodes := f.returns[variables.ID]
+		if nodes == nil {
+			nodes = []map[string]any{}
+		}
+		refunds := f.refunds[variables.ID]
+		if refunds == nil {
+			refunds = []map[string]any{}
+		}
+		data = map[string]any{"order": map[string]any{"returns": map[string]any{"nodes": nodes}, "refunds": refunds}}
 	case strings.Contains(request.Query, "fulfillmentOrders("):
 		var variables struct{ ID string }
 		_ = json.Unmarshal(request.Variables, &variables)
@@ -87,8 +102,18 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 		var variables struct{ Query string }
 		_ = json.Unmarshal(request.Variables, &variables)
 		f.lastSearch = variables.Query
+		nodes := f.orders
+		if since, ok := strings.CutPrefix(variables.Query, "updated_at:>='"); ok { // like Shopify: only orders changed since
+			from, _ := time.Parse(time.RFC3339, strings.TrimSuffix(since, "'"))
+			nodes = nil
+			for _, o := range f.orders {
+				if updated, _ := time.Parse(time.RFC3339, o["updatedAt"].(string)); !updated.Before(from) {
+					nodes = append(nodes, o)
+				}
+			}
+		}
 		data = map[string]any{"orders": map[string]any{
-			"nodes": f.orders, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "end"},
+			"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": "end"},
 		}}
 	case strings.Contains(request.Query, "stagedUploadsCreate("):
 		data = map[string]any{"stagedUploadsCreate": f.stagedUploadsCreate(request.Variables)}
@@ -365,4 +390,31 @@ func (p *fakePhotos) Open(_ context.Context, key string) (io.ReadCloser, storage
 		return nil, storage.FileInfo{}, fmt.Errorf("no such photo %s", key)
 	}
 	return io.NopCloser(strings.NewReader(content)), storage.FileInfo{Size: int64(len(content)), ContentType: "image/jpeg"}, nil
+}
+
+// productNodes answers the drift check: products by ID (null for deleted ones), with their variants'
+// SKU, price, and on-hand stock at the location (null where not stocked).
+func (f *fakeShopify) productNodes(raw json.RawMessage) []any {
+	var variables struct {
+		IDs      []string `json:"ids"`
+		Location string   `json:"location"`
+	}
+	_ = json.Unmarshal(raw, &variables)
+	nodes := make([]any, len(variables.IDs))
+	for i, id := range variables.IDs {
+		product, ok := f.products[id]
+		if !ok {
+			continue // nil, like Shopify for a deleted product
+		}
+		var variants []map[string]any
+		for _, v := range product.Variants {
+			var level any
+			if f.stocked[v.InventoryItemID+"@"+variables.Location] {
+				level = map[string]any{"quantities": []map[string]int{{"quantity": f.onHand[v.InventoryItemID+"@"+variables.Location]}}}
+			}
+			variants = append(variants, map[string]any{"sku": v.SKU, "price": v.Price, "inventoryItem": map[string]any{"inventoryLevel": level}})
+		}
+		nodes[i] = map[string]any{"id": product.ID, "title": product.Title, "variants": map[string]any{"nodes": variants}}
+	}
+	return nodes
 }

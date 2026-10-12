@@ -3,14 +3,18 @@ import { Link, useParams } from 'react-router'
 import { useCheckOrders, useMembership, useOrderActions, useOrders, useOrdersStatus } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, type OrderDto, type OrderItemDto, type OrderStatus } from '../../api/types'
+import { ReturnsView } from '../../components/Returns'
 import { Badge, Button, Card, ErrorBanner, Loading, Notice, PageHeader } from '../../components/ui'
 import { formatDate, formatMoney } from '../../lib/format'
 
-const TABS: { status: OrderStatus; label: string }[] = [
+type Tab = OrderStatus | 'returns'
+
+const TABS: { status: Tab; label: string }[] = [
   { status: 'open', label: 'To prepare' },
   { status: 'ready_for_pickup', label: 'Ready for pickup' },
   { status: 'picked_up', label: 'Picked up' },
   { status: 'cancelled', label: 'Cancelled' },
+  { status: 'returns', label: 'Returns' },
 ]
 
 /**
@@ -19,8 +23,7 @@ const TABS: { status: OrderStatus; label: string }[] = [
  */
 export function OrdersPage() {
   const orgId = Number(useParams().orgId)
-  const [status, setStatus] = useState<OrderStatus>('open')
-  const orders = useOrders(orgId, status)
+  const [tab, setTab] = useState<Tab>('open')
 
   return (
     <div className="space-y-4">
@@ -30,25 +33,34 @@ export function OrdersPage() {
       />
       <ImportStatus orgId={orgId} />
 
-      <div role="tablist" className="flex gap-1">
-        {TABS.map((tab) => (
+      <div role="tablist" className="flex gap-1 overflow-x-auto">
+        {TABS.map((t) => (
           <button
-            key={tab.status}
+            key={t.status}
             type="button"
             role="tab"
-            aria-selected={status === tab.status}
-            onClick={() => setStatus(tab.status)}
+            aria-selected={tab === t.status}
+            onClick={() => setTab(t.status)}
             className={`rounded-lg px-3 py-2 text-sm font-medium ${
-              status === tab.status
+              tab === t.status
                 ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
                 : 'text-stone-600 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800'
             }`}
           >
-            {tab.label}
+            {t.label}
           </button>
         ))}
       </div>
 
+      {tab === 'returns' ? <ReturnsView orgId={orgId} /> : <OrderList orgId={orgId} status={tab} />}
+    </div>
+  )
+}
+
+function OrderList({ orgId, status }: { orgId: number; status: OrderStatus }) {
+  const orders = useOrders(orgId, status)
+  return (
+    <>
       {orders.isPending ? (
         <Loading />
       ) : orders.error ? (
@@ -64,7 +76,7 @@ export function OrdersPage() {
           ))}
         </ul>
       )}
-    </div>
+    </>
   )
 }
 
