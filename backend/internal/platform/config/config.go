@@ -39,11 +39,6 @@ type Config struct {
 	S3Endpoint       string
 	S3PublicEndpoint string // what browsers use in signed links, if different from S3_ENDPOINT
 
-	// Background jobs: an SQS queue (and its dead-letter queue, <name>-dead), or LocalStack when
-	// SQS_ENDPOINT is set. Defaults to S3_ENDPOINT, since LocalStack serves both.
-	JobsQueue   string
-	SQSEndpoint string
-
 	// Shopify app (Dev Dashboard → the app → Settings). Without a client ID, Shopify is turned off.
 	ShopifyClientID     string
 	ShopifyClientSecret string
@@ -73,9 +68,6 @@ func Load() (Config, error) {
 		AWSRegion:        getEnv("AWS_REGION", "us-east-1"),
 		S3Endpoint:       os.Getenv("S3_ENDPOINT"),
 		S3PublicEndpoint: os.Getenv("S3_PUBLIC_ENDPOINT"),
-
-		JobsQueue:   getEnv("JOBS_QUEUE", "plant-stock-jobs"),
-		SQSEndpoint: getEnv("SQS_ENDPOINT", os.Getenv("S3_ENDPOINT")),
 
 		ShopifyClientID:     os.Getenv("SHOPIFY_CLIENT_ID"),
 		ShopifyClientSecret: os.Getenv("SHOPIFY_CLIENT_SECRET"),

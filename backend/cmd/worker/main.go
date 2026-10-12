@@ -1,5 +1,5 @@
-// Command worker runs Plant Stock's background jobs (internal/platform/jobs): it hands new jobs from
-// the database to SQS, and runs them from there. Run it next to the API: make worker
+// Command worker runs Plant Stock's background jobs (internal/platform/jobs), claiming them from the
+// jobs table in Postgres. Run it next to the API: make worker
 package main
 
 import (
@@ -47,11 +47,6 @@ func run() error {
 		return err
 	}
 
-	queue, err := jobs.NewSQS(ctx, jobs.SQSConfig{Queue: cfg.JobsQueue, Region: cfg.AWSRegion, Endpoint: cfg.SQSEndpoint})
-	if err != nil {
-		return err
-	}
-
 	// Photos, to upload product images to Shopify.
 	photos, err := storage.New(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.AWSRegion, Endpoint: cfg.S3Endpoint})
 	if err != nil {
@@ -66,10 +61,19 @@ func run() error {
 	handlers := map[string]jobs.Handler{}
 	maps.Copy(handlers, shopifyStore.JobHandlers())
 
-	slog.Info("worker started", "queue", cfg.JobsQueue, "jobKinds", len(handlers))
+	slog.Info("worker started", "jobKinds", len(handlers))
 	var loops sync.WaitGroup
-	loops.Go(func() { jobs.Relay{Conn: pool, Queue: queue}.Run(ctx, time.Second) })
-	loops.Go(func() { jobs.Worker{Queue: queue, Handlers: handlers}.Run(ctx) })
+	loops.Go(func() { jobs.Worker{Queue: jobs.Postgres{Conn: pool}, Handlers: handlers}.Run(ctx) })
+	// Hourly, clear out finished jobs (after a week) and dead ones (after a month).
+	loops.Go(func() {
+		every(ctx, time.Hour, func() {
+			if deleted, err := jobs.DeleteOldJobs(ctx, pool); err != nil && ctx.Err() == nil {
+				slog.Error("clearing old jobs failed", "error", err)
+			} else if deleted > 0 {
+				slog.Info("cleared old jobs", "count", deleted)
+			}
+		})
+	})
 	// Each minute, check every connected store for new or changed orders (webhooks need a public
 	// address, so this is how orders arrive locally, and a safety net when deployed).
 	loops.Go(func() {

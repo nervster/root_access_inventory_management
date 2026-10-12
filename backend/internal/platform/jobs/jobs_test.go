@@ -17,21 +17,16 @@ import (
 // fakeQueue keeps jobs in memory and records what the worker told it.
 type fakeQueue struct {
 	mu       sync.Mutex
-	sendErr  error
 	waiting  []Job
 	done     []int64
 	retries  map[int64]time.Duration
 	received int
 }
 
-func (f *fakeQueue) Send(_ context.Context, jobs []Job) error {
+func (f *fakeQueue) add(jobs ...Job) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.sendErr != nil {
-		return f.sendErr
-	}
 	f.waiting = append(f.waiting, jobs...)
-	return nil
 }
 
 func (f *fakeQueue) Receive(ctx context.Context) ([]Delivery, error) {
@@ -60,7 +55,7 @@ func (f *fakeQueue) Done(_ context.Context, d Delivery) error {
 	return nil
 }
 
-func (f *fakeQueue) RetryLater(_ context.Context, d Delivery, delay time.Duration) error {
+func (f *fakeQueue) RetryLater(_ context.Context, d Delivery, delay time.Duration, _ error) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.retries == nil {
@@ -86,7 +81,7 @@ func newOrganizations(t *testing.T, conn db.Conn) (dbgen.Organization, dbgen.Org
 func countUnsent(t *testing.T, conn db.Conn) int {
 	t.Helper()
 	var count int
-	if err := conn.QueryRow(t.Context(), "SELECT count(*) FROM jobs WHERE sent_at IS NULL").Scan(&count); err != nil {
+	if err := conn.QueryRow(t.Context(), "SELECT count(*) FROM jobs WHERE started_at IS NULL").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	return count
@@ -125,12 +120,12 @@ func TestJobIsSavedWithItsChange(t *testing.T) {
 	}
 }
 
-func TestRelay(t *testing.T) {
+func TestPostgresQueue(t *testing.T) {
 	tx := dbtest.Tx(t)
 	org, _ := newOrganizations(t, tx)
 	ctx := t.Context()
 	err := db.InTenant(ctx, tx, org.ID, func(q *dbgen.Queries) error {
-		for i := range 12 {
+		for i := range 7 {
 			if err := Enqueue(ctx, q, org.ID, "test.kind", map[string]int{"n": i}); err != nil {
 				return err
 			}
@@ -140,26 +135,93 @@ func TestRelay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// SQS is down: nothing is marked sent, so the jobs go next time.
-	queue := &fakeQueue{sendErr: errors.New("SQS is down")}
-	relay := Relay{Conn: tx, Queue: queue}
-	if sent, err := relay.RelayOnce(ctx); err == nil || sent != 0 || countUnsent(t, tx) != 12 {
-		t.Fatalf("with SQS down: sent %d, %v, %d unsent; want an error and all 12 unsent", sent, err, countUnsent(t, tx))
+	queue := Postgres{Conn: tx, Batch: 5, Idle: time.Millisecond}
+	receive := func() []Delivery {
+		t.Helper()
+		deliveries, err := queue.Receive(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return deliveries
 	}
 
-	queue.sendErr = nil
-	for _, want := range []int{10, 2, 0} {
-		if sent, err := relay.RelayOnce(ctx); err != nil || sent != want {
-			t.Fatalf("relay: sent %d, %v; want %d", sent, err, want)
+	// Claimed in batches, oldest first; a claimed job isn't handed out again while its lease lasts.
+	first := receive()
+	if len(first) != 5 || first[0].Job.Kind != "test.kind" || string(first[0].Job.Payload) != `{"n": 0}` || first[0].Job.Attempt != 1 || first[0].Job.OrganizationID != org.ID {
+		t.Fatalf("first claim = %+v, want 5 jobs starting with n=0, attempt 1", first)
+	}
+	if second := receive(); len(second) != 2 {
+		t.Fatalf("second claim got %d, want the other 2", len(second))
+	}
+	if third := receive(); len(third) != 0 {
+		t.Fatalf("third claim got %d, want none (all held)", len(third))
+	}
+
+	// Finished: never claimed again. Failed: waits, then runs again; after the last attempt, dead.
+	if err := queue.Done(ctx, first[0]); err != nil {
+		t.Fatal(err)
+	}
+	failed := first[1]
+	if err := queue.RetryLater(ctx, failed, time.Minute, errors.New("Shopify said no")); err != nil {
+		t.Fatal(err)
+	}
+	var lastError string
+	var waiting bool
+	if err := tx.QueryRow(ctx, "SELECT last_error, run_after > now() FROM jobs WHERE id = $1", failed.Job.ID).Scan(&lastError, &waiting); err != nil || lastError != "Shopify said no" || !waiting {
+		t.Errorf("failed job: %q, waiting %v, %v; want the error kept and a wait before it runs again", lastError, waiting, err)
+	}
+	failed.Job.Attempt = maxAttempts
+	if err := queue.RetryLater(ctx, failed, time.Minute, errors.New("still no")); err != nil {
+		t.Fatal(err)
+	}
+	var dead bool
+	if err := tx.QueryRow(ctx, "SELECT dead_at IS NOT NULL FROM jobs WHERE id = $1", failed.Job.ID).Scan(&dead); err != nil || !dead {
+		t.Errorf("after the last attempt: dead %v, %v; want it left dead", dead, err)
+	}
+
+	// A worker that dies mid-job: once its lease runs out, the job is claimed again (attempt 2).
+	if _, err := tx.Exec(ctx, "UPDATE jobs SET locked_until = now() - interval '1 second' WHERE id = $1", first[2].Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	again := receive()
+	if len(again) != 1 || again[0].Job.ID != first[2].Job.ID || again[0].Job.Attempt != 2 {
+		t.Errorf("after the lease ran out: %+v, want job %d again, attempt 2", again, first[2].Job.ID)
+	}
+
+	// Finished jobs are cleared after a week; dead ones after a month.
+	if _, err := tx.Exec(ctx, "UPDATE jobs SET finished_at = now() - interval '8 days' WHERE id = $1", first[0].Job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if deleted, err := DeleteOldJobs(ctx, tx); err != nil || deleted != 1 {
+		t.Errorf("cleared %d, %v; want the week-old finished job only", deleted, err)
+	}
+}
+
+func TestWaitingJobsAreNotDuplicated(t *testing.T) {
+	tx := dbtest.Tx(t)
+	org, _ := newOrganizations(t, tx)
+	ctx := t.Context()
+	enqueue := func() {
+		t.Helper()
+		err := db.InTenant(ctx, tx, org.ID, func(q *dbgen.Queries) error {
+			return Enqueue(ctx, q, org.ID, "test.sync", map[string]int{"productId": 1})
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
 	}
-	if len(queue.waiting) != 12 || countUnsent(t, tx) != 0 {
-		t.Fatalf("queue has %d, %d unsent; want all 12 sent once", len(queue.waiting), countUnsent(t, tx))
+	enqueue()
+	enqueue() // the same job, still waiting: not added again
+	if n := countUnsent(t, tx); n != 1 {
+		t.Fatalf("%d waiting, want 1", n)
 	}
-	first := queue.waiting[0]
-	if first.OrganizationID != org.ID || first.Kind != "test.kind" || string(first.Payload) != `{"n": 0}` {
-		t.Errorf("first job = %+v (payload %s), want the first enqueued", first, first.Payload)
+	// Once a worker has started it, a newer change queues a new one.
+	if got, err := (Postgres{Conn: tx}).Receive(ctx); err != nil || len(got) != 1 {
+		t.Fatalf("claimed %d, %v", len(got), err)
+	}
+	enqueue()
+	if n := countUnsent(t, tx); n != 1 {
+		t.Errorf("%d waiting after starting the first, want the new one", n)
 	}
 }
 
@@ -181,13 +243,13 @@ func TestWorker(t *testing.T) {
 		"fails":  func(context.Context, Job) error { return errors.New("Shopify said no") },
 		"panics": func(context.Context, Job) error { panic("bug") },
 	}}
-	_ = queue.Send(t.Context(), []Job{
+	queue.add([]Job{
 		{ID: 1, Kind: "ok", Payload: json.RawMessage(`{"name":"first"}`)},
 		{ID: 2, Kind: "fails", Payload: json.RawMessage(`{}`)},
 		{ID: 3, Kind: "panics", Payload: json.RawMessage(`{}`)},
 		{ID: 4, Kind: "unknown", Payload: json.RawMessage(`{}`)},
 		{ID: 5, Kind: "ok", Payload: json.RawMessage(`{"name":"fifth"}`)},
-	})
+	}...)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan struct{})

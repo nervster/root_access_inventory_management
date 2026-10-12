@@ -9,12 +9,76 @@ import (
 	"context"
 )
 
-const deleteOldJobs = `-- name: DeleteOldJobs :execrows
-DELETE FROM jobs
-WHERE sent_at < now() - interval '7 days'
+const claimJobs = `-- name: ClaimJobs :many
+
+
+WITH chosen AS MATERIALIZED (
+    SELECT id FROM jobs
+    WHERE finished_at IS NULL AND dead_at IS NULL AND run_after <= now()
+      AND (locked_until IS NULL OR locked_until < now())
+    ORDER BY run_after, id
+    LIMIT $2
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE jobs j
+SET started_at = coalesce(j.started_at, now()), attempts = j.attempts + 1,
+    locked_until = now() + make_interval(secs => $1::integer)
+FROM chosen
+WHERE j.id = chosen.id
+RETURNING j.id, j.organization_id, j.kind, j.payload, j.attempts
 `
 
-// Sent jobs are kept a week, to look into what was done.
+type ClaimJobsParams struct {
+	LeaseSeconds int32
+	Max          int32
+}
+
+type ClaimJobsRow struct {
+	ID             int64
+	OrganizationID int64
+	Kind           string
+	Payload        []byte
+	Attempts       int32
+}
+
+// the same job already waiting to start (see migration 00028)
+// The worker (account-level, every nursery) --
+// Takes up to @max ready jobs (oldest first) for @lease_seconds: due to run, not finished or dead, and
+// not held by a worker (or held past its lease: that worker died). SKIP LOCKED lets several workers
+// claim at once without taking the same job. The choice is made once (MATERIALIZED): inside
+// UPDATE … WHERE id IN (…), Postgres may re-run it, and LIMIT would no longer limit.
+func (q *Queries) ClaimJobs(ctx context.Context, arg ClaimJobsParams) ([]ClaimJobsRow, error) {
+	rows, err := q.db.Query(ctx, claimJobs, arg.LeaseSeconds, arg.Max)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimJobsRow{}
+	for rows.Next() {
+		var i ClaimJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Kind,
+			&i.Payload,
+			&i.Attempts,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const deleteOldJobs = `-- name: DeleteOldJobs :execrows
+DELETE FROM jobs
+WHERE finished_at < now() - interval '7 days' OR dead_at < now() - interval '30 days'
+`
+
+// Finished jobs are kept a week, dead ones a month, to look into what was done.
 func (q *Queries) DeleteOldJobs(ctx context.Context) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteOldJobs)
 	if err != nil {
@@ -42,60 +106,46 @@ func (q *Queries) EnqueueJob(ctx context.Context, arg EnqueueJobParams) error {
 	return err
 }
 
-const markJobsSent = `-- name: MarkJobsSent :exec
-UPDATE jobs
-SET sent_at = now()
-WHERE id = ANY($1::bigint[])
+const finishJob = `-- name: FinishJob :exec
+UPDATE jobs SET finished_at = now(), locked_until = NULL
+WHERE id = $1
 `
 
-func (q *Queries) MarkJobsSent(ctx context.Context, ids []int64) error {
-	_, err := q.db.Exec(ctx, markJobsSent, ids)
+func (q *Queries) FinishJob(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, finishJob, id)
 	return err
 }
 
-const unsentJobs = `-- name: UnsentJobs :many
-
-
-SELECT id, organization_id, kind, payload
-FROM jobs
-WHERE sent_at IS NULL
-ORDER BY id
-LIMIT $1
-FOR UPDATE SKIP LOCKED
+const killJob = `-- name: KillJob :exec
+UPDATE jobs SET dead_at = now(), locked_until = NULL, last_error = $1
+WHERE id = $2
 `
 
-type UnsentJobsRow struct {
-	ID             int64
-	OrganizationID int64
-	Kind           string
-	Payload        []byte
+type KillJobParams struct {
+	LastError *string
+	ID        int64
 }
 
-// the same job already waiting (see migration 00017)
-// The worker (account-level, every nursery) --
-// The oldest jobs not yet handed to SQS. SKIP LOCKED lets several workers relay at once without
-// sending the same job twice.
-func (q *Queries) UnsentJobs(ctx context.Context, max int32) ([]UnsentJobsRow, error) {
-	rows, err := q.db.Query(ctx, unsentJobs, max)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []UnsentJobsRow{}
-	for rows.Next() {
-		var i UnsentJobsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.OrganizationID,
-			&i.Kind,
-			&i.Payload,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+// Failed for the last time: left for a person to look at.
+func (q *Queries) KillJob(ctx context.Context, arg KillJobParams) error {
+	_, err := q.db.Exec(ctx, killJob, arg.LastError, arg.ID)
+	return err
+}
+
+const retryJob = `-- name: RetryJob :exec
+UPDATE jobs
+SET run_after = now() + make_interval(secs => $1::integer), locked_until = NULL, last_error = $2
+WHERE id = $3
+`
+
+type RetryJobParams struct {
+	DelaySeconds int32
+	LastError    *string
+	ID           int64
+}
+
+// Failed: run it again after @delay_seconds.
+func (q *Queries) RetryJob(ctx context.Context, arg RetryJobParams) error {
+	_, err := q.db.Exec(ctx, retryJob, arg.DelaySeconds, arg.LastError, arg.ID)
+	return err
 }

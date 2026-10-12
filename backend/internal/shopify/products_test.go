@@ -82,7 +82,7 @@ func (s *shopTest) waitingJobs(kind string, productID int64) int {
 	var count int
 	err := s.db.QueryRow(s.t.Context(), `
 		SELECT count(*) FROM jobs
-		WHERE organization_id = $1 AND kind = $2 AND sent_at IS NULL
+		WHERE organization_id = $1 AND kind = $2 AND started_at IS NULL
 		  AND ($3 = 0 OR (payload->>'productId')::bigint = $3)`, s.org.ID, kind, productID).Scan(&count)
 	if err != nil {
 		s.t.Fatal(err)
@@ -230,7 +230,7 @@ func TestChangesQueueSyncs(t *testing.T) {
 	}
 
 	// Once that one is sent, the next change queues another; so does renaming a pot size.
-	if _, err := s.db.Exec(t.Context(), "UPDATE jobs SET sent_at = now()"); err != nil {
+	if _, err := s.db.Exec(t.Context(), "UPDATE jobs SET started_at = now()"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.db.Exec(t.Context(), "UPDATE pot_sizes SET name = '4 inch' WHERE name = 'Medium Cup'"); err != nil {

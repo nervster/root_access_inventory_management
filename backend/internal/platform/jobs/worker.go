@@ -35,7 +35,7 @@ func (w Worker) Run(ctx context.Context) {
 		if err != nil && ctx.Err() == nil {
 			slog.Error("receiving jobs failed", "error", err)
 			if len(deliveries) == 0 {
-				pause(ctx, 5*time.Second) // e.g. SQS unreachable: don't spin
+				pause(ctx, 5*time.Second) // e.g. the database unreachable: don't spin
 			}
 		}
 		for _, delivery := range deliveries {
@@ -66,12 +66,12 @@ func (w Worker) process(d Delivery) {
 
 	delay := retryDelay(job.Attempt)
 	if job.Attempt >= maxAttempts {
-		log.Error("job failed for the last time; SQS moves it to the dead-letter queue", "error", err)
+		log.Error("job failed for the last time; it's left dead for a person to look at", "error", err)
 	} else {
 		log.Warn("job failed; retrying later", "error", err, "retryIn", delay)
 	}
-	if err := w.Queue.RetryLater(ctx, d, delay); err != nil {
-		log.Error("couldn't schedule the retry; it will come back after the queue's timeout", "error", err)
+	if err := w.Queue.RetryLater(ctx, d, delay, err); err != nil {
+		log.Error("couldn't schedule the retry; it will run again when its lease runs out", "error", err)
 	}
 }
 

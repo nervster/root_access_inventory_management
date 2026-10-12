@@ -7,7 +7,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.7
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.7
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.1
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.52.4
 	github.com/clerk/clerk-sdk-go/v2 v2.7.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0
