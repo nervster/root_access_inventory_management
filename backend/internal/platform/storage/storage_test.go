@@ -5,25 +5,40 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 )
 
-// TestLocalStackRoundTrip uploads and downloads a file through signed links, the way browsers do.
-// It needs LocalStack (docker compose up -d) and is skipped when LocalStack isn't running.
-func TestLocalStackRoundTrip(t *testing.T) {
-	if response, err := http.Get("http://localhost:4566/_localstack/health"); err != nil {
-		t.Skip("LocalStack isn't running (docker compose up -d); skipping")
-	} else {
-		response.Body.Close()
+// TestStorageRoundTrip uploads and downloads a file through signed links, the way browsers do. It
+// runs against the local stand-in (docker compose up -d), and is skipped when that isn't running.
+// Point it at another service with STORAGE_TEST_ENDPOINT (and, for Google Cloud Storage,
+// STORAGE_TEST_BUCKET, STORAGE_TEST_REGION=auto, STORAGE_TEST_ACCESS_KEY_ID and
+// STORAGE_TEST_SECRET_ACCESS_KEY: an existing bucket and its HMAC keys).
+func TestStorageRoundTrip(t *testing.T) {
+	cfg := Config{
+		Endpoint:        envOr("STORAGE_TEST_ENDPOINT", "http://localhost:8333"),
+		Bucket:          envOr("STORAGE_TEST_BUCKET", "nms-storage-test"),
+		Region:          envOr("STORAGE_TEST_REGION", "us-east-1"),
+		AccessKeyID:     os.Getenv("STORAGE_TEST_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("STORAGE_TEST_SECRET_ACCESS_KEY"),
+	}
+	if cfg.Local() {
+		if response, err := http.Get(cfg.Endpoint + "/healthz"); err != nil {
+			t.Skip("the storage stand-in isn't running (docker compose up -d); skipping")
+		} else {
+			response.Body.Close()
+		}
 	}
 	ctx := context.Background()
-	s, err := New(ctx, Config{Bucket: "nms-storage-test", Region: "us-east-1", Endpoint: "http://localhost:4566"})
+	s, err := New(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.PrepareLocalBucket(ctx, []string{"http://localhost:5173"}); err != nil {
-		t.Fatal(err)
+	if cfg.Local() {
+		if err := s.PrepareLocalBucket(ctx, []string{"http://localhost:5173"}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	key := "test/" + time.Now().Format("150405.000000") + ".jpg"
 	t.Cleanup(func() { _ = s.Delete(context.Background(), key) })
@@ -76,4 +91,11 @@ func TestLocalStackRoundTrip(t *testing.T) {
 	if !bytes.Equal(read, photo) || info.Size != int64(len(photo)) || info.ContentType != "image/jpeg" {
 		t.Errorf("Open read %q (%+v), want the photo as image/jpeg", read, info)
 	}
+}
+
+func envOr(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }

@@ -52,6 +52,14 @@ jobs:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
 
+      # Photo storage, as in docker-compose.yml (a service container can't be given SeaweedFS's start
+      # command, so it's started here), so the storage test runs rather than skips.
+      - name: Start photo storage (SeaweedFS)
+        run: |
+          docker run -d --name storage -p 8333:8333 chrislusf/seaweedfs:4.48 server -s3 -s3.port=8333 -dir=/data -ip.bind=0.0.0.0
+          for i in $(seq 1 60); do curl -sf http://localhost:8333/healthz && exit 0; sleep 1; done
+          docker logs storage; exit 1
+
       - name: Formatting (gofmt)
         run: |
           unformatted=$(gofmt -l .)

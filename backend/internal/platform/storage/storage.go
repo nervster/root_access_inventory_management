@@ -1,5 +1,6 @@
-// Package storage keeps files, such as plant photos, in S3: real S3 when deployed, LocalStack locally.
-// Browsers upload and download directly with short-lived signed links; files never pass through the API.
+// Package storage keeps files, such as plant photos, in S3-compatible storage: Google Cloud Storage
+// (through its S3-compatible API) when deployed, SeaweedFS locally; plain AWS S3 works too. Browsers
+// upload and download directly with short-lived signed links; files never pass through the API.
 package storage
 
 import (
@@ -14,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 const (
@@ -23,16 +26,21 @@ const (
 
 type Config struct {
 	Bucket string
-	Region string
-	// Endpoint is set for LocalStack (http://localhost:4566); empty means real AWS S3.
+	Region string // "auto" for Google Cloud Storage
+	// Endpoint is the storage service: https://storage.googleapis.com for Google Cloud Storage, or the
+	// local stand-in (http://localhost:8333); empty means AWS S3.
 	Endpoint string
 	// PublicEndpoint is the address browsers use in signed links, when it differs from Endpoint
-	// (the API in Docker reaches LocalStack at localstack:4566, browsers at localhost:4566).
+	// (the API in Docker reaches the stand-in at storage:8333, browsers at localhost:8333).
 	PublicEndpoint string
+	// AccessKeyID and SecretAccessKey sign requests: Google Cloud Storage's HMAC keys. Left empty, the
+	// endpoint is the local stand-in (any keys work); with no endpoint either, AWS's usual credentials.
+	AccessKeyID     string
+	SecretAccessKey string
 }
 
-// Local reports whether this is LocalStack rather than real S3.
-func (c Config) Local() bool { return c.Endpoint != "" }
+// Local reports whether this is the local stand-in: an endpoint, but no keys for it.
+func (c Config) Local() bool { return c.Endpoint != "" && c.AccessKeyID == "" }
 
 type S3 struct {
 	client  *s3.Client
@@ -42,9 +50,12 @@ type S3 struct {
 
 func New(ctx context.Context, cfg Config) (*S3, error) {
 	options := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(cfg.Region)}
-	if cfg.Local() {
-		// LocalStack accepts any credentials; real S3 uses the environment's (e.g. the pod's IAM role).
-		options = append(options, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "")))
+	switch {
+	case cfg.AccessKeyID != "":
+		options = append(options, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")))
+	case cfg.Local():
+		// The local stand-in accepts any keys. (AWS S3 uses the environment's credentials.)
+		options = append(options, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("local", "local", "")))
 	}
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, options...)
 	if err != nil {
@@ -55,7 +66,12 @@ func New(ctx context.Context, cfg Config) (*S3, error) {
 		return s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 			if endpoint != "" {
 				o.BaseEndpoint = aws.String(endpoint)
-				o.UsePathStyle = true // http://localhost:4566/bucket/key, which LocalStack expects
+				o.UsePathStyle = true // <endpoint>/<bucket>/<key>, which every S3-compatible service takes
+				// The AWS library adds checksums by default that services other than AWS (Google Cloud
+				// Storage among them) reject; only send them when an operation requires one.
+				o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+				o.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+				o.APIOptions = append(o.APIOptions, leaveAcceptEncodingUnsigned)
 			}
 		})
 	}
@@ -65,6 +81,33 @@ func New(ctx context.Context, cfg Config) (*S3, error) {
 		signer = clientFor(cfg.PublicEndpoint)
 	}
 	return &S3{client: client, presign: s3.NewPresignClient(signer), bucket: cfg.Bucket}, nil
+}
+
+// leaveAcceptEncodingUnsigned keeps the Accept-Encoding header the AWS library adds out of request
+// signatures: Google Cloud Storage's front end changes that header on the way in, so a signature
+// that covers it fails with SignatureDoesNotMatch. The header is still sent, just not signed.
+func leaveAcceptEncodingUnsigned(stack *middleware.Stack) error {
+	if _, ok := stack.Finalize.Get("Signing"); !ok {
+		return nil // a signed link, which doesn't sign Accept-Encoding
+	}
+	var acceptEncoding string
+	drop := middleware.FinalizeMiddlewareFunc("DropAcceptEncoding", func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (middleware.FinalizeOutput, middleware.Metadata, error) {
+		if request, ok := in.Request.(*smithyhttp.Request); ok {
+			acceptEncoding = request.Header.Get("Accept-Encoding")
+			request.Header.Del("Accept-Encoding")
+		}
+		return next.HandleFinalize(ctx, in)
+	})
+	restore := middleware.FinalizeMiddlewareFunc("RestoreAcceptEncoding", func(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (middleware.FinalizeOutput, middleware.Metadata, error) {
+		if request, ok := in.Request.(*smithyhttp.Request); ok && acceptEncoding != "" {
+			request.Header.Set("Accept-Encoding", acceptEncoding)
+		}
+		return next.HandleFinalize(ctx, in)
+	})
+	if err := stack.Finalize.Insert(drop, "Signing", middleware.Before); err != nil {
+		return err
+	}
+	return stack.Finalize.Insert(restore, "Signing", middleware.After)
 }
 
 // UploadURL is a link a browser can PUT one file of contentType to, at key, for 15 minutes.
@@ -95,7 +138,7 @@ type FileInfo struct {
 }
 
 // Stat describes the file at key, and returns false if there's no such file. Check the content
-// type here rather than trusting the upload link: LocalStack doesn't enforce what links were signed for.
+// type here rather than trusting the upload link: not every service enforces what links were signed for.
 func (s *S3) Stat(ctx context.Context, key string) (FileInfo, bool, error) {
 	head, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
 	var notFound *types.NotFound
@@ -124,8 +167,9 @@ func (s *S3) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// PrepareLocalBucket creates the bucket in LocalStack if needed and lets browsers at origins upload
-// to it. Deployed buckets are set up with the infrastructure instead.
+// PrepareLocalBucket creates the bucket in the local stand-in if needed and lets browsers at origins
+// upload to it. Deployed buckets are set up with the infrastructure instead (CORS on Google Cloud
+// Storage is set with gcloud, not through the S3 API).
 func (s *S3) PrepareLocalBucket(ctx context.Context, origins []string) error {
 	_, err := s.client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(s.bucket)})
 	var owned *types.BucketAlreadyOwnedByYou

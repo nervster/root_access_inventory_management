@@ -48,7 +48,7 @@ func run() error {
 	}
 
 	// Photos, to upload product images to Shopify.
-	photos, err := storage.New(ctx, storage.Config{Bucket: cfg.S3Bucket, Region: cfg.AWSRegion, Endpoint: cfg.S3Endpoint})
+	photos, err := storage.New(ctx, cfg.Storage())
 	if err != nil {
 		return err
 	}
