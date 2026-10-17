@@ -91,7 +91,7 @@ online. Root Access HTX is the first nursery.
 - [x] Job queue in Postgres (no SQS), so production needs only the database and photo storage
 - [x] Photos ready for Google Cloud Storage (its S3-compatible API with HMAC keys; checked by the storage test against SeaweedFS, which replaced LocalStack locally)
 - [x] Create the private Cloud Storage bucket with CORS for the web app's origin (gcloud), and its HMAC key; run the storage test against it (project `plant-stock-rah`, bucket `plant-stock-rah-files` in us-central1 for photos and, later, other files such as PDFs and reports, service account `photos`)
-- [ ] Staging site: e2-micro VM `plant-stock-staging` (setup script: Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock-staging.rootaccesshtx.com` pointed at it; its own bucket `plant-stock-rah-staging-files`; the dev Shopify store
+- [x] Staging site: e2-micro VM `plant-stock-staging` (setup script: Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock-staging.rootaccesshtx.com` pointed at it; its own bucket `plant-stock-rah-staging-files`; its own dev Shopify store (`root-access-staging`) through the "Plant Stock Staging" app; Clerk development instance shared with local development (redirects follow the site). Email not set up yet
 - [ ] Production site at launch: the same scripts (`deploy/create-vm.sh production`), `stock.rootaccesshtx.com`, bucket `plant-stock-rah-files`
 - [ ] Nightly database backup to Cloud Storage, and a tested restore
 - [ ] Deploys from GitHub Actions (images built there, not on the small VM)

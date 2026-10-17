@@ -91,4 +91,6 @@ cp deploy/.env.example deploy/.env.staging # fill in the site's settings (git-ig
 deploy/deploy.sh staging                   # build the images here, load them onto the VM, restart
 ```
 SSH goes through Google's IAP tunnel only: `gcloud compute ssh plant-stock-staging --zone us-central1-a --tunnel-through-iap`,
-then `cd /opt/plant-stock && docker compose logs -f api`.
+then `cd /opt/plant-stock && sudo docker compose logs -f api`. Merges into `staging` deploy
+themselves ([.github/workflows/deploy-staging.yml](.github/workflows/deploy-staging.yml)); settings changes still go
+through `deploy/deploy.sh staging` from the Mac, since only the Mac has `deploy/.env.staging`.

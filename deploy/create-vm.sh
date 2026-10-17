@@ -37,13 +37,15 @@ for rule in default-allow-ssh default-allow-rdp; do
 done
 
 # Free tier: e2-micro in us-central1, us-east1, or us-west1, with up to 30 GB of standard disk.
-# No service account: the app reaches Cloud Storage with its own HMAC key.
+# No service account: the app reaches Cloud Storage with its own HMAC key. Sign-in through OS Login:
+# access comes from Google accounts' roles (owners, and GitHub Actions' deploy account), not copied keys.
 gcloud compute instances create "$VM" --zone "$ZONE" \
   --machine-type e2-micro \
   --image-family debian-12 --image-project debian-cloud \
   --boot-disk-size 30GB --boot-disk-type pd-standard \
   --address "$VM-ip" --tags web \
   --no-service-account --no-scopes \
+  --metadata enable-oslogin=TRUE \
   --shielded-secure-boot
 
 echo "Waiting for SSH…"
