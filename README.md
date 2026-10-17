@@ -26,6 +26,7 @@ frontend/
   Dockerfile        production image (nginx serving the build, proxying /api)
 docker-compose.yml  local Postgres, Valkey, photo storage (SeaweedFS), Mailpit (+ optional app containers)
 deploy/             staging and production: Compose stack for the Google Cloud VMs, setup scripts, deploy.sh
+shopify/            the Shopify apps' settings (scopes, URLs, webhooks), one shopify.app.<site>.toml per app
 ```
 
 ## Prerequisites
@@ -100,3 +101,9 @@ Backups: each night (07:00 UTC) the VM dumps the database to its backup bucket (
 newest backup restores (into a throwaway database) with `deploy/restore-db.sh staging`; replace a site's database with
 `deploy/restore-db.sh staging --replace [backup]`. On the VM: `sudo systemctl start plant-stock-backup` backs up now,
 `journalctl -u plant-stock-backup` shows how the last ones went.
+
+Shopify app settings (scopes, URLs, webhook subscriptions) live in `shopify/shopify.app.staging.toml`. Change them
+there, then `cd shopify && npm install && npm run deploy:staging`: it shows what changes and, once you confirm,
+releases a new version of the "Plant Stock Staging" app. Don't run `shopify app config link` on an existing file:
+it overwrites it with what Shopify has. Webhooks go to `POST /api/shopify/webhooks`; the worker still checks for
+orders each minute, in case one is missed.

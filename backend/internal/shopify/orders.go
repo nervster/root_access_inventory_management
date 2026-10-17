@@ -300,9 +300,14 @@ func priceCents(amount string) *int32 {
 }
 
 // HandleWebhook acts on a verified webhook from shop: order changes queue an import; the app being
-// uninstalled means connecting again. Plant Stock keeps no customer data, so Shopify's privacy
-// requests (customers/data_request, customers/redact, shop/redact) need nothing done.
-func (s *Store) HandleWebhook(ctx context.Context, topic, shop string) error {
+// uninstalled means connecting again; Shopify's privacy requests to delete customer data clear the
+// notes customers wrote on returns (the only thing Plant Stock keeps that a customer wrote; it has
+// no names or contact details). customers/data_request needs nothing: the store already has those
+// notes, in Shopify.
+func (s *Store) HandleWebhook(ctx context.Context, topic, shop string, body []byte) error {
+	if topic == "customers/redact" || topic == "shop/redact" {
+		return s.redact(ctx, topic, shop, body)
+	}
 	orgID, err := dbgen.New(s.conn).ShopifyConnectionByShop(ctx, shop) // account-level: the nursery isn't known yet
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil // a store no nursery is connected to (any more)
@@ -315,6 +320,42 @@ func (s *Store) HandleWebhook(ctx context.Context, topic, shop string) error {
 	case topic == "app/uninstalled":
 		slog.Info("Plant Stock was uninstalled from a store", "organization", orgID, "shop", shop)
 		s.markNeedsReconnect(ctx, orgID)
+	}
+	return nil
+}
+
+// redact clears customers' return notes: for the orders a customers/redact request lists, or for all
+// of the store's orders on shop/redact (sent 48 hours after a store uninstalls Plant Stock). Shopify
+// sends customers/redact months after the customer's last order, when its returns are long settled,
+// so a later import doesn't read the notes back.
+func (s *Store) redact(ctx context.Context, topic, shop string, body []byte) error {
+	var request struct {
+		OrdersToRedact []int64 `json:"orders_to_redact"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		return err
+	}
+	params := dbgen.RedactReturnNotesParams{Shop: shop, AllOrders: topic == "shop/redact"}
+	for _, id := range request.OrdersToRedact {
+		params.ShopifyOrderIds = append(params.ShopifyOrderIds, fmt.Sprintf("gid://shopify/Order/%d", id))
+	}
+	if !params.AllOrders && len(params.ShopifyOrderIds) == 0 {
+		return nil
+	}
+	orgIDs, err := dbgen.New(s.conn).OrganizationsWithOrdersFrom(ctx, shop) // account-level, like ShopifyConnectionByShop
+	if err != nil {
+		return err
+	}
+	for _, orgID := range orgIDs {
+		params.OrganizationID = orgID
+		var cleared int64
+		if err := db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) (err error) {
+			cleared, err = q.RedactReturnNotes(ctx, params)
+			return err
+		}); err != nil {
+			return err
+		}
+		slog.Info("Shopify privacy request", "topic", topic, "organization", orgID, "shop", shop, "notes", cleared)
 	}
 	return nil
 }
