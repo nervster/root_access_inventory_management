@@ -90,7 +90,7 @@ online. Root Access HTX is the first nursery.
 ### Deployment (Google Cloud; when ready)
 - [x] Job queue in Postgres (no SQS), so production needs only the database and photo storage
 - [x] Photos ready for Google Cloud Storage (its S3-compatible API with HMAC keys; checked by the storage test against SeaweedFS, which replaced LocalStack locally)
-- [x] Create the private Cloud Storage bucket with CORS for the web app's origin (gcloud), and its HMAC key; run the storage test against it (project `plant-stock-rah`, bucket `plant-stock-rah-photos` in us-central1, service account `photos`)
+- [x] Create the private Cloud Storage bucket with CORS for the web app's origin (gcloud), and its HMAC key; run the storage test against it (project `plant-stock-rah`, bucket `plant-stock-rah-files` in us-central1 for photos and, later, other files such as PDFs and reports, service account `photos`)
 - [ ] The always-free e2-micro VM: a setup script (Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock.rootaccesshtx.com` pointed at it
 - [ ] Nightly database backup to Cloud Storage, and a tested restore
 - [ ] Deploys from GitHub Actions (images built there, not on the small VM)

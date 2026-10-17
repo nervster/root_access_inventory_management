@@ -70,7 +70,7 @@ func Load() (Config, error) {
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		EmailFrom:      getEnv("EMAIL_FROM", "Plant Stock <no-reply@localhost>"),
 
-		StorageBucket:          getEnv("STORAGE_BUCKET", "nms-photos"),
+		StorageBucket:          getEnv("STORAGE_BUCKET", "nms-files"),
 		StorageRegion:          getEnv("STORAGE_REGION", "us-east-1"),
 		StorageEndpoint:        os.Getenv("STORAGE_ENDPOINT"),
 		StoragePublicEndpoint:  os.Getenv("STORAGE_PUBLIC_ENDPOINT"),

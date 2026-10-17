@@ -47,7 +47,7 @@ cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api to :808
 Open http://localhost:5173. Health check: `GET /api/health`. Email the app sends (e.g. invitations) lands in
 Mailpit at http://localhost:8025, never in real inboxes. Signed-in user: `GET /api/me`
 (send the Clerk session token as `Authorization: Bearer <token>`). Photos go to the SeaweedFS stand-in; the
-API creates the `nms-photos` bucket there when it starts. Phone cameras (scanning, photos) need https, so locally use
+API creates the `nms-files` bucket there when it starts. Phone cameras (scanning, photos) need https, so locally use
 the laptop's webcam at localhost.
 
 The API runs database migrations when it starts. To change the schema or queries (from `backend/`):
