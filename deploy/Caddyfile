@@ -1,0 +1,5 @@
+# Caddy gets the certificate for DOMAIN on its own and redirects http to https.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:8080
+}

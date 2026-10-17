@@ -11,7 +11,8 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for decisions, what's built, and what's n
 - **Web:** React + TypeScript + Vite — `frontend/`
 - **Data:** PostgreSQL 17 (also the background-job queue), Valkey (cache), S3-compatible storage (photos)
 - **Auth:** [Clerk](https://clerk.com), sign-in only (invite-only)
-- **Runs as containers:** one image for the API, one for the web app; Kubernetes in production
+- **Runs as containers:** one image for the API (and worker), one for the web app; when deployed, a Docker
+  Compose stack on a small Google Cloud VM per site (staging, production)
 
 ## Layout
 ```
@@ -24,6 +25,7 @@ frontend/
   src/              React app
   Dockerfile        production image (nginx serving the build, proxying /api)
 docker-compose.yml  local Postgres, Valkey, photo storage (SeaweedFS), Mailpit (+ optional app containers)
+deploy/             staging and production: Compose stack for the Google Cloud VMs, setup scripts, deploy.sh
 ```
 
 ## Prerequisites
@@ -71,3 +73,22 @@ Tests run against real Postgres (and the photo-storage stand-in for the storage 
 it isn't running), each inside a transaction that's rolled back.
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the backend checks and tests, the
 frontend lint and build, and both Docker builds on every pull request into `staging` or `main`.
+
+## Deploy
+Two sites, each a Docker Compose stack ([deploy/compose.yml](deploy/compose.yml): Caddy for HTTPS → web → API,
+the worker, and Postgres) on its own small Google Cloud VM (project `plant-stock-rah`), with its own Cloud
+Storage bucket for files:
+
+| Site | Address | VM | Shopify | Clerk |
+|---|---|---|---|---|
+| `staging` | stock-staging.rootaccesshtx.com | `plant-stock-staging` | dev store | test instance |
+| `production` | stock.rootaccesshtx.com | `plant-stock-production` | Root Access store | production instance |
+
+Only production may ever connect the real store. From the Mac (needs `gcloud`, signed in):
+```sh
+deploy/create-vm.sh staging                # once per site: VM, static IP, firewall, then setup-vm.sh on it
+cp deploy/.env.example deploy/.env.staging # fill in the site's settings (git-ignored)
+deploy/deploy.sh staging                   # build the images here, load them onto the VM, restart
+```
+SSH goes through Google's IAP tunnel only: `gcloud compute ssh plant-stock-staging --zone us-central1-a --tunnel-through-iap`,
+then `cd /opt/plant-stock && docker compose logs -f api`.
