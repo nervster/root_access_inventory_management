@@ -327,7 +327,7 @@ func (h handler) webhook(c *gin.Context) {
 		return
 	}
 	topic, shop := c.GetHeader("X-Shopify-Topic"), c.GetHeader("X-Shopify-Shop-Domain")
-	if err := h.store.HandleWebhook(c.Request.Context(), topic, shop); err != nil {
+	if err := h.store.HandleWebhook(c.Request.Context(), topic, shop, body); err != nil {
 		web.FailInternal(c, err) // Shopify retries
 		return
 	}

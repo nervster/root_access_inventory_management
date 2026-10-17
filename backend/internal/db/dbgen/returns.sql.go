@@ -329,6 +329,37 @@ func (q *Queries) ReceiveReturnedPlant(ctx context.Context, arg ReceiveReturnedP
 	return err
 }
 
+const redactReturnNotes = `-- name: RedactReturnNotes :execrows
+UPDATE return_items ri
+SET customer_note = NULL
+FROM returns r
+JOIN orders o ON o.organization_id = r.organization_id AND o.id = r.order_id
+WHERE ri.organization_id = $1 AND ri.return_id = r.id AND ri.customer_note IS NOT NULL
+  AND o.shop = $2 AND ($3::boolean OR o.shopify_order_id = ANY($4::text[]))
+`
+
+type RedactReturnNotesParams struct {
+	OrganizationID  int64
+	Shop            string
+	AllOrders       bool
+	ShopifyOrderIds []string
+}
+
+// Shopify's privacy requests: forget what customers wrote on their returns, for the orders given
+// (customers/redact) or for every order from the store (shop/redact, after it uninstalled Plant Stock).
+func (q *Queries) RedactReturnNotes(ctx context.Context, arg RedactReturnNotesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, redactReturnNotes,
+		arg.OrganizationID,
+		arg.Shop,
+		arg.AllOrders,
+		arg.ShopifyOrderIds,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const returnItemForPlant = `-- name: ReturnItemForPlant :one
 SELECT ri.id
 FROM return_items ri

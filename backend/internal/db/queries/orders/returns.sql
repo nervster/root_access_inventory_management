@@ -130,3 +130,13 @@ UPDATE refunds
 SET approved_at = now(), approved_by_name = current_user_name(), approval_note = @note
 WHERE organization_id = @organization_id AND id = @id AND shopify_return_id IS NULL AND approved_at IS NULL
 RETURNING id;
+
+-- name: RedactReturnNotes :execrows
+-- Shopify's privacy requests: forget what customers wrote on their returns, for the orders given
+-- (customers/redact) or for every order from the store (shop/redact, after it uninstalled Plant Stock).
+UPDATE return_items ri
+SET customer_note = NULL
+FROM returns r
+JOIN orders o ON o.organization_id = r.organization_id AND o.id = r.order_id
+WHERE ri.organization_id = @organization_id AND ri.return_id = r.id AND ri.customer_note IS NOT NULL
+  AND o.shop = @shop AND (@all_orders::boolean OR o.shopify_order_id = ANY(@shopify_order_ids::text[]));

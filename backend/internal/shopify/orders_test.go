@@ -272,7 +272,7 @@ func TestWebhooks(t *testing.T) {
 		t.Errorf("webhook from a store no one connected: %d, want 200 (nothing to do)", code)
 	}
 	if code := s.webhook("customers/redact", testShop, `{}`, true); code != 200 {
-		t.Errorf("privacy webhook: %d, want 200 (Plant Stock keeps no customer data)", code)
+		t.Errorf("privacy webhook with no orders: %d, want 200 (nothing to do)", code)
 	}
 	if code := s.webhook("app/uninstalled", testShop, `{}`, true); code != 200 || !s.connection("owner").NeedsReconnect {
 		t.Errorf("uninstall webhook: %d; want 200 and the store marked to connect again", code)

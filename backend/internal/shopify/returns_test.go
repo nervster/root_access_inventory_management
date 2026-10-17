@@ -274,3 +274,32 @@ func (s *shopTest) check(barcode, body string, wantStatus int) {
 	s.t.Helper()
 	s.ordersRequestBody("staff", "POST", "/returned-plants/"+barcode+"/check", body, wantStatus)
 }
+
+func TestPrivacyRequestsClearReturnNotes(t *testing.T) {
+	s := newShopTest(t)
+	order, _ := s.pickedUpOrder(1)
+	s.requestReturn(order, 1, 0)
+	s.importOrders()
+	note := func() *string {
+		return s.returnsIn("viewer", "active")[0].Items[0].CustomerNote
+	}
+	orderID := strings.TrimPrefix(order["id"].(string), "gid://shopify/Order/")
+
+	// customers/redact clears notes only on the orders it lists.
+	if code := s.webhook("customers/redact", testShop, `{"orders_to_redact": [999999]}`, true); code != 200 || note() == nil {
+		t.Errorf("redact for another order: %d, note %v; want 200 and the note kept", code, note())
+	}
+	if code := s.webhook("customers/redact", testShop, `{"orders_to_redact": [`+orderID+`]}`, true); code != 200 || note() != nil {
+		t.Errorf("redact for the order: %d, note %v; want 200 and the note gone", code, note())
+	}
+
+	// shop/redact clears every note from the store, even once it's disconnected.
+	s.importOrders() // the return isn't settled, so it's read again, note and all
+	if note() == nil {
+		t.Fatal("the note wasn't read again; this test needs another way to bring it back")
+	}
+	s.expect("owner", "DELETE", "/api/orgs/{org}/shopify", "", 204)
+	if code := s.webhook("shop/redact", testShop, `{"shop_domain": "`+testShop+`"}`, true); code != 200 || note() != nil {
+		t.Errorf("shop redact: %d, note %v; want 200 and the note gone", code, note())
+	}
+}

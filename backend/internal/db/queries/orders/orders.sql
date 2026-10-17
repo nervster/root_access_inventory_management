@@ -141,3 +141,8 @@ ON CONFLICT DO NOTHING;
 -- name: ShopifyConnectionByShop :one
 -- For webhooks, which name the store, not the nursery.
 SELECT organization_id FROM shopify_connections WHERE shop = @shop;
+
+-- name: OrganizationsWithOrdersFrom :many
+-- For Shopify's privacy requests, which name the store: the nurseries that have its orders (even
+-- after disconnecting it).
+SELECT DISTINCT organization_id FROM orders WHERE shop = @shop;

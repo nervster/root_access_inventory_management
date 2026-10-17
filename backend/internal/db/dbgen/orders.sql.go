@@ -372,6 +372,32 @@ func (q *Queries) MarkOrderReady(ctx context.Context, arg MarkOrderReadyParams) 
 	return id, err
 }
 
+const organizationsWithOrdersFrom = `-- name: OrganizationsWithOrdersFrom :many
+SELECT DISTINCT organization_id FROM orders WHERE shop = $1
+`
+
+// For Shopify's privacy requests, which name the store: the nurseries that have its orders (even
+// after disconnecting it).
+func (q *Queries) OrganizationsWithOrdersFrom(ctx context.Context, shop string) ([]int64, error) {
+	rows, err := q.db.Query(ctx, organizationsWithOrdersFrom, shop)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var organization_id int64
+		if err := rows.Scan(&organization_id); err != nil {
+			return nil, err
+		}
+		items = append(items, organization_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const queueOrderImports = `-- name: QueueOrderImports :exec
 
 INSERT INTO jobs (organization_id, kind, payload)
