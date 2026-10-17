@@ -9,7 +9,7 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for decisions, what's built, and what's n
 ## Stack
 - **API:** Go + [Gin](https://gin-gonic.com) — `backend/`
 - **Web:** React + TypeScript + Vite — `frontend/`
-- **Data:** PostgreSQL 17, Valkey (cache), AWS S3 (photos), AWS SQS (background jobs)
+- **Data:** PostgreSQL 17 (also the background-job queue), Valkey (cache), S3-compatible storage (photos)
 - **Auth:** [Clerk](https://clerk.com), sign-in only (invite-only)
 - **Runs as containers:** one image for the API, one for the web app; Kubernetes in production
 
@@ -34,7 +34,7 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
     (Sessions → Customize session token): `{"email": "{{user.primary_email_address}}", "name": "{{user.full_name}}"}`
   - `PLATFORM_ADMIN_EMAILS`: your sign-in email, so you can create nurseries (`/api/platform/...`)
   - `VITE_CLERK_PUBLISHABLE_KEY`: Clerk publishable key (`pk_test_…`), only for building the web container
-  - `LOCALSTACK_AUTH_TOKEN`: a free [LocalStack](https://app.localstack.cloud) account, for the local S3/SQS stand-in
+  - `LOCALSTACK_AUTH_TOKEN`: a free [LocalStack](https://app.localstack.cloud) account, for the local S3 stand-in
   - `S3_ENDPOINT=http://localhost:4566`: keeps photos in LocalStack (leave it out when deployed, to use real S3)
 - `frontend/.env.development.local` (git-ignored) with `VITE_CLERK_PUBLISHABLE_KEY=pk_test_…` for `npm run dev`
 

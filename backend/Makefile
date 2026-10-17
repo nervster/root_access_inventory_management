@@ -13,7 +13,7 @@ help: ## List the available commands
 run: ## Start the API on :8080 (applies pending migrations first)
 	go run ./cmd/api
 
-worker: ## Start the background-job worker (needs `docker compose up -d` for SQS)
+worker: ## Start the background-job worker (needs `docker compose up -d`)
 	go run ./cmd/worker
 
 test: ## Run all tests (needs `docker compose up -d`)

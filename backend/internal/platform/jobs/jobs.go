@@ -1,12 +1,13 @@
 // Package jobs runs slow or unreliable work (talking to Shopify) outside web requests.
 //
 // A feature calls Enqueue inside its db.InTenant transaction, which saves the job in the jobs table
-// (an outbox) together with the change. The worker (cmd/worker) runs two loops: Relay hands new jobs
-// to SQS, and Worker takes them from SQS and runs their Handler. A failed job is retried later, with
-// growing waits; after several failures SQS moves it to a dead-letter queue for a person to look at.
+// together with the change. The worker (cmd/worker) claims ready jobs from that table (Postgres) and
+// runs their Handler. A failed job is retried later, with growing waits; after several failures it's
+// left dead, its last error kept, for a person to look at.
 //
-// SQS may deliver a job more than once, so handlers must be safe to repeat ("make Shopify match
-// the plants now", not "add one to Shopify's stock").
+// A job can run more than once (a worker can die after finishing a job but before recording it), so
+// handlers must be safe to repeat ("make Shopify match the plants now", not "add one to Shopify's
+// stock").
 package jobs
 
 import (

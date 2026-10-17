@@ -8,9 +8,9 @@ online. Root Access HTX is the first nursery.
 |---|---|
 | Backend | Go with Gin. Feature packages (`internal/auth`, `internal/organization`, `internal/inventory`) plus shared `internal/platform`; SQL via sqlc (`internal/db`) |
 | Frontend | React + TypeScript (Vite), served by its own nginx container |
-| Data | PostgreSQL (main database), Valkey (cache), AWS S3 (plant photos), AWS SQS (background jobs) |
-| Local dev | Docker Compose: Postgres, Valkey, LocalStack (S3 + SQS). Go and Vite run on the host |
-| Production | Two containers (API, web) on Kubernetes, one domain: the ingress routes `/api` to the API |
+| Data | PostgreSQL (main database, and the background-job queue: the worker claims jobs from the `jobs` table; a dedicated queue can come later behind the same interface), Valkey (cache), S3-compatible storage for plant photos (Google Cloud Storage when deployed) |
+| Local dev | Docker Compose: Postgres, Valkey, LocalStack (S3). Go and Vite run on the host |
+| Production | Google Cloud, starting on the always-free e2-micro VM running the Docker Compose stack (web, API, worker, Postgres) at `stock.rootaccesshtx.com`; photos in Google Cloud Storage. Kubernetes or managed services later, when needed |
 | Tenancy | One database, `organization_id` on every nursery-owned row. Postgres Row-Level Security keeps nurseries apart: nursery work runs as role `nms_tenant` via `db.InTenant`, and a test fails if a table with `organization_id` lacks RLS. Shared reference data (e.g. plant categories) has no `organization_id` and is read-only to nurseries |
 | Sign-in | Clerk handles identity only (email + password/code, Google). Invite-only (Restricted sign-up mode) |
 | Access | Roles (Owner, Admin, Staff, Viewer) map to permissions; endpoints check permissions. Only Owners see financials |
@@ -54,7 +54,7 @@ online. Root Access HTX is the first nursery.
 
 ### 3. Shopify, per nursery
 - [x] Shopify app with OAuth install, so each nursery connects its own store; tokens encrypted at rest
-- [x] Background jobs: outbox table + SQS worker (`cmd/worker`), with retries and a dead-letter queue
+- [x] Background jobs: a `jobs` table the worker (`cmd/worker`) claims from (leases, retries with growing waits, dead after 5 failures); SQS at first, then Postgres alone
 - [x] Push products, SKUs (variants), images, prices, and stock to Shopify; SKUs without a price stay off it
 - [x] Orders arrive (checked each minute, plus webhooks once deployed) and hold specific plants until pickup; cancelled orders put them back on sale; Orders page lists what to pull
 - [ ] Pickup window: the customer chooses a date and window (and an optional note) in the cart; Plant Stock stores them with the order
@@ -87,8 +87,13 @@ online. Root Access HTX is the first nursery.
 - [ ] 2FA, more sign-in options
 - [ ] Hosted storefront with Stripe Connect payouts (much later)
 
-### Deployment (alongside Phase 1–2)
-- [ ] Kubernetes manifests (API, web, ingress), managed Postgres, managed Valkey/Redis, real S3 and SQS
-- [ ] Production Clerk instance on our own domain; production email provider
-- [ ] S3 bucket for photos, private, with CORS allowing the web app's origin; HTTPS everywhere (phone cameras need it)
-- [ ] Replace LocalStack if Plant Stock becomes commercial (its free plan is non-commercial)
+### Deployment (Google Cloud; when ready)
+- [x] Job queue in Postgres (no SQS), so production needs only the database and photo storage
+- [ ] Photos in Google Cloud Storage (its S3-compatible API), private, with CORS allowing the web app's origin; a local stand-in instead of LocalStack (its free plan is non-commercial)
+- [ ] The always-free e2-micro VM: a setup script (Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock.rootaccesshtx.com` pointed at it
+- [ ] Nightly database backup to Cloud Storage, and a tested restore
+- [ ] Deploys from GitHub Actions (images built there, not on the small VM)
+- [ ] Production Clerk instance on the domain; production email provider
+- [ ] Shopify app version with the real URLs and webhook subscriptions; connect the real Root Access store
+- [ ] Apply for startup cloud credits (Google for Startups; AWS Activate and Microsoft for Startups as alternatives)
+- [ ] Later, as nurseries join: managed Postgres, more machines or Kubernetes, a dedicated queue if volume calls for it

@@ -278,7 +278,13 @@ type Job struct {
 	Kind           string
 	Payload        []byte
 	CreatedAt      time.Time
-	SentAt         *time.Time
+	StartedAt      *time.Time
+	Attempts       int32
+	RunAfter       time.Time
+	LockedUntil    *time.Time
+	FinishedAt     *time.Time
+	DeadAt         *time.Time
+	LastError      *string
 }
 
 type Membership struct {
