@@ -35,15 +35,15 @@ type Config struct {
 	// PlatformAdminEmails may create and suspend nurseries (comma-separated in PLATFORM_ADMIN_EMAILS).
 	PlatformAdminEmails []string
 
-	// Photo storage (S3-compatible): Google Cloud Storage when deployed (S3_ENDPOINT
-	// https://storage.googleapis.com, S3_REGION auto, and its HMAC keys); locally the SeaweedFS
-	// stand-in (S3_ENDPOINT http://localhost:8333, no keys). See internal/platform/storage.
-	S3Bucket          string
-	S3Region          string
-	S3Endpoint        string
-	S3PublicEndpoint  string // what browsers use in signed links, if different from S3_ENDPOINT
-	S3AccessKeyID     string
-	S3SecretAccessKey string
+	// Photo storage (S3-compatible): Google Cloud Storage when deployed (STORAGE_ENDPOINT
+	// https://storage.googleapis.com, STORAGE_REGION auto, and its HMAC keys); locally the SeaweedFS
+	// stand-in (STORAGE_ENDPOINT http://localhost:8333, no keys). See internal/platform/storage.
+	StorageBucket          string
+	StorageRegion          string
+	StorageEndpoint        string
+	StoragePublicEndpoint  string // what browsers use in signed links, if different from STORAGE_ENDPOINT
+	StorageAccessKeyID     string
+	StorageSecretAccessKey string
 
 	// Shopify app (Dev Dashboard → the app → Settings). Without a client ID, Shopify is turned off.
 	ShopifyClientID     string
@@ -70,12 +70,12 @@ func Load() (Config, error) {
 		SMTPPassword:   os.Getenv("SMTP_PASSWORD"),
 		EmailFrom:      getEnv("EMAIL_FROM", "Plant Stock <no-reply@localhost>"),
 
-		S3Bucket:          getEnv("S3_BUCKET", "nms-photos"),
-		S3Region:          getEnv("S3_REGION", getEnv("AWS_REGION", "us-east-1")),
-		S3Endpoint:        os.Getenv("S3_ENDPOINT"),
-		S3PublicEndpoint:  os.Getenv("S3_PUBLIC_ENDPOINT"),
-		S3AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
-		S3SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
+		StorageBucket:          getEnv("STORAGE_BUCKET", "nms-photos"),
+		StorageRegion:          getEnv("STORAGE_REGION", "us-east-1"),
+		StorageEndpoint:        os.Getenv("STORAGE_ENDPOINT"),
+		StoragePublicEndpoint:  os.Getenv("STORAGE_PUBLIC_ENDPOINT"),
+		StorageAccessKeyID:     os.Getenv("STORAGE_ACCESS_KEY_ID"),
+		StorageSecretAccessKey: os.Getenv("STORAGE_SECRET_ACCESS_KEY"),
 
 		ShopifyClientID:     os.Getenv("SHOPIFY_CLIENT_ID"),
 		ShopifyClientSecret: os.Getenv("SHOPIFY_CLIENT_SECRET"),
@@ -106,8 +106,9 @@ func Load() (Config, error) {
 // Storage is where photos are kept.
 func (c Config) Storage() storage.Config {
 	return storage.Config{
-		Bucket: c.S3Bucket, Region: c.S3Region, Endpoint: c.S3Endpoint, PublicEndpoint: c.S3PublicEndpoint,
-		AccessKeyID: c.S3AccessKeyID, SecretAccessKey: c.S3SecretAccessKey,
+		Bucket: c.StorageBucket, Region: c.StorageRegion,
+		Endpoint: c.StorageEndpoint, PublicEndpoint: c.StoragePublicEndpoint,
+		AccessKeyID: c.StorageAccessKeyID, SecretAccessKey: c.StorageSecretAccessKey,
 	}
 }
 
