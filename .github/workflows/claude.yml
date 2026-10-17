@@ -1,54 +1,100 @@
+# Claude works on issues and pull requests. Hand an issue over by adding the `claude` label (or writing
+# @claude in it); on a PR, comment "@claude …" to ask for changes. Claude branches feature/* off staging,
+# runs the checks below, and opens a PR into staging. Only people with write access can trigger it.
+# Issue and comment events run this file as it is on the default branch (staging).
 name: Claude Code
 
 on:
+  issues:
+    types: [opened, labeled]
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
-  issues:
-    types: [opened, assigned]
   pull_request_review:
     types: [submitted]
+
+# One run per issue or PR at a time; a second request waits rather than racing the first.
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
   claude:
     if: |
+      (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'claude') ||
+      (github.event_name == 'issues' && github.event.action == 'opened' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude'))) ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude'))
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
-      contents: write # Push feature branches
+      contents: write # Push feature branches (staging and main need a PR: see the repo's ruleset)
       pull-requests: write # Open PRs and comment on them
       issues: write # Reply on issues
       id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      actions: read # Read CI results on PRs
+
+    # The same Postgres and Mailpit as CI (and docker-compose.yml), so `make test` runs unchanged.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: nms
+          POSTGRES_DB: nms
+          POSTGRES_PASSWORD: nms_dev # throwaway database for this run
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U nms -d nms"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      mailpit:
+        image: axllent/mailpit:v1.31.4
+        ports:
+          - 1025:1025
+          - 8025:8025
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
-      - name: Run Claude Code
-        id: claude
-        uses: anthropics/claude-code-action@v1
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend packages
+        run: npm ci
+        working-directory: frontend
+
+      # Photo storage, as in CI, so the storage test runs rather than skips.
+      - name: Start photo storage (SeaweedFS)
+        run: |
+          docker run -d --name storage -p 8333:8333 chrislusf/seaweedfs:4.48 server -s3 -s3.port=8333 -dir=/data -ip.bind=0.0.0.0
+          for i in $(seq 1 60); do curl -sf http://localhost:8333/healthz && exit 0; sleep 1; done
+          docker logs storage; exit 1
+
+      - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-
-          # Match our git flow: new work branches off staging as feature/*
+          label_trigger: claude
+          # Our git flow (CLAUDE.md): new work branches off staging as feature/*.
           base_branch: staging
           branch_prefix: feature/
-
-          # This is an optional setting that allows Claude to read CI results on PRs
           additional_permissions: |
             actions: read
-
-          # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
-          # prompt: 'Update the pull request description to include a summary of changes.'
-
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr *)'
-
+          # What Claude may run, beyond reading and editing files: the project's own checks, and git and
+          # gh for its branch and PR. A turn cap so one issue can't use up the Claude plan.
+          claude_args: >-
+            --max-turns 150
+            --allowedTools "Bash(make *),Bash(go *),Bash(gofmt *),Bash(npm *),Bash(git *),Bash(gh pr *),Bash(gh issue view *)"

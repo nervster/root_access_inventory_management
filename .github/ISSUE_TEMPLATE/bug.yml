@@ -1,0 +1,46 @@
+name: Bug
+description: Something in Plant Stock doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: To hand it to Claude, add the `claude` label once the issue is written.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw. Copy any error message exactly.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Which page, what you clicked or scanned, as which role (Owner, Admin, Staff, Viewer).
+      placeholder: |
+        1. Sign in as Staff
+        2. Open Batches → B-0004
+        3. Click Repot
+    validations:
+      required: true
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Staging (stock-staging.rootaccesshtx.com)
+        - Production (stock.rootaccesshtx.com)
+        - Local development
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, the plant barcode or order number, phone or desktop, browser.

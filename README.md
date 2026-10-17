@@ -111,3 +111,10 @@ orders each minute, in case one is missed.
 Email goes through Resend's SMTP (`smtp.resend.com:587`, user `resend`, password a sending-only API key per site) from
 `no-reply@rootaccesshtx.com`. The domain's DNS lives in Shopify (Settings → Domains); Resend's records there are
 `resend._domainkey` (TXT) and the `rsend` and `send` CNAMEs. Sent mail and bounces show in Resend under Emails.
+
+## Working from GitHub issues
+Open an issue with the Bug or Feature template, then add the `claude` label to hand it to Claude
+([.github/workflows/claude.yml](.github/workflows/claude.yml)). Claude comments its plan and progress on the
+issue, branches `feature/*` off `staging`, runs the same checks as CI, and opens a PR into `staging`. Ask for
+changes by commenting `@claude …` on the PR. Only people with write access can trigger it; it runs on the Claude
+subscription behind the `CLAUDE_CODE_OAUTH_TOKEN` secret, and follows [CLAUDE.md](CLAUDE.md).
