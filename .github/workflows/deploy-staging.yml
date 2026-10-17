@@ -29,8 +29,13 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v3
 
+      # gcloud's IAP tunnel uploads several times faster with NumPy (it's slow without it).
+      - name: Install NumPy for the IAP tunnel
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-numpy
+
       - name: Deploy
         run: deploy/deploy.sh staging
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+          CLOUDSDK_PYTHON_SITEPACKAGES: "1" # lets gcloud use the NumPy installed above
