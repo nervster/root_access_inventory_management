@@ -9,7 +9,7 @@ online. Root Access HTX is the first nursery.
 | Backend | Go with Gin. Feature packages (`internal/auth`, `internal/organization`, `internal/inventory`) plus shared `internal/platform`; SQL via sqlc (`internal/db`) |
 | Frontend | React + TypeScript (Vite), served by its own nginx container |
 | Data | PostgreSQL (main database, and the background-job queue: the worker claims jobs from the `jobs` table; a dedicated queue can come later behind the same interface), Valkey (cache), S3-compatible storage for plant photos (Google Cloud Storage when deployed) |
-| Local dev | Docker Compose: Postgres, Valkey, LocalStack (S3). Go and Vite run on the host |
+| Local dev | Docker Compose: Postgres, Valkey, SeaweedFS (S3-compatible photo storage), Mailpit. Go and Vite run on the host |
 | Production | Google Cloud, starting on the always-free e2-micro VM running the Docker Compose stack (web, API, worker, Postgres) at `stock.rootaccesshtx.com`; photos in Google Cloud Storage. Kubernetes or managed services later, when needed |
 | Tenancy | One database, `organization_id` on every nursery-owned row. Postgres Row-Level Security keeps nurseries apart: nursery work runs as role `nms_tenant` via `db.InTenant`, and a test fails if a table with `organization_id` lacks RLS. Shared reference data (e.g. plant categories) has no `organization_id` and is read-only to nurseries |
 | Sign-in | Clerk handles identity only (email + password/code, Google). Invite-only (Restricted sign-up mode) |
@@ -21,14 +21,14 @@ online. Root Access HTX is the first nursery.
 | Mobile | Responsive web app/PWA; staff add plants and photos from their phones |
 | Inventory | Tissue-culture batches → one plant per barcode (`RAH-000123`) → grown on through the nursery's pot sizes → for sale. A product is a plant name + variegation; it has one SKU per sellable pot size (Shopify product + variants). Marking plants for sale creates them; prices are set after. Stock is counted from for-sale plants, never typed in |
 | Plant names | Shared list (family → genus → species → cultivar, plus variegations), read-only; each nursery can add its own names on top |
-| Photos | Phones upload straight to S3 (LocalStack locally) with short-lived signed links; private bucket, per-nursery paths. Plant photos form a growth timeline; a product's images are chosen from them |
+| Photos | Phones upload straight to storage (Google Cloud Storage via its S3-compatible API; SeaweedFS locally) with short-lived signed links; private bucket, per-nursery paths. Plant photos form a growth timeline; a product's images are chosen from them |
 | Pickup | Online orders are picked up from a locker, in a window the customer chooses at checkout. Staff are notified of each order and have 8 hours from purchase to get it ready in a locker. For now there's one locker (up to 4 plants, one order at a time); bigger orders are a regular in-person pickup. The locker has a manual PIN pad: Plant Stock generates a 4-digit PIN per order, staff set it when loading, and reset it for the next order. Later, customers get a confirmation email with pickup instructions and the PIN. The pickup-window rules live in the Shopify theme repo |
 | History | Every change to a plant (received, moved, for sale, discarded, corrected, photos) is recorded by Postgres triggers, with who by name. History can't be edited |
 
 ## Phases
 
 ### 1. Foundation
-- [x] Scaffold: Go API (Gin) and React app, each with a production Dockerfile; Compose with Postgres, Valkey, LocalStack
+- [x] Scaffold: Go API (Gin) and React app, each with a production Dockerfile; Compose with Postgres, Valkey, and local stand-ins
 - [x] Config, Postgres connection, migrations (pgx, sqlc, goose; migrations run at API startup)
 - [x] Organizations, users, memberships, invitations; Clerk sign-in; tenant isolation (Row-Level Security); permissions
 - [x] Platform admin: create/suspend nurseries, fix memberships, user lookup; no access to business data (API; admins listed in `PLATFORM_ADMIN_EMAILS`)
@@ -89,7 +89,8 @@ online. Root Access HTX is the first nursery.
 
 ### Deployment (Google Cloud; when ready)
 - [x] Job queue in Postgres (no SQS), so production needs only the database and photo storage
-- [ ] Photos in Google Cloud Storage (its S3-compatible API), private, with CORS allowing the web app's origin; a local stand-in instead of LocalStack (its free plan is non-commercial)
+- [x] Photos ready for Google Cloud Storage (its S3-compatible API with HMAC keys; checked by the storage test against SeaweedFS, which replaced LocalStack locally)
+- [x] Create the private Cloud Storage bucket with CORS for the web app's origin (gcloud), and its HMAC key; run the storage test against it (project `plant-stock-rah`, bucket `plant-stock-rah-files` in us-central1 for photos and, later, other files such as PDFs and reports, service account `photos`)
 - [ ] The always-free e2-micro VM: a setup script (Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock.rootaccesshtx.com` pointed at it
 - [ ] Nightly database backup to Cloud Storage, and a tested restore
 - [ ] Deploys from GitHub Actions (images built there, not on the small VM)

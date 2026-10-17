@@ -20,7 +20,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/web"
 )
 
-// PhotoStorage keeps photo files. *storage.S3 is the real one (S3, or LocalStack locally).
+// PhotoStorage keeps photo files. *storage.S3 is the real one (Google Cloud Storage, or SeaweedFS locally).
 type PhotoStorage interface {
 	UploadURL(ctx context.Context, key, contentType string) (string, error)
 	ViewURL(ctx context.Context, key string) (string, error)

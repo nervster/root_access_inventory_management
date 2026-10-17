@@ -53,16 +53,16 @@ func run() error {
 		return err
 	}
 
-	storageConfig := storage.Config{Bucket: cfg.S3Bucket, Region: cfg.AWSRegion, Endpoint: cfg.S3Endpoint, PublicEndpoint: cfg.S3PublicEndpoint}
+	storageConfig := cfg.Storage()
 	photos, err := storage.New(ctx, storageConfig)
 	if err != nil {
 		return err
 	}
 	if storageConfig.Local() {
-		// Locally, make the LocalStack bucket. If LocalStack isn't running, the API still starts;
+		// Locally, make the stand-in's bucket. If the stand-in isn't running, the API still starts;
 		// only photos won't work.
 		if err := photos.PrepareLocalBucket(ctx, []string{cfg.AppURL}); err != nil {
-			slog.Warn("photo storage unavailable (is LocalStack running? docker compose up -d)", "error", err)
+			slog.Warn("photo storage unavailable (is the storage stand-in running? docker compose up -d)", "error", err)
 		}
 	}
 

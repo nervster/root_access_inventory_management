@@ -23,7 +23,7 @@ backend/
 frontend/
   src/              React app
   Dockerfile        production image (nginx serving the build, proxying /api)
-docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app containers)
+docker-compose.yml  local Postgres, Valkey, photo storage (SeaweedFS), Mailpit (+ optional app containers)
 ```
 
 ## Prerequisites
@@ -34,20 +34,20 @@ docker-compose.yml  local Postgres, Valkey, LocalStack (+ optional app container
     (Sessions → Customize session token): `{"email": "{{user.primary_email_address}}", "name": "{{user.full_name}}"}`
   - `PLATFORM_ADMIN_EMAILS`: your sign-in email, so you can create nurseries (`/api/platform/...`)
   - `VITE_CLERK_PUBLISHABLE_KEY`: Clerk publishable key (`pk_test_…`), only for building the web container
-  - `LOCALSTACK_AUTH_TOKEN`: a free [LocalStack](https://app.localstack.cloud) account, for the local S3 stand-in
-  - `S3_ENDPOINT=http://localhost:4566`: keeps photos in LocalStack (leave it out when deployed, to use real S3)
+  - `STORAGE_ENDPOINT=http://localhost:8333`: keeps photos in the local SeaweedFS stand-in (deployed: Google Cloud
+    Storage, see `.env.example`)
 - `frontend/.env.development.local` (git-ignored) with `VITE_CLERK_PUBLISHABLE_KEY=pk_test_…` for `npm run dev`
 
 ## Local development
 ```sh
-docker compose up -d                       # Postgres :5433, Valkey :6379, LocalStack :4566, Mailpit :8025
+docker compose up -d                       # Postgres :5433, Valkey :6379, photo storage :8333, Mailpit :8025
 cd backend && make run                     # API on :8080 (`make` lists all backend commands)
 cd frontend && npm install && npm run dev  # Vite on :5173, proxies /api to :8080
 ```
 Open http://localhost:5173. Health check: `GET /api/health`. Email the app sends (e.g. invitations) lands in
 Mailpit at http://localhost:8025, never in real inboxes. Signed-in user: `GET /api/me`
-(send the Clerk session token as `Authorization: Bearer <token>`). Photos go to LocalStack; the API creates
-the `nms-photos` bucket there when it starts. Phone cameras (scanning, photos) need https, so locally use
+(send the Clerk session token as `Authorization: Bearer <token>`). Photos go to the SeaweedFS stand-in; the
+API creates the `nms-files` bucket there when it starts. Phone cameras (scanning, photos) need https, so locally use
 the laptop's webcam at localhost.
 
 The API runs database migrations when it starts. To change the schema or queries (from `backend/`):
@@ -67,7 +67,7 @@ docker compose --profile app up -d --build
 ```sh
 cd backend && make test                    # needs `docker compose up -d`; uses a separate nms_test database
 ```
-Tests run against real Postgres (and LocalStack for the storage test, which is skipped when LocalStack
-isn't running), each inside a transaction that's rolled back.
+Tests run against real Postgres (and the photo-storage stand-in for the storage test, which is skipped when
+it isn't running), each inside a transaction that's rolled back.
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the backend checks and tests, the
 frontend lint and build, and both Docker builds on every pull request into `staging` or `main`.

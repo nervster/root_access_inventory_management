@@ -14,7 +14,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
 )
 
-// PhotoSource reads photos from storage: S3 (LocalStack locally), or a fake in tests.
+// PhotoSource reads photos from storage (Google Cloud Storage, or SeaweedFS locally), or a fake in tests.
 type PhotoSource interface {
 	Open(ctx context.Context, key string) (io.ReadCloser, storage.FileInfo, error)
 }
@@ -61,7 +61,7 @@ const stageUploadsMutation = `mutation StageUploads($input: [StagedUploadInput!]
   }
 }`
 
-// upload sends photos to Shopify's storage (Shopify can't fetch them from S3 or LocalStack itself),
+// upload sends photos to Shopify's storage (Shopify can't fetch them from our private bucket itself),
 // returning where each landed, by photo ID, for productSet to attach.
 func (p productSync) upload(ctx context.Context, photos []dbgen.PhotosToSyncRow) (map[int64]string, error) {
 	uploaded := map[int64]string{}

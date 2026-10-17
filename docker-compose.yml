@@ -1,5 +1,5 @@
 # Local development services.
-#   docker compose up -d                 → Postgres, Valkey, LocalStack, Mailpit (run Go and Vite on your Mac)
+#   docker compose up -d                 → Postgres, Valkey, photo storage, Mailpit (run Go and Vite on your Mac)
 #   docker compose --profile app up -d   → also builds and runs the backend + frontend containers
 name: nms
 
@@ -33,17 +33,16 @@ services:
       timeout: 5s
       retries: 10
 
-  # Local stand-in for AWS S3 (plant photos). All AWS calls go to http://localhost:4566.
-  # Needs a free LocalStack account: put LOCALSTACK_AUTH_TOKEN in .env (see .env.example).
-  localstack:
-    image: localstack/localstack:2026.09
-    environment:
-      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
-      SERVICES: s3
+  # Plant photos: SeaweedFS, an S3-compatible stand-in for Google Cloud Storage (S3 API on :8333).
+  storage:
+    image: chrislusf/seaweedfs:4.48
+    command: server -s3 -s3.port=8333 -dir=/data -ip.bind=0.0.0.0
     ports:
-      - "4566:4566"
+      - "8333:8333"
+    volumes:
+      - storage_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:4566/_localstack/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8333/healthz"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -65,8 +64,8 @@ services:
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY} # from the git-ignored .env
       APP_URL: http://localhost:8081 # the web container below
       SMTP_ADDR: mailpit:1025
-      S3_ENDPOINT: http://localstack:4566 # the API reaches LocalStack inside Docker…
-      S3_PUBLIC_ENDPOINT: http://localhost:4566 # …browsers on your Mac
+      STORAGE_ENDPOINT: http://storage:8333 # the API reaches the storage stand-in inside Docker…
+      STORAGE_PUBLIC_ENDPOINT: http://localhost:8333 # …browsers on your Mac
       SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-} # from the git-ignored .env
       SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
       SHOPIFY_TOKEN_KEY: ${SHOPIFY_TOKEN_KEY:-}
@@ -79,7 +78,7 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
-      localstack:
+      storage:
         condition: service_healthy
 
   # Background jobs (same image as the backend, running /worker).
@@ -91,14 +90,14 @@ services:
       DATABASE_URL: postgres://nms:nms_dev@postgres:5432/nms?sslmode=disable # dev-only password
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY}
       APP_URL: http://localhost:8081
-      S3_ENDPOINT: http://localstack:4566 # photos, to upload to Shopify
+      STORAGE_ENDPOINT: http://storage:8333 # photos, to upload to Shopify
       SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-}
       SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
       SHOPIFY_TOKEN_KEY: ${SHOPIFY_TOKEN_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
-      localstack:
+      storage:
         condition: service_healthy
 
   frontend:
@@ -116,4 +115,5 @@ services:
 
 volumes:
   postgres_data:
+  storage_data:
   valkey_data:
