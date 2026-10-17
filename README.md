@@ -107,3 +107,7 @@ there, then `cd shopify && npm install && npm run deploy:staging`: it shows what
 releases a new version of the "Plant Stock Staging" app. Don't run `shopify app config link` on an existing file:
 it overwrites it with what Shopify has. Webhooks go to `POST /api/shopify/webhooks`; the worker still checks for
 orders each minute, in case one is missed.
+
+Email goes through Resend's SMTP (`smtp.resend.com:587`, user `resend`, password a sending-only API key per site) from
+`no-reply@rootaccesshtx.com`. The domain's DNS lives in Shopify (Settings → Domains); Resend's records there are
+`resend._domainkey` (TXT) and the `rsend` and `send` CNAMEs. Sent mail and bounces show in Resend under Emails.
