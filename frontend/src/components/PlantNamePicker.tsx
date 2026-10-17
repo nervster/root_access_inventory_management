@@ -51,9 +51,13 @@ export function PlantNamePicker({ orgId, value, onChange }: { orgId: number; val
       />
     )
 
+  // The results sit beside the Field, not in it: Field is a <label>, and taps on buttons inside a
+  // label get sent to its input instead (so on phones nothing could be picked).
   return (
-    <Field label="Plant" hint="Type part of the name, e.g. dragon or alocasia.">
-      <Input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Search plant names" />
+    <div>
+      <Field label="Plant" hint="Type part of the name, e.g. dragon or alocasia.">
+        <Input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Search plant names" />
+      </Field>
       {search.trim().length >= 2 && (
         <ul className="mt-1 max-h-64 overflow-y-auto rounded-lg border border-stone-200 dark:border-stone-800">
           {names.isPending && <li className="px-3 py-2 text-sm text-stone-500">Searching…</li>}
@@ -78,7 +82,7 @@ export function PlantNamePicker({ orgId, value, onChange }: { orgId: number; val
           </li>
         </ul>
       )}
-    </Field>
+    </div>
   )
 }
 
@@ -117,8 +121,10 @@ function AddPlantName({ orgId, initialName, onAdded, onCancel }: { orgId: number
           </div>
         </Field>
       ) : (
-        <Field label="Goes under" hint="The species for a cultivar, the genus for a species (or a hybrid), the family for a genus.">
-          <Input autoFocus value={parentText} onChange={(e) => setParentText(e.target.value)} placeholder="Search, e.g. alocasia or araceae" />
+        <div>
+          <Field label="Goes under" hint="The species for a cultivar, the genus for a species (or a hybrid), the family for a genus.">
+            <Input autoFocus value={parentText} onChange={(e) => setParentText(e.target.value)} placeholder="Search, e.g. alocasia or araceae" />
+          </Field>
           {parentSearch.trim().length >= 2 && (
             <ul className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-stone-200 dark:border-stone-800">
               {parents.data
@@ -132,7 +138,7 @@ function AddPlantName({ orgId, initialName, onAdded, onCancel }: { orgId: number
                 ))}
             </ul>
           )}
-        </Field>
+        </div>
       )}
 
       {parent && (
