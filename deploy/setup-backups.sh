@@ -38,6 +38,13 @@ gcloud compute instances stop "$VM" --zone "$ZONE"
 gcloud compute instances set-service-account "$VM" --zone "$ZONE" \
   --service-account "$VM_ACCOUNT_EMAIL" --scopes storage-rw
 gcloud compute instances start "$VM" --zone "$ZONE"
+# Signing in to a VM that has an account means acting as it: GitHub's deploy account needs that too
+# (setup-github-deploy.sh grants it when it runs after this).
+DEPLOYER_EMAIL=github-deploy-$SITE@$PROJECT.iam.gserviceaccount.com
+if gcloud iam service-accounts describe "$DEPLOYER_EMAIL" > /dev/null 2>&1; then
+  gcloud iam service-accounts add-iam-policy-binding "$VM_ACCOUNT_EMAIL" --role roles/iam.serviceAccountUser \
+    --member "serviceAccount:$DEPLOYER_EMAIL" --format none
+fi
 until gcloud compute ssh "$VM" --zone "$ZONE" --tunnel-through-iap --command true 2> /dev/null; do sleep 10; done
 
 echo "Done. Next: deploy (merge into staging, or deploy/deploy.sh $SITE) to install the nightly backup,"
