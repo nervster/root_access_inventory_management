@@ -107,3 +107,10 @@ there, then `cd shopify && npm install && npm run deploy:staging`: it shows what
 releases a new version of the "Plant Stock Staging" app. Don't run `shopify app config link` on an existing file:
 it overwrites it with what Shopify has. Webhooks go to `POST /api/shopify/webhooks`; the worker still checks for
 orders each minute, in case one is missed.
+
+## Working from GitHub issues
+Open an issue with the Bug or Feature template, then add the `claude` label to hand it to Claude
+([.github/workflows/claude.yml](.github/workflows/claude.yml)). Claude comments its plan and progress on the
+issue, branches `feature/*` off `staging`, runs the same checks as CI, and opens a PR into `staging`. Ask for
+changes by commenting `@claude …` on the PR. Only people with write access can trigger it; it runs on the Claude
+subscription behind the `CLAUDE_CODE_OAUTH_TOKEN` secret, and follows [CLAUDE.md](CLAUDE.md).

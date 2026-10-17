@@ -1,0 +1,34 @@
+name: Feature or change
+description: Something new, or a change to how Plant Stock works
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: To hand it to Claude, add the `claude` label once the issue is written. Settle open questions first; Claude builds what's written here.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What and why
+      description: What the nursery needs to do, and why.
+    validations:
+      required: true
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: How it should work
+      description: Pages, buttons, who may do it (roles or permissions), what happens to plants, orders or Shopify.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How you'll check it works.
+      placeholder: |
+        - Staff can …
+        - Viewers can't …
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Not part of this
+      description: Related things to leave for later, so they don't get built now.
