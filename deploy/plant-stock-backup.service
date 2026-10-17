@@ -1,0 +1,9 @@
+# Installed by deploy.sh into /etc/systemd/system (with @SITE@ filled in); started by plant-stock-backup.timer.
+[Unit]
+Description=Plant Stock: back up the database to Cloud Storage
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/plant-stock-backup plant-stock-rah-@SITE@-backups

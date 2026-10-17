@@ -1,0 +1,13 @@
+# Installed by deploy.sh into /etc/systemd/system. Nightly at 07:00 UTC (1–2 am in Houston): before the
+# nursery's 3 am Shopify check and the 09:30 UTC window for security-update reboots. Persistent: a backup
+# missed while the VM was off runs when it starts again. Next run: systemctl list-timers plant-stock-backup
+[Unit]
+Description=Plant Stock: nightly database backup
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

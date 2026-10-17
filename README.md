@@ -94,3 +94,9 @@ SSH goes through Google's IAP tunnel only: `gcloud compute ssh plant-stock-stagi
 then `cd /opt/plant-stock && sudo docker compose logs -f api`. Merges into `staging` deploy
 themselves ([.github/workflows/deploy-staging.yml](.github/workflows/deploy-staging.yml)); settings changes still go
 through `deploy/deploy.sh staging` from the Mac, since only the Mac has `deploy/.env.staging`.
+
+Backups: each night (07:00 UTC) the VM dumps the database to its backup bucket (`plant-stock-rah-<site>-backups`,
+30 days kept; the VM may only add to it). Set up once per site with `deploy/setup-backups.sh <site>`. Check that the
+newest backup restores (into a throwaway database) with `deploy/restore-db.sh staging`; replace a site's database with
+`deploy/restore-db.sh staging --replace [backup]`. On the VM: `sudo systemctl start plant-stock-backup` backs up now,
+`journalctl -u plant-stock-backup` shows how the last ones went.
