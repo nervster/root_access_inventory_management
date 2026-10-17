@@ -1,7 +1,8 @@
 # Production image for the NMS web app.
 
-# 1. Build the static React files.
-FROM node:22-alpine AS build
+# 1. Build the static React files (the same on any CPU, so this stage runs natively when building
+#    for another platform).
+FROM --platform=$BUILDPLATFORM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci

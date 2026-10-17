@@ -1,0 +1,76 @@
+# Production stack on the e2-micro VM, in /opt/plant-stock (deploy/deploy.sh copies this file there).
+#   Caddy (HTTPS) → web (nginx: React app, proxies /api) → api; worker; Postgres.
+# Photos live in Google Cloud Storage. Valkey is left out until the code uses it (the VM has 1 GB of memory).
+# Images are built on the Mac and loaded onto the VM by deploy.sh, which tags the newest one :current.
+# Settings come from .env next to this file (see deploy/.env.example).
+name: plant-stock
+
+services:
+  # Gets and renews the HTTPS certificate from Let's Encrypt; the only container with open ports.
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates: keep them, or Let's Encrypt's rate limits can bite
+      - caddy_config:/config
+    depends_on:
+      - web
+
+  web:
+    image: plant-stock-web:current
+    restart: unless-stopped
+    environment:
+      API_UPSTREAM: http://api:8080
+    depends_on:
+      - api
+
+  api:
+    image: plant-stock-api:current
+    restart: unless-stopped
+    env_file: .env
+    environment: &app-environment
+      DATABASE_URL: postgres://nms:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/nms?sslmode=disable
+      APP_URL: https://${DOMAIN}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Background jobs (same image as the API, running /worker).
+  worker:
+    image: plant-stock-api:current
+    entrypoint: ["/worker"]
+    restart: unless-stopped
+    env_file: .env
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    # Sized for a 1 GB machine.
+    command: postgres -c shared_buffers=128MB -c max_connections=40
+    environment:
+      POSTGRES_USER: nms
+      POSTGRES_DB: nms
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nms -d nms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:

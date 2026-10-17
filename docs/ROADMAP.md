@@ -10,7 +10,7 @@ online. Root Access HTX is the first nursery.
 | Frontend | React + TypeScript (Vite), served by its own nginx container |
 | Data | PostgreSQL (main database, and the background-job queue: the worker claims jobs from the `jobs` table; a dedicated queue can come later behind the same interface), Valkey (cache), S3-compatible storage for plant photos (Google Cloud Storage when deployed) |
 | Local dev | Docker Compose: Postgres, Valkey, SeaweedFS (S3-compatible photo storage), Mailpit. Go and Vite run on the host |
-| Production | Google Cloud, starting on the always-free e2-micro VM running the Docker Compose stack (web, API, worker, Postgres) at `stock.rootaccesshtx.com`; photos in Google Cloud Storage. Kubernetes or managed services later, when needed |
+| Production | Google Cloud: two sites, each an e2-micro VM running the Docker Compose stack (web, API, worker, Postgres) with its own Cloud Storage bucket. Staging (`stock-staging.rootaccesshtx.com`, dev Shopify store, Clerk test instance) first; production (`stock.rootaccesshtx.com`, the real store) at launch. Only production may connect the real store. The free tier covers one e2-micro, so the second costs about $7/month. Kubernetes or managed services later, when needed |
 | Tenancy | One database, `organization_id` on every nursery-owned row. Postgres Row-Level Security keeps nurseries apart: nursery work runs as role `nms_tenant` via `db.InTenant`, and a test fails if a table with `organization_id` lacks RLS. Shared reference data (e.g. plant categories) has no `organization_id` and is read-only to nurseries |
 | Sign-in | Clerk handles identity only (email + password/code, Google). Invite-only (Restricted sign-up mode) |
 | Access | Roles (Owner, Admin, Staff, Viewer) map to permissions; endpoints check permissions. Only Owners see financials |
@@ -91,7 +91,8 @@ online. Root Access HTX is the first nursery.
 - [x] Job queue in Postgres (no SQS), so production needs only the database and photo storage
 - [x] Photos ready for Google Cloud Storage (its S3-compatible API with HMAC keys; checked by the storage test against SeaweedFS, which replaced LocalStack locally)
 - [x] Create the private Cloud Storage bucket with CORS for the web app's origin (gcloud), and its HMAC key; run the storage test against it (project `plant-stock-rah`, bucket `plant-stock-rah-files` in us-central1 for photos and, later, other files such as PDFs and reports, service account `photos`)
-- [ ] The always-free e2-micro VM: a setup script (Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock.rootaccesshtx.com` pointed at it
+- [ ] Staging site: e2-micro VM `plant-stock-staging` (setup script: Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock-staging.rootaccesshtx.com` pointed at it; its own bucket `plant-stock-rah-staging-files`; the dev Shopify store
+- [ ] Production site at launch: the same scripts (`deploy/create-vm.sh production`), `stock.rootaccesshtx.com`, bucket `plant-stock-rah-files`
 - [ ] Nightly database backup to Cloud Storage, and a tested restore
 - [ ] Deploys from GitHub Actions (images built there, not on the small VM)
 - [ ] Production Clerk instance on the domain; production email provider
