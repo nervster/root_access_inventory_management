@@ -6,7 +6,6 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive # no install prompts (there's no terminal to answer them)
 APP_DIR=/opt/plant-stock
-APP_USER=${SUDO_USER:?run with sudo as your own user}
 
 # 1 GB of memory is tight for Postgres + Go + nginx + Caddy; swap keeps a spike from killing a container.
 if ! swapon --show | grep -q /swapfile; then
@@ -35,7 +34,6 @@ cat > /etc/docker/daemon.json <<'EOF'
 { "log-driver": "local", "log-opts": { "max-size": "10m", "max-file": "5" } }
 EOF
 systemctl restart docker
-usermod -aG docker "$APP_USER"
 
 # Security updates install daily. If one needs a reboot, it happens at 09:30 UTC (3:30–4:30 am in Houston);
 # the containers come back on their own (restart: unless-stopped).
@@ -49,7 +47,8 @@ Unattended-Upgrade::Automatic-Reboot "true";
 Unattended-Upgrade::Automatic-Reboot-Time "09:30";
 EOF
 
-# Where deploy.sh puts compose.yml, Caddyfile, and .env.
-install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$APP_DIR"
+# Where deploy.sh puts compose.yml, Caddyfile, and .env (readable only by root). Sign-in is through
+# OS Login, so people and GitHub Actions get their own accounts and use sudo for Docker.
+install -d -o root -g root -m 0755 "$APP_DIR"
 
 echo "Set up. Deploy from the Mac with deploy/deploy.sh."
