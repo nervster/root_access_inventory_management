@@ -48,3 +48,15 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("AppURL = %q, want http://localhost:5173", cfg.AppURL)
 	}
 }
+
+func TestLoadRequiresBothStorageKeys(t *testing.T) {
+	for _, keys := range [][2]string{{"GOOG1EXAMPLE", ""}, {"", "secret"}} {
+		t.Setenv("CLERK_SECRET_KEY", "sk_test_example")
+		t.Setenv("STORAGE_ACCESS_KEY_ID", keys[0])
+		t.Setenv("STORAGE_SECRET_ACCESS_KEY", keys[1])
+
+		if _, err := Load(); err == nil {
+			t.Errorf("Load() accepted access key ID %q with secret %q, want an error", keys[0], keys[1])
+		}
+	}
+}

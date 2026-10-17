@@ -90,6 +90,11 @@ func Load() (Config, error) {
 			"(make the key with: openssl rand -base64 32)")
 	}
 
+	// With only one of the pair, photos would fail on every request with a confusing signing error.
+	if (cfg.StorageAccessKeyID == "") != (cfg.StorageSecretAccessKey == "") {
+		return Config{}, errors.New("STORAGE_ACCESS_KEY_ID and STORAGE_SECRET_ACCESS_KEY go together (an HMAC key pair): set both, or neither")
+	}
+
 	// A typo here would silently lock the admin out, so refuse to start instead.
 	for _, email := range strings.Split(os.Getenv("PLATFORM_ADMIN_EMAILS"), ",") {
 		if email = strings.TrimSpace(email); email == "" {
