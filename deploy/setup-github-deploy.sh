@@ -36,10 +36,12 @@ gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" --location 
 
 gcloud iam service-accounts create "$DEPLOYER" --display-name "GitHub Actions: deploy $SITE"
 sleep 10 # a new service account takes a moment to be usable in IAM bindings
-# The workflow runs in the GitHub environment named after the site, so its token's subject is
-# repo:<repo>:environment:<site> (the provider above already checked the branch).
+# Tokens from the site's branch may act as its deploy account (each provider only accepts this repo, so a
+# branch here is always this repo's; and the shared pool means matching the branch keeps staging's tokens
+# away from production's account). Matching the token's exact subject instead failed: GitHub's subject
+# format varies with repository settings.
 gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER_EMAIL" --role roles/iam.workloadIdentityUser \
-  --member "principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/subject/repo:$REPO:environment:$SITE" \
+  --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL/attribute.ref/refs/heads/$BRANCH" \
   --format none
 
 # Open IAP tunnels (the firewall only lets IAP reach the VMs, on port 22), look up the VM, and sign in to

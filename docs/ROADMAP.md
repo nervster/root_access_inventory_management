@@ -94,7 +94,8 @@ online. Root Access HTX is the first nursery.
 - [x] Staging site: e2-micro VM `plant-stock-staging` (setup script: Docker, automatic security updates, firewall), the Compose stack, automatic HTTPS, `stock-staging.rootaccesshtx.com` pointed at it; its own bucket `plant-stock-rah-staging-files`; its own dev Shopify store (`root-access-staging`) through the "Plant Stock Staging" app; Clerk development instance shared with local development (redirects follow the site). Email not set up yet
 - [ ] Production site at launch: the same scripts (`deploy/create-vm.sh production`), `stock.rootaccesshtx.com`, bucket `plant-stock-rah-files`
 - [ ] Nightly database backup to Cloud Storage, and a tested restore
-- [ ] Deploys from GitHub Actions (images built there, not on the small VM)
+- [x] Deploys from GitHub Actions for staging: each merge into `staging` builds the images on GitHub and loads them onto the VM (`.github/workflows/deploy-staging.yml`; Google sign-in without a stored key, `deploy/setup-github-deploy.sh`)
+- [ ] The same for production on merges into `main`, once the production site exists
 - [ ] Production Clerk instance on the domain; production email provider
 - [ ] Shopify app version with the real URLs and webhook subscriptions; connect the real Root Access store
 - [ ] Apply for startup cloud credits (Google for Startups; AWS Activate and Microsoft for Startups as alternatives)
