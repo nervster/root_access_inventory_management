@@ -52,6 +52,13 @@ gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$DEPL
   --role roles/compute.viewer --condition None --format none
 gcloud compute instances add-iam-policy-binding "$VM" --zone "$ZONE" --member "serviceAccount:$DEPLOYER_EMAIL" \
   --role roles/compute.osAdminLogin --format none
+# A VM with an account (setup-backups.sh gives it one) can only be signed in to by those who may act as it:
+# just that account, nothing else in the project.
+VM_ACCOUNT_EMAIL=$(gcloud compute instances describe "$VM" --zone "$ZONE" --format 'value(serviceAccounts[0].email)')
+if [ -n "$VM_ACCOUNT_EMAIL" ]; then
+  gcloud iam service-accounts add-iam-policy-binding "$VM_ACCOUNT_EMAIL" --role roles/iam.serviceAccountUser \
+    --member "serviceAccount:$DEPLOYER_EMAIL" --format none
+fi
 
 # Sign-in through OS Login (create-vm.sh turns it on for new VMs), and the app folder owned by root.
 gcloud compute instances add-metadata "$VM" --zone "$ZONE" --metadata enable-oslogin=TRUE
