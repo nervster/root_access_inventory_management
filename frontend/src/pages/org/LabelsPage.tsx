@@ -4,6 +4,7 @@ import { useParams } from 'react-router'
 import { useBatch, useMembership } from '../../api/hooks'
 import type { BatchDto, PlantDto } from '../../api/types'
 import { NotFound } from '../../components/Guards'
+import { LabelPrinter } from '../../components/LabelPrinter'
 import { buildXlsx } from '../../labelsExcel'
 import { Button, ErrorBanner, Field, Input, LinkButton, Loading, Select } from '../../components/ui'
 
@@ -117,6 +118,17 @@ export function LabelsPage() {
         <LinkButton variant="secondary" to={`/orgs/${orgId}/batches/${batch.data.batch.id}`}>
           Back
         </LinkButton>
+        {roll && (
+          <div className="w-full">
+            <LabelPrinter
+              labels={plants.map((p) => ({
+                barcode: p.barcode,
+                name: `${p.plantName}${p.variegation ? ` ${p.variegation}` : ''}`,
+                batchCode: batch.data.batch.code,
+              }))}
+            />
+          </div>
+        )}
       </div>
 
       {roll
