@@ -4,11 +4,33 @@ import { useParams } from 'react-router'
 import { useBatch, useMembership } from '../../api/hooks'
 import type { BatchDto, PlantDto } from '../../api/types'
 import { NotFound } from '../../components/Guards'
-import { Button, ErrorBanner, Field, Input, LinkButton, Loading } from '../../components/ui'
+import { Button, ErrorBanner, Field, Input, LinkButton, Loading, Select } from '../../components/ui'
 
 // Letter paper laid out like 3 × 10 address-label sheets (Avery 5160 size): plain paper can be cut
 // apart, and those sticker sheets line up without changes.
 const perPage = 30
+
+type Layout = 'roll' | 'letter'
+
+// Remembered per computer, so the one with the label printer opens on the label layout. Storage can
+// be blocked (private mode, browser settings); the page still works without it.
+const layoutKey = 'plantstock.labelLayout'
+
+function loadLayout(): Layout {
+  try {
+    return localStorage.getItem(layoutKey) === 'letter' ? 'letter' : 'roll'
+  } catch {
+    return 'roll'
+  }
+}
+
+function saveLayout(layout: Layout) {
+  try {
+    localStorage.setItem(layoutKey, layout)
+  } catch {
+    // Not remembered; the choice still applies until the page is reloaded.
+  }
+}
 
 /**
  * Printable barcode labels for a batch's living plants. Rendered outside the app's layout so only
@@ -20,6 +42,8 @@ export function LabelsPage() {
   const membership = useMembership(orgId)
   const batch = useBatch(orgId, Number(params.batchId))
   const [skip, setSkip] = useState('0')
+  const [layout, setLayout] = useState<Layout>(loadLayout)
+  const roll = layout === 'roll'
 
   if (!membership) return <NotFound message="You're not a member of this nursery." />
   if (batch.isPending) return <Loading />
@@ -27,56 +51,88 @@ export function LabelsPage() {
 
   const plants = batch.data.plants.filter((p) => p.status === 'growing' || p.status === 'for_sale')
   // Blank spots first, so a partly used sticker sheet can be reused.
-  const blanks = Math.min(Math.max(Number(skip) || 0, 0), perPage - 1)
+  const blanks = roll ? 0 : Math.min(Math.max(Number(skip) || 0, 0), perPage - 1)
   const cells: (PlantDto | null)[] = [...Array<null>(blanks).fill(null), ...plants]
   const pages = Array.from({ length: Math.ceil(cells.length / perPage) }, (_, i) => cells.slice(i * perPage, (i + 1) * perPage))
 
   return (
     <div className="bg-white text-black">
-      <style>{`@page { size: letter; margin: 0; }`}</style>
+      <style>{roll ? `@page { size: 50mm 30mm; margin: 0; }` : `@page { size: letter; margin: 0; }`}</style>
 
       <div className="mx-auto flex max-w-[8.5in] flex-wrap items-end gap-3 p-4 print:hidden">
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold">
             Labels for {batch.data.batch.code} · {plants.length} plant{plants.length === 1 ? '' : 's'}
           </h1>
-          <p className="text-sm text-stone-600">Letter paper, 30 per page. In the print dialog, set scale to 100% (no "fit to page").</p>
+          <p className="text-sm text-stone-600">
+            {roll
+              ? 'In the print dialog, choose the Niimbot printer, paper size 50 × 30 mm, margins None, scale 100%.'
+              : 'Letter paper, 30 per page. In the print dialog, set scale to 100% (no "fit to page").'}
+          </p>
         </div>
-        <div className="w-36">
-          <Field label="Skip first spots">
-            <Input type="number" min={0} max={perPage - 1} value={skip} onChange={(e) => setSkip(e.target.value)} />
+        <div className="w-60">
+          <Field label="Layout">
+            <Select
+              value={layout}
+              onChange={(e) => {
+                const next = e.target.value as Layout
+                setLayout(next)
+                saveLayout(next)
+              }}
+            >
+              <option value="roll">Label printer, 50 × 30 mm</option>
+              <option value="letter">Letter, 30 per page (Avery 5160)</option>
+            </Select>
           </Field>
         </div>
+        {!roll && (
+          <div className="w-36">
+            <Field label="Skip first spots">
+              <Input type="number" min={0} max={perPage - 1} value={skip} onChange={(e) => setSkip(e.target.value)} />
+            </Field>
+          </div>
+        )}
         <Button onClick={() => window.print()}>Print</Button>
         <LinkButton variant="secondary" to={`/orgs/${orgId}/batches/${batch.data.batch.id}`}>
           Back
         </LinkButton>
       </div>
 
-      {pages.map((page, i) => (
-        <section
-          key={i}
-          className="mx-auto mb-6 box-border grid h-[11in] w-[8.5in] break-after-page content-start border border-dashed border-stone-300 px-[0.1875in] pt-[0.5in] print:mb-0 print:border-0"
-          style={{ gridTemplateColumns: 'repeat(3, 2.625in)', gridAutoRows: '1in', columnGap: '0.125in' }}
-        >
-          {page.map((plant, j) => (plant ? <Label key={plant.id} plant={plant} batch={batch.data.batch} /> : <div key={`blank-${j}`} />))}
-        </section>
-      ))}
+      {roll
+        ? plants.map((plant) => (
+            // One label per page. The last one has no page break after it, or a blank label could feed.
+            <section
+              key={plant.id}
+              className="mx-auto mb-6 box-border h-[30mm] w-[50mm] overflow-hidden break-after-page border border-dashed border-stone-300 print:mb-0 print:border-0 print:last:break-after-auto"
+            >
+              <Label plant={plant} batch={batch.data.batch} roll />
+            </section>
+          ))
+        : pages.map((page, i) => (
+            <section
+              key={i}
+              className="mx-auto mb-6 box-border grid h-[11in] w-[8.5in] break-after-page content-start border border-dashed border-stone-300 px-[0.1875in] pt-[0.5in] print:mb-0 print:border-0"
+              style={{ gridTemplateColumns: 'repeat(3, 2.625in)', gridAutoRows: '1in', columnGap: '0.125in' }}
+            >
+              {page.map((plant, j) => (plant ? <Label key={plant.id} plant={plant} batch={batch.data.batch} /> : <div key={`blank-${j}`} />))}
+            </section>
+          ))}
     </div>
   )
 }
 
-function Label({ plant, batch }: { plant: PlantDto; batch: BatchDto }) {
+/** `roll` sizes the label for a 50 × 30 mm roll: QR code 24 mm square on the left, text on the right. */
+function Label({ plant, batch, roll }: { plant: PlantDto; batch: BatchDto; roll?: boolean }) {
   return (
-    <div className="flex items-center gap-2 overflow-hidden px-2">
-      <QR text={plant.barcode} className="size-[0.8in] shrink-0" />
+    <div className={roll ? 'flex h-full items-center gap-[1mm] overflow-hidden px-[1.5mm]' : 'flex items-center gap-2 overflow-hidden px-2'}>
+      <QR text={plant.barcode} className={roll ? 'size-[24mm] shrink-0' : 'size-[0.8in] shrink-0'} />
       <div className="min-w-0 leading-tight">
-        <p className="font-mono text-[11pt] font-bold">{plant.barcode}</p>
-        <p className="line-clamp-2 text-[7.5pt]">
+        <p className={`font-mono font-bold ${roll ? 'text-[9pt]' : 'text-[11pt]'}`}>{plant.barcode}</p>
+        <p className={`line-clamp-2 break-words ${roll ? 'text-[6.5pt]' : 'text-[7.5pt]'}`}>
           {plant.plantName}
           {plant.variegation && ` ${plant.variegation}`}
         </p>
-        <p className="text-[7pt] text-stone-600">{batch.code}</p>
+        <p className={`${roll ? 'text-[6pt]' : 'text-[7pt]'} text-stone-600`}>{batch.code}</p>
       </div>
     </div>
   )
