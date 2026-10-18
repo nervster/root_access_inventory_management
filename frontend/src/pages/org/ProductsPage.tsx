@@ -3,6 +3,7 @@ import { useParams } from 'react-router'
 import { useMembership, useProductActions, useProducts } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, type ProductDto, type VariantDto } from '../../api/types'
+import { ProductHistory } from '../../components/ProductHistory'
 import { ProductImagePicker, ProductImageStrip } from '../../components/ProductImages'
 import { Badge, Button, Card, ErrorBanner, Field, Input, Loading, Notice, PageHeader } from '../../components/ui'
 import { dollarsToCents, formatMoney } from '../../lib/format'
@@ -162,6 +163,7 @@ function ProductCard({ orgId, product, canSell }: { orgId: number; product: Prod
           )}
         </tbody>
       </table>
+      <ProductHistory orgId={orgId} productId={product.id} />
     </Card>
   )
 }

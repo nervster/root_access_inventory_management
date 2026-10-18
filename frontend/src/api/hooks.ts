@@ -22,6 +22,7 @@ import type {
   PlantNameDto,
   PlantWithHistoryDto,
   ProductDto,
+  ProductEventDto,
   CorrectionResult,
   RepotResult,
   SaleResult,
@@ -380,6 +381,16 @@ export function useLookupPlant(orgId: number) {
 export function useProducts(orgId: number) {
   const api = useApi()
   return useQuery({ queryKey: inventoryKeys.products(orgId), queryFn: () => api<ProductDto[]>(`/orgs/${orgId}/products`) })
+}
+
+/** A product's price and details history, oldest first. Refetches after any product change. */
+export function useProductHistory(orgId: number, productId: number, enabled: boolean) {
+  const api = useApi()
+  return useQuery({
+    queryKey: [...inventoryKeys.products(orgId), productId, 'history'],
+    queryFn: () => api<ProductEventDto[]>(`/orgs/${orgId}/products/${productId}/history`),
+    enabled,
+  })
 }
 
 /** Product details and prices. Products and SKUs themselves are created by marking plants for sale. */

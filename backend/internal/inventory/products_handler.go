@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -104,6 +105,35 @@ func (h handler) respondWithProduct(c *gin.Context, productID int64, status int)
 			return
 		}
 		c.JSON(status, response)
+	}
+}
+
+type productEventResponse struct {
+	Type       dbgen.ProductEventType `json:"type"`       // price_changed, sku_added, …
+	Details    json.RawMessage        `json:"details"`    // depends on type; money in cents
+	OccurredAt time.Time              `json:"occurredAt"` //
+	ChangedBy  *string                `json:"changedBy"`  // their name (email if they have none)
+}
+
+// getProductHistory handles GET /products/:productId/history: prices and details over time, oldest first.
+func (h handler) getProductHistory(c *gin.Context) {
+	productID, ok := web.IDParam(c, "productId")
+	if !ok {
+		web.Fail(c, http.StatusNotFound, "product not found")
+		return
+	}
+	history, err := h.store.ProductHistory(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, productID)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		web.Fail(c, http.StatusNotFound, "product not found")
+	case err != nil:
+		web.FailInternal(c, err)
+	default:
+		response := make([]productEventResponse, len(history))
+		for i, e := range history {
+			response[i] = productEventResponse{Type: e.Type, Details: e.Details, OccurredAt: e.OccurredAt, ChangedBy: e.ChangedByName}
+		}
+		c.JSON(http.StatusOK, response)
 	}
 }
 

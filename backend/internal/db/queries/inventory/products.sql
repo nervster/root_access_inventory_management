@@ -132,3 +132,11 @@ UPDATE plants
 SET status = 'growing', updated_at = now()
 WHERE organization_id = @organization_id AND status = 'for_sale' AND barcode = ANY(@barcodes::text[])
 RETURNING barcode;
+
+-- name: ListProductEvents :many
+-- A product's price and details history (written by triggers, see migration 00029), oldest first.
+-- The name of who made each change is copied into the event, so it shows even after they leave.
+SELECT e.id, e.type, e.details, e.occurred_at, e.changed_by_name
+FROM product_events e
+WHERE e.organization_id = @organization_id AND e.product_id = @product_id
+ORDER BY e.occurred_at, e.id;
