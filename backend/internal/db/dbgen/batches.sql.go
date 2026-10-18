@@ -59,8 +59,11 @@ func (q *Queries) CreateBatch(ctx context.Context, arg CreateBatchParams) (Batch
 
 const createBatchPlants = `-- name: CreateBatchPlants :many
 INSERT INTO plants (organization_id, barcode, batch_id, plant_name_id, variegation_id, pot_size_id)
-SELECT $1, $2::text || '-' || lpad(n::text, 6, '0'), $3, $4, $5, $6
-FROM generate_series($7::bigint, $8::bigint) AS n
+SELECT $1,
+       $2::text || '-' || plant_short_code(pn.full_name) || '-' || lpad(n::text, 6, '0'),
+       $3, $4, $5, $6
+FROM generate_series($7::bigint, $8::bigint) AS n,
+     (SELECT full_name FROM plant_names WHERE id = $4) AS pn
 ORDER BY n
 RETURNING id, organization_id, barcode, batch_id, plant_name_id, variegation_id, pot_size_id, status, notes, created_at, updated_at, discarded_at, discard_reason, order_item_id, return_item_id
 `
@@ -76,7 +79,9 @@ type CreateBatchPlantsParams struct {
 	LastNumber     int64
 }
 
-// One plant per number from @first_number to @last_number, all in the batch's first pot.
+// One plant per number from @first_number to @last_number, all in the batch's first pot. Barcodes
+// look like RAH-ADF-000123: the plant's short code is fixed here, so a later name correction
+// doesn't change what's printed on the label.
 func (q *Queries) CreateBatchPlants(ctx context.Context, arg CreateBatchPlantsParams) ([]Plant, error) {
 	rows, err := q.db.Query(ctx, createBatchPlants,
 		arg.OrganizationID,

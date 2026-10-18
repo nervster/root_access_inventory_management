@@ -184,7 +184,7 @@ export interface BatchDto {
 
 export interface PlantDto {
   id: number
-  /** RAH-000123 */
+  /** RAH-ADF-000123 */
   barcode: string
   batchId: number
   batchCode: string

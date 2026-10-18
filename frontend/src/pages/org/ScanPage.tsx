@@ -91,7 +91,7 @@ export function ScanPage() {
         <form onSubmit={submitTyped} className="mt-3 flex gap-2">
           <Input
             aria-label="Barcode"
-            placeholder="Or type a barcode, e.g. RAH-000123"
+            placeholder="Or type a barcode, e.g. RAH-ADF-000123"
             autoCapitalize="characters"
             autoComplete="off"
             value={typed}

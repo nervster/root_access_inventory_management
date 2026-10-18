@@ -59,7 +59,7 @@ const dragonScale = "Alocasia baginda 'Dragon Scale'"
 // TestMarkForSaleCreatesProductsAndSKUs: plants go on sale as soon as they're in a sellable pot; the
 // first time a kind of plant is sold in a pot, its product and SKU are created, with no price yet.
 func TestMarkForSaleCreatesProductsAndSKUs(t *testing.T) {
-	n := newRepotNursery(t) // IT-000001 to 5 in the Tissue Culture Cup
+	n := newRepotNursery(t) // IT-ABDS-000001 to 5 in the Tissue Culture Cup
 	batch := fmt.Sprintf(`{"batchId":%d}`, n.batch.ID)
 
 	if got, _ := n.markForSale(batch, 200); got.Marked != 0 || got.Skipped.UnsellablePot != 5 || len(got.NewVariants) != 0 {
@@ -70,7 +70,7 @@ func TestMarkForSaleCreatesProductsAndSKUs(t *testing.T) {
 	}
 
 	n.repot(fmt.Sprintf(`{"potSizeId":%d,"batchId":%d}`, n.small.ID, n.batch.ID), 200)
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000005"]}`, n.medium.ID), 200)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-ABDS-000005"]}`, n.medium.ID), 200)
 	got, _ := n.markForSale(batch, 200)
 	var created []string
 	for _, v := range got.NewVariants {
@@ -107,19 +107,19 @@ func TestNewPlantsJoinTheirProduct(t *testing.T) {
 
 func TestMarkForSaleByBarcode(t *testing.T) {
 	n := newRepotNursery(t)
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000001"]}`, n.small.ID), 200)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-ABDS-000001"]}`, n.small.ID), 200)
 
 	// One plant still in the TC cup: nothing changes, and it's named.
-	if _, message := n.markForSale(`{"barcodes":["IT-000001","IT-000002"]}`, 400); !strings.Contains(message, "IT-000002") {
-		t.Errorf("error = %q, want it to name IT-000002", message)
+	if _, message := n.markForSale(`{"barcodes":["IT-ABDS-000001","IT-ABDS-000002"]}`, 400); !strings.Contains(message, "IT-ABDS-000002") {
+		t.Errorf("error = %q, want it to name IT-ABDS-000002", message)
 	}
 	if got := n.products(); len(got) != 0 {
 		t.Errorf("products = %+v, want none: the refused request created nothing", got)
 	}
-	if got, _ := n.markForSale(`{"barcodes":["IT-000001"]}`, 200); got.Marked != 1 || len(got.NewVariants) != 1 {
-		t.Errorf("marking IT-000001: %+v, want 1 marked with a new SKU", got)
+	if got, _ := n.markForSale(`{"barcodes":["IT-ABDS-000001"]}`, 200); got.Marked != 1 || len(got.NewVariants) != 1 {
+		t.Errorf("marking IT-ABDS-000001: %+v, want 1 marked with a new SKU", got)
 	}
-	n.expect("staff", "POST", "/api/orgs/{org}/plants/mark-for-sale", `{"barcodes":["IT-000001"]}`, 403) // listings.manage
+	n.expect("staff", "POST", "/api/orgs/{org}/plants/mark-for-sale", `{"barcodes":["IT-ABDS-000001"]}`, 403) // listings.manage
 }
 
 func TestVariegationsAreSeparateProducts(t *testing.T) {
@@ -180,7 +180,7 @@ func TestPricesAndDetails(t *testing.T) {
 	// A price can be removed only once nothing is for sale at it; then the product leaves the list.
 	path := fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", product.ID, n.small.ID)
 	n.expect("owner", "DELETE", path, "", 409)
-	n.expect("owner", "POST", "/api/orgs/{org}/plants/unmark-for-sale", `{"barcodes":["IT-000001","IT-000002","IT-000003","IT-000004","IT-000005"]}`, 200)
+	n.expect("owner", "POST", "/api/orgs/{org}/plants/unmark-for-sale", `{"barcodes":["IT-ABDS-000001","IT-ABDS-000002","IT-ABDS-000003","IT-ABDS-000004","IT-ABDS-000005"]}`, 200)
 	n.expect("owner", "DELETE", path, "", 204)
 	if got := n.products(); len(got) != 0 {
 		t.Errorf("products = %+v, want none left", got)
@@ -199,7 +199,7 @@ func TestStockFollowsThePlants(t *testing.T) {
 	n.markForSale(fmt.Sprintf(`{"batchId":%d}`, n.batch.ID), 200)
 
 	// A for-sale plant moved to a bigger pot moves to that pot's stock, getting a SKU there.
-	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000004"]}`, n.medium.ID), 200); len(got.NewVariants) != 1 || got.NewVariants[0].SKU != "ABDS-MC" {
+	if got, _ := n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-ABDS-000004"]}`, n.medium.ID), 200); len(got.NewVariants) != 1 || got.NewVariants[0].SKU != "ABDS-MC" {
 		t.Errorf("repot created %+v, want the Medium Cup SKU ABDS-MC", got.NewVariants)
 	}
 	if s := stock(n.product(dragonScale)); s["Small Cup"] != 4 || s["Medium Cup"] != 1 {

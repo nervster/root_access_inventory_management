@@ -72,7 +72,7 @@ func TestProductHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n.expect("owner", "POST", "/api/orgs/{org}/plants/unmark-for-sale", `{"barcodes":["IT-000001","IT-000002","IT-000003","IT-000004","IT-000005"]}`, 200)
+	n.expect("owner", "POST", "/api/orgs/{org}/plants/unmark-for-sale", `{"barcodes":["IT-ABDS-000001","IT-ABDS-000002","IT-ABDS-000003","IT-ABDS-000004","IT-ABDS-000005"]}`, 200)
 	n.expect("owner", "DELETE", fmt.Sprintf("/api/orgs/{org}/products/%d/variants/%d", product.ID, n.small.ID), "", 204)
 
 	// The deleted SKU's code and pot still read right in the history, and a SKU added later (by

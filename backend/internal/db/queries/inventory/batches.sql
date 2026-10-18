@@ -18,10 +18,15 @@ VALUES (@organization_id, @code, @plant_name_id, @variegation_id, @source, @rece
 RETURNING *;
 
 -- name: CreateBatchPlants :many
--- One plant per number from @first_number to @last_number, all in the batch's first pot.
+-- One plant per number from @first_number to @last_number, all in the batch's first pot. Barcodes
+-- look like RAH-ADF-000123: the plant's short code is fixed here, so a later name correction
+-- doesn't change what's printed on the label.
 INSERT INTO plants (organization_id, barcode, batch_id, plant_name_id, variegation_id, pot_size_id)
-SELECT @organization_id, @barcode_prefix::text || '-' || lpad(n::text, 6, '0'), @batch_id, @plant_name_id, @variegation_id, @pot_size_id
-FROM generate_series(@first_number::bigint, @last_number::bigint) AS n
+SELECT @organization_id,
+       @barcode_prefix::text || '-' || plant_short_code(pn.full_name) || '-' || lpad(n::text, 6, '0'),
+       @batch_id, @plant_name_id, @variegation_id, @pot_size_id
+FROM generate_series(@first_number::bigint, @last_number::bigint) AS n,
+     (SELECT full_name FROM plant_names WHERE id = @plant_name_id) AS pn
 ORDER BY n
 RETURNING *;
 

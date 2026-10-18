@@ -25,12 +25,12 @@ func (n *repotNursery) aureaID() int64 {
 // TestPlantLosesItsVariegation: a for-sale Aurea plant turns out plain. It moves to the plain
 // product (whose Small Cup SKU is created), and its history says what changed.
 func TestPlantLosesItsVariegation(t *testing.T) {
-	n := newRepotNursery(t) // IT-000001 to 5: plain Dragon Scale
+	n := newRepotNursery(t) // IT-ABDS-000001 to 5: plain Dragon Scale
 	aurea := n.receiveBatch("staff", fmt.Sprintf(`{"plantNameId":%d,"variegationId":%d,"potSizeId":%d,"quantity":3,"receivedOn":"2026-10-11"}`,
-		n.plantNameID(dragonScale), n.aureaID(), n.small.ID), 201) // IT-000006 to 8
+		n.plantNameID(dragonScale), n.aureaID(), n.small.ID), 201) // IT-ABDS-000006 to 8
 	n.markForSale(fmt.Sprintf(`{"batchId":%d}`, aurea.Batch.ID), 200)
 
-	got := n.correct("staff", `{"barcodes":["IT-000006"],"variegationId":null}`, 200)
+	got := n.correct("staff", `{"barcodes":["IT-ABDS-000006"],"variegationId":null}`, 200)
 	if got.Corrected != 1 || len(got.NewVariants) != 1 || got.NewVariants[0].SKU != "ABDS-SC" {
 		t.Errorf("correction = %+v, want 1 corrected and the plain Small Cup SKU created", got)
 	}
@@ -41,13 +41,13 @@ func TestPlantLosesItsVariegation(t *testing.T) {
 		t.Errorf("plain stock = %v, want the corrected plant", s)
 	}
 
-	plant := n.plant("IT-000006")
+	plant := n.plant("IT-ABDS-000006")
 	last := plant.History[len(plant.History)-1]
 	if plant.Variegation != nil || last.Type != "name_corrected" ||
 		string(last.Details) != fmt.Sprintf(`{"to":"%s","from":"%s Aurea"}`, dragonScale, dragonScale) {
 		t.Errorf("plant variegation %v, last event %s %s; want none, and a correction from Aurea", plant.Variegation, last.Type, last.Details)
 	}
-	if again := n.correct("staff", `{"barcodes":["IT-000006"],"variegationId":null}`, 200); again.Corrected != 0 || again.Unchanged != 1 {
+	if again := n.correct("staff", `{"barcodes":["IT-ABDS-000006"],"variegationId":null}`, 200); again.Corrected != 0 || again.Unchanged != 1 {
 		t.Errorf("correcting again = %+v, want it already right", again)
 	}
 }
@@ -56,7 +56,7 @@ func TestPlantLosesItsVariegation(t *testing.T) {
 // are fixed; a discarded plant is left as it was.
 func TestCorrectAWholeBatch(t *testing.T) {
 	n := newRepotNursery(t)
-	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-000005"]}`, 200)
+	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-ABDS-000005"]}`, 200)
 	polly := n.plantNameID("Alocasia 'Polly'")
 
 	if got := n.correct("staff", fmt.Sprintf(`{"batchId":%d,"plantNameId":%d}`, n.batch.ID, polly), 200); got.Corrected != 4 || got.Unchanged != 0 {
@@ -68,27 +68,27 @@ func TestCorrectAWholeBatch(t *testing.T) {
 	for _, p := range batch.Plants {
 		names[p.Barcode] = p.PlantName
 	}
-	if batch.Batch.PlantName != "Alocasia 'Polly'" || names["IT-000001"] != "Alocasia 'Polly'" || names["IT-000005"] != dragonScale {
-		t.Errorf("batch says %q; IT-000001 %q, discarded IT-000005 %q; want Polly, Polly, and Dragon Scale left alone", batch.Batch.PlantName, names["IT-000001"], names["IT-000005"])
+	if batch.Batch.PlantName != "Alocasia 'Polly'" || names["IT-ABDS-000001"] != "Alocasia 'Polly'" || names["IT-ABDS-000005"] != dragonScale {
+		t.Errorf("batch says %q; IT-ABDS-000001 %q, discarded IT-ABDS-000005 %q; want Polly, Polly, and Dragon Scale left alone", batch.Batch.PlantName, names["IT-ABDS-000001"], names["IT-ABDS-000005"])
 	}
 }
 
 func TestCorrectionRules(t *testing.T) {
 	n := newRepotNursery(t)
-	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-000005"]}`, 200)
+	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-ABDS-000005"]}`, 200)
 
-	n.correct("staff", `{"barcodes":["IT-000001"]}`, 400)                                                            // nothing to change
-	n.correct("staff", fmt.Sprintf(`{"batchId":%d,"barcodes":["IT-000001"],"variegationId":null}`, n.batch.ID), 400) // both
-	n.correct("staff", fmt.Sprintf(`{"barcodes":["IT-000001"],"plantNameId":%d}`, n.plantNameID("Araceae")), 400)    // a family
-	n.correct("staff", `{"barcodes":["IT-000001"],"variegationId":999999}`, 400)                                     // unknown variegation
-	n.correct("staff", `{"barcodes":["IT-000005"],"variegationId":null}`, 400)                                       // discarded
-	n.correct("viewer", `{"barcodes":["IT-000001"],"variegationId":null}`, 403)                                      // inventory.edit
-	n.correct("rival", fmt.Sprintf(`{"batchId":%d,"variegationId":null}`, n.batch.ID), 404)                          // not theirs
+	n.correct("staff", `{"barcodes":["IT-ABDS-000001"]}`, 400)                                                            // nothing to change
+	n.correct("staff", fmt.Sprintf(`{"batchId":%d,"barcodes":["IT-ABDS-000001"],"variegationId":null}`, n.batch.ID), 400) // both
+	n.correct("staff", fmt.Sprintf(`{"barcodes":["IT-ABDS-000001"],"plantNameId":%d}`, n.plantNameID("Araceae")), 400)    // a family
+	n.correct("staff", `{"barcodes":["IT-ABDS-000001"],"variegationId":999999}`, 400)                                     // unknown variegation
+	n.correct("staff", `{"barcodes":["IT-ABDS-000005"],"variegationId":null}`, 400)                                       // discarded
+	n.correct("viewer", `{"barcodes":["IT-ABDS-000001"],"variegationId":null}`, 403)                                      // inventory.edit
+	n.correct("rival", fmt.Sprintf(`{"batchId":%d,"variegationId":null}`, n.batch.ID), 404)                               // not theirs
 }
 
 func TestPlantNotes(t *testing.T) {
 	n := newRepotNursery(t)
-	path := "/api/orgs/{org}/plants/by-barcode/IT-000001"
+	path := "/api/orgs/{org}/plants/by-barcode/IT-ABDS-000001"
 
 	var plant plantWithHistoryResponse
 	_ = json.Unmarshal(n.expect("staff", "PATCH", path, `{"notes":" Mealybugs, treated Oct 11 "}`, 200).Body.Bytes(), &plant)
