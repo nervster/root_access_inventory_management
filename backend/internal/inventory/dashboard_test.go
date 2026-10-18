@@ -7,7 +7,7 @@ import (
 )
 
 func TestDashboard(t *testing.T) {
-	n := newRepotNursery(t) // 5 Dragon Scales (IT-000001 to 5) in the Tissue Culture Cup
+	n := newRepotNursery(t) // 5 Dragon Scales (IT-ABDS-000001 to 5) in the Tissue Culture Cup
 	dashboard := func() dashboardResponse {
 		var d dashboardResponse
 		_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/dashboard", "", 200).Body.Bytes(), &d)
@@ -19,9 +19,9 @@ func TestDashboard(t *testing.T) {
 	}
 
 	// 4 move to the Small Cup, 1 is discarded; 2 of the 4 go on sale (their SKU has no price yet).
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000001","IT-000002","IT-000003","IT-000004"]}`, n.small.ID), 200)
-	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-000005"]}`, 200)
-	n.markForSale(`{"barcodes":["IT-000001","IT-000002"]}`, 200)
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-ABDS-000001","IT-ABDS-000002","IT-ABDS-000003","IT-ABDS-000004"]}`, n.small.ID), 200)
+	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-ABDS-000005"]}`, 200)
+	n.markForSale(`{"barcodes":["IT-ABDS-000001","IT-ABDS-000002"]}`, 200)
 
 	d := dashboard()
 	if d.Plants != (plantCountsJSON{Growing: 2, ForSale: 2, Discarded: 1}) || d.Last30Days.Discarded != 1 {

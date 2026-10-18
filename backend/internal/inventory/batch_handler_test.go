@@ -50,14 +50,14 @@ func TestReceiveBatch(t *testing.T) {
 			t.Errorf("plant = %+v, want a growing Dragon Scale in the Tissue Culture Cup", p)
 		}
 	}
-	if strings.Join(barcodes, ",") != "IT-000001,IT-000002,IT-000003" {
-		t.Errorf("barcodes = %v, want IT-000001 to IT-000003", barcodes)
+	if strings.Join(barcodes, ",") != "IT-ABDS-000001,IT-ABDS-000002,IT-ABDS-000003" {
+		t.Errorf("barcodes = %v, want IT-ABDS-000001 to IT-ABDS-000003", barcodes)
 	}
 
 	// The next batch continues the numbering.
 	second := n.receiveBatch("staff", fmt.Sprintf(`{"plantNameId":%d,"potSizeId":%d,"quantity":2,"receivedOn":"2026-10-02"}`, dragonScale, cup.ID), 201)
-	if second.Batch.Code != "B-0002" || second.Plants[0].Barcode != "IT-000004" || second.Plants[1].Barcode != "IT-000005" {
-		t.Errorf("second batch = %s with %s…, want B-0002 starting at IT-000004", second.Batch.Code, second.Plants[0].Barcode)
+	if second.Batch.Code != "B-0002" || second.Plants[0].Barcode != "IT-ABDS-000004" || second.Plants[1].Barcode != "IT-ABDS-000005" {
+		t.Errorf("second batch = %s with %s…, want B-0002 starting at IT-ABDS-000004", second.Batch.Code, second.Plants[0].Barcode)
 	}
 
 	var batches []batchResponse
@@ -158,11 +158,11 @@ func TestFindPlants(t *testing.T) {
 
 	// Scanning a label: lower-case is fine, and the history starts with its arrival.
 	var scanned plantWithHistoryResponse
-	_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/it-000002", "", 200).Body.Bytes(), &scanned)
-	if scanned.Barcode != "IT-000002" || len(scanned.History) != 1 || scanned.History[0].Type != "received" ||
+	_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/it-abds-000002", "", 200).Body.Bytes(), &scanned)
+	if scanned.Barcode != "IT-ABDS-000002" || len(scanned.History) != 1 || scanned.History[0].Type != "received" ||
 		!strings.Contains(string(scanned.History[0].Details), `"toPotSize":"Tissue Culture Cup"`) || *scanned.History[0].ChangedBy != "staff@inventory.example.com" {
-		t.Errorf("scanned = %+v, want IT-000002, received into the Tissue Culture Cup by staff", scanned)
+		t.Errorf("scanned = %+v, want IT-ABDS-000002, received into the Tissue Culture Cup by staff", scanned)
 	}
 	n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/IT-999999", "", 404)
-	n.expect("rival", "GET", "/api/orgs/{org}/plants/by-barcode/IT-000002", "", 404) // another nursery can't find it
+	n.expect("rival", "GET", "/api/orgs/{org}/plants/by-barcode/IT-ABDS-000002", "", 404) // another nursery can't find it
 }

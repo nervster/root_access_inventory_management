@@ -35,9 +35,9 @@ func TestProductImages(t *testing.T) {
 	product := n.product(dragonScale)
 
 	// Three photos of two Dragon Scale plants…
-	first, _ := n.uploadPhoto("IT-000001", "image/jpeg", 1000, 201)
-	second, _ := n.uploadPhoto("IT-000001", "image/jpeg", 1000, 201)
-	third, _ := n.uploadPhoto("IT-000002", "image/jpeg", 1000, 201)
+	first, _ := n.uploadPhoto("IT-ABDS-000001", "image/jpeg", 1000, 201)
+	second, _ := n.uploadPhoto("IT-ABDS-000001", "image/jpeg", 1000, 201)
+	third, _ := n.uploadPhoto("IT-ABDS-000002", "image/jpeg", 1000, 201)
 	// …and one of a different plant.
 	polly := n.receiveBatch("staff", fmt.Sprintf(`{"plantNameId":%d,"potSizeId":%d,"quantity":1,"receivedOn":"2026-10-02"}`,
 		n.plantNameID("Alocasia 'Polly'"), n.small.ID), 201)
@@ -51,7 +51,7 @@ func TestProductImages(t *testing.T) {
 			t.Errorf("candidate %+v, want a view link and not chosen yet", c)
 		}
 	}
-	if len(candidates) != 3 || strings.Join(barcodes, ",") != "IT-000002,IT-000001,IT-000001" {
+	if len(candidates) != 3 || strings.Join(barcodes, ",") != "IT-ABDS-000002,IT-ABDS-000001,IT-ABDS-000001" {
 		t.Fatalf("candidates are of %v, want the 3 Dragon Scale photos, newest first (not the Polly)", barcodes)
 	}
 

@@ -13,14 +13,14 @@ import (
 // what happened, in order, by whom, with the details.
 func TestPlantHistory(t *testing.T) {
 	n := newRepotNursery(t) // received into the Tissue Culture Cup by staff
-	plantPath := "/api/orgs/{org}/plants/by-barcode/IT-000001"
+	plantPath := "/api/orgs/{org}/plants/by-barcode/IT-ABDS-000001"
 
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000001"]}`, n.small.ID), 200)       // staff
-	n.markForSale(`{"barcodes":["IT-000001"]}`, 200)                                         // owner
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000001"]}`, n.tc.ID), 200)          // back to an unsellable pot: off sale too
-	photo, _ := n.uploadPhoto("IT-000001", "image/jpeg", 1000, 201)                          // staff, caption "New leaf"
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-ABDS-000001"]}`, n.small.ID), 200)  // staff
+	n.markForSale(`{"barcodes":["IT-ABDS-000001"]}`, 200)                                    // owner
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-ABDS-000001"]}`, n.tc.ID), 200)     // back to an unsellable pot: off sale too
+	photo, _ := n.uploadPhoto("IT-ABDS-000001", "image/jpeg", 1000, 201)                     // staff, caption "New leaf"
 	n.expect("staff", "DELETE", fmt.Sprintf("/api/orgs/{org}/photos/%d", photo.ID), "", 204) //
-	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-000001"],"reason":"root rot"}`, 200)
+	n.expect("staff", "POST", "/api/orgs/{org}/plants/discard", `{"barcodes":["IT-ABDS-000001"],"reason":"root rot"}`, 200)
 
 	var plant plantWithHistoryResponse
 	_ = json.Unmarshal(n.expect("viewer", "GET", plantPath, "", 200).Body.Bytes(), &plant)
@@ -49,9 +49,9 @@ func TestPlantHistory(t *testing.T) {
 
 	// Other plants have their own story, and the other nursery can't read this one.
 	var other plantWithHistoryResponse
-	_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/IT-000002", "", 200).Body.Bytes(), &other)
+	_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/IT-ABDS-000002", "", 200).Body.Bytes(), &other)
 	if len(other.History) != 1 || other.History[0].Type != "received" {
-		t.Errorf("IT-000002's history = %+v, want just its arrival", other.History)
+		t.Errorf("IT-ABDS-000002's history = %+v, want just its arrival", other.History)
 	}
 	n.expect("rival", "GET", plantPath, "", 404)
 }
@@ -83,14 +83,14 @@ func TestHistoryShowsNames(t *testing.T) {
 	if _, err := n.db.Exec(t.Context(), "UPDATE users SET display_name = 'Sam Staff' WHERE id = $1", n.users["staff"].ID); err != nil {
 		t.Fatal(err)
 	}
-	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-000001"]}`, n.small.ID), 200) // by staff, now named
-	if photo, _ := n.uploadPhoto("IT-000001", "image/jpeg", 1000, 201); photo.UploadedBy == nil || *photo.UploadedBy != "Sam Staff" {
+	n.repot(fmt.Sprintf(`{"potSizeId":%d,"barcodes":["IT-ABDS-000001"]}`, n.small.ID), 200) // by staff, now named
+	if photo, _ := n.uploadPhoto("IT-ABDS-000001", "image/jpeg", 1000, 201); photo.UploadedBy == nil || *photo.UploadedBy != "Sam Staff" {
 		t.Errorf("photo uploaded by %v, want Sam Staff", photo.UploadedBy)
 	}
 
 	who := func() []string {
 		var plant plantWithHistoryResponse
-		_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/IT-000001", "", 200).Body.Bytes(), &plant)
+		_ = json.Unmarshal(n.expect("viewer", "GET", "/api/orgs/{org}/plants/by-barcode/IT-ABDS-000001", "", 200).Body.Bytes(), &plant)
 		var names []string
 		for _, e := range plant.History {
 			name := "(no name)"
@@ -113,7 +113,7 @@ func TestHistoryShowsNames(t *testing.T) {
 	if got := strings.Join(who(), ", "); got != want {
 		t.Errorf("after Sam left, history = %s, want it unchanged", got)
 	}
-	if photos := n.plantPhotos("viewer", "IT-000001", 200); len(photos) != 1 || photos[0].UploadedBy == nil || *photos[0].UploadedBy != "Sam Staff" {
+	if photos := n.plantPhotos("viewer", "IT-ABDS-000001", 200); len(photos) != 1 || photos[0].UploadedBy == nil || *photos[0].UploadedBy != "Sam Staff" {
 		t.Errorf("after Sam left, photos = %+v, want still uploaded by Sam Staff", photos)
 	}
 }

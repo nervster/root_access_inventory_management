@@ -103,7 +103,7 @@ func newBatchResponse(b BatchSummary, showCost bool) batchResponse {
 
 type plantResponse struct {
 	ID            int64             `json:"id"`
-	Barcode       string            `json:"barcode"` // RAH-000123
+	Barcode       string            `json:"barcode"` // RAH-ADF-000123
 	BatchID       int64             `json:"batchId"`
 	BatchCode     string            `json:"batchCode"`
 	PlantNameID   int64             `json:"plantNameId"`
