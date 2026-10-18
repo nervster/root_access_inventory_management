@@ -4,6 +4,7 @@ import { useParams } from 'react-router'
 import { useBatch, useMembership } from '../../api/hooks'
 import type { BatchDto, PlantDto } from '../../api/types'
 import { NotFound } from '../../components/Guards'
+import { buildXlsx } from '../../labelsExcel'
 import { Button, ErrorBanner, Field, Input, LinkButton, Loading, Select } from '../../components/ui'
 
 // Letter paper laid out like 3 × 10 address-label sheets (Avery 5160 size): plain paper can be cut
@@ -30,6 +31,22 @@ function saveLayout(layout: Layout) {
   } catch {
     // Not remembered; the choice still applies until the page is reloaded.
   }
+}
+
+// The Niimbot phone app can't be reached from a phone's browser, but it can import a spreadsheet as a
+// label data source, one label per row.
+function downloadExcel(plants: PlantDto[], batch: BatchDto) {
+  const rows = [
+    ['Barcode', 'Plant', 'Batch'],
+    ...plants.map((p) => [p.barcode, `${p.plantName}${p.variegation ? ` ${p.variegation}` : ''}`, batch.code]),
+  ]
+  const blob = new Blob([new Uint8Array(buildXlsx(rows))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `labels-${batch.code}.xlsx`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 /**
@@ -67,7 +84,8 @@ export function LabelsPage() {
           <p className="text-sm text-stone-600">
             {roll
               ? 'In the print dialog, choose the Niimbot printer, paper size 50 × 30 mm, margins None, scale 100%.'
-              : 'Letter paper, 30 per page. In the print dialog, set scale to 100% (no "fit to page").'}
+              : 'Letter paper, 30 per page. In the print dialog, set scale to 100% (no "fit to page").'}{' '}
+            For the Niimbot app: Export Excel, then in its canvas choose Data source, then Upload via Excel.
           </p>
         </div>
         <div className="w-60">
@@ -93,6 +111,9 @@ export function LabelsPage() {
           </div>
         )}
         <Button onClick={() => window.print()}>Print</Button>
+        <Button variant="secondary" onClick={() => downloadExcel(plants, batch.data.batch)}>
+          Export Excel
+        </Button>
         <LinkButton variant="secondary" to={`/orgs/${orgId}/batches/${batch.data.batch.id}`}>
           Back
         </LinkButton>
