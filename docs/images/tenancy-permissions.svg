@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 450" width="1000" height="450" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Plant Stock tenancy and permissions</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="998" height="448" rx="16" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
+
+  <text x="32" y="44" font-size="21" font-weight="700" fill="#111827">One database, many nurseries</text>
+  <text x="32" y="66" font-size="13" fill="#6b7280">How every request is checked before it touches a nursery's data</text>
+
+  <!-- Request path -->
+  <rect x="32" y="84" width="440" height="44" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="48" y="111" font-size="14" font-weight="700" fill="#4c1d95">1 · Sign-in token verified <tspan font-weight="400" fill="#374151" font-size="12.5">(Clerk session JWT)</tspan></text>
+
+  <rect x="32" y="146" width="440" height="56" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="48" y="170" font-size="14" font-weight="700" fill="#1e3a8a">2 · RequirePermission(<tspan font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13">inventory.edit</tspan>)</text>
+  <text x="48" y="190" font-size="12.5" fill="#374151">Endpoints check permissions, never roles</text>
+
+  <rect x="32" y="220" width="440" height="74" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="48" y="244" font-size="14" font-weight="700" fill="#1e3a8a">3 · db.InTenant(ctx, conn, orgID, fn)</text>
+  <text x="48" y="264" font-size="12" fill="#374151" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">SET LOCAL ROLE nms_tenant;</text>
+  <text x="48" y="281" font-size="12" fill="#374151" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">set_config('app.organization_id', '7', true)</text>
+
+  <rect x="32" y="312" width="440" height="116" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="48" y="336" font-size="14" font-weight="700" fill="#78350f">4 · Postgres Row-Level Security</text>
+  <g font-size="12" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+    <text x="48" y="358" fill="#14532d">org 7  RAH-ADF-000123  Monstera  4in   ✓ visible</text>
+    <text x="48" y="375" fill="#14532d">org 7  RAH-PHI-000045  Philodendron  ✓ visible</text>
+    <text x="48" y="392" fill="#9ca3af" text-decoration="line-through">org 9  GRN-ANT-000310  Anthurium</text>
+    <text x="330" y="392" fill="#9ca3af">hidden by Postgres</text>
+  </g>
+  <text x="48" y="416" font-size="12" fill="#374151">A test fails if any table with organization_id lacks RLS</text>
+
+  <g stroke="#4b5563" stroke-width="1.6" fill="none">
+    <line x1="252" y1="128" x2="252" y2="144" marker-end="url(#arrow)"/>
+    <line x1="252" y1="202" x2="252" y2="218" marker-end="url(#arrow)"/>
+    <line x1="252" y1="294" x2="252" y2="310" marker-end="url(#arrow)"/>
+  </g>
+
+  <!-- Permission matrix -->
+  <rect x="510" y="84" width="460" height="344" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="526" y="108" font-size="14" font-weight="700" fill="#111827">Default role permissions</text>
+  <g font-size="12.5" font-weight="700" fill="#374151" text-anchor="middle">
+    <text x="770" y="132">Owner</text>
+    <text x="830" y="132">Admin</text>
+    <text x="886" y="132">Staff</text>
+    <text x="942" y="132">Viewer</text>
+  </g>
+  <line x1="526" y1="140" x2="958" y2="140" stroke="#cbd5e1"/>
+  <g font-size="12.5" fill="#374151" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+    <text x="526" y="160">organization.view</text>
+    <text x="526" y="183">organization.manage</text>
+    <text x="526" y="206">integrations.manage</text>
+    <text x="526" y="229">team.view</text>
+    <text x="526" y="252">team.manage</text>
+    <text x="526" y="275">roles.manage</text>
+    <text x="526" y="298">inventory.view</text>
+    <text x="526" y="321">inventory.edit</text>
+    <text x="526" y="344">listings.manage</text>
+    <text x="526" y="367">financials.view</text>
+    <text x="526" y="390">orders.prepare</text>
+    <text x="526" y="413">refunds.approve</text>
+  </g>
+  <g font-size="14" font-weight="700" fill="#16a34a" text-anchor="middle">
+    <!-- Owner: all -->
+    <text x="770" y="160">✓</text><text x="770" y="183">✓</text><text x="770" y="206">✓</text><text x="770" y="229">✓</text>
+    <text x="770" y="252">✓</text><text x="770" y="275">✓</text><text x="770" y="298">✓</text><text x="770" y="321">✓</text>
+    <text x="770" y="344">✓</text><text x="770" y="367">✓</text><text x="770" y="390">✓</text><text x="770" y="413">✓</text>
+    <!-- Admin -->
+    <text x="830" y="160">✓</text><text x="830" y="229">✓</text><text x="830" y="252">✓</text><text x="830" y="298">✓</text>
+    <text x="830" y="321">✓</text><text x="830" y="344">✓</text><text x="830" y="390">✓</text>
+    <!-- Staff -->
+    <text x="886" y="160">✓</text><text x="886" y="229">✓</text><text x="886" y="298">✓</text><text x="886" y="321">✓</text>
+    <text x="886" y="390">✓</text>
+    <!-- Viewer -->
+    <text x="942" y="160">✓</text><text x="942" y="229">✓</text><text x="942" y="298">✓</text>
+  </g>
+</svg>

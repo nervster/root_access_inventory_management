@@ -6,6 +6,60 @@ first nursery on the platform.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for decisions, what's built, and what's next.
 
+[![CI](https://github.com/nervster/root_access_inventory_management/actions/workflows/ci.yml/badge.svg?branch=staging)](https://github.com/nervster/root_access_inventory_management/actions/workflows/ci.yml)
+![Go](https://img.shields.io/badge/Go-Gin-00ADD8?logo=go&logoColor=white)
+![React](https://img.shields.io/badge/React-TypeScript-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Shopify](https://img.shields.io/badge/Shopify-Admin%20API-7AB55C?logo=shopify&logoColor=white)
+![Google Cloud](https://img.shields.io/badge/Google%20Cloud-Docker%20Compose-4285F4?logo=googlecloud&logoColor=white)
+
+## Overview
+
+**The problem.** Small nurseries grow plants from tissue culture for months before they can sell them, and
+track it all on paper or spreadsheets. When they sell online, the stock in their Shopify store drifts away from
+what's actually on the benches, and they oversell or lose track of which plant went to which customer.
+
+**What Plant Stock does.** Every plant gets its own barcode the day it arrives. Staff scan labels with their
+phone camera to repot, photograph, or discard plants in the greenhouse. When plants are ready, marking them for
+sale creates the products and SKUs, and Plant Stock keeps the nursery's Shopify store in step: products, images,
+prices, and stock go out; orders and returns come back in and are tied to the exact plants involved. Plant Stock
+is the master record, and Shopify is one sales channel.
+
+**Status.** Running on the staging site with a development Shopify store; the production site comes at launch.
+Inventory and the Shopify integration are built; pickup scheduling and locker PINs are next
+([roadmap](docs/ROADMAP.md)).
+
+### How it fits together
+![Architecture: phones reach a Go API and worker behind Caddy on a Google Cloud VM, backed by Postgres, with Clerk, Cloud Storage, Resend, and each nursery's Shopify store as external services](docs/images/architecture.svg)
+
+### A plant's life in the app
+![Plant lifecycle: receive a tissue-culture batch, grow on through pot sizes, mark for sale, sync to Shopify, order holds the plants, picked up; returns go back on sale; every step is recorded in plant history](docs/images/plant-lifecycle.svg)
+
+### Multi-tenant by design
+![Each request is checked for a valid sign-in, then a permission, then runs inside a tenant transaction where Postgres Row-Level Security hides other nurseries' rows; table of default permissions for Owner, Admin, Staff, and Viewer](docs/images/tenancy-permissions.svg)
+
+### Engineering highlights
+- **Tenant isolation in the database, not just the code.** Every nursery-owned table has Row-Level Security and
+  composite foreign keys on `(organization_id, id)`, so a query that forgets a filter still can't read another
+  nursery's data. A test fails if a new table skips it.
+- **Permission-based access.** Roles map to permissions and endpoints check permissions, so roles can be
+  customized later without touching handlers. Only Owners see financials.
+- **Audit trail no one can edit.** Postgres triggers record every change to a plant, with who made it, copied by
+  name so history survives people leaving.
+- **A job queue in Postgres.** Shopify sync runs as background jobs enqueued in the same transaction as the
+  change, with leases, growing retry waits, and handlers that are safe to run twice. A nightly check finds and
+  fixes drift between Plant Stock and Shopify.
+- **Type-safe SQL.** Queries are plain SQL compiled to Go with sqlc; schema changes are numbered goose
+  migrations; CI fails if generated code is out of date.
+- **Tests against real Postgres.** No database mocks: each test runs in a transaction that's rolled back.
+- **Phone-first.** Built for staff in the greenhouse: bottom navigation, camera barcode scanning, photos uploaded
+  straight to storage with signed links, and labels printed to a Bluetooth label printer.
+- **Automated delivery.** Every pull request runs CI; merges into `staging` build the images and deploy them to the
+  VM, signing in to Google Cloud without a stored key. Nightly database backups, with a script that tests a restore.
+
+**By the numbers:** about 14,500 lines of Go (5,700 of them tests, 118 test functions), 6,200 lines of
+TypeScript, 3,500 lines of SQL across 30 migrations and the sqlc queries.
+
 ## Stack
 - **API:** Go + [Gin](https://gin-gonic.com) — `backend/`
 - **Web:** React + TypeScript + Vite — `frontend/`
