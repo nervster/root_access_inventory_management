@@ -142,6 +142,54 @@ func (q *Queries) GetProduct(ctx context.Context, arg GetProductParams) (GetProd
 	return i, err
 }
 
+const listProductEvents = `-- name: ListProductEvents :many
+SELECT e.id, e.type, e.details, e.occurred_at, e.changed_by_name
+FROM product_events e
+WHERE e.organization_id = $1 AND e.product_id = $2
+ORDER BY e.occurred_at, e.id
+`
+
+type ListProductEventsParams struct {
+	OrganizationID int64
+	ProductID      int64
+}
+
+type ListProductEventsRow struct {
+	ID            int64
+	Type          ProductEventType
+	Details       []byte
+	OccurredAt    time.Time
+	ChangedByName *string
+}
+
+// A product's price and details history (written by triggers, see migration 00029), oldest first.
+// The name of who made each change is copied into the event, so it shows even after they leave.
+func (q *Queries) ListProductEvents(ctx context.Context, arg ListProductEventsParams) ([]ListProductEventsRow, error) {
+	rows, err := q.db.Query(ctx, listProductEvents, arg.OrganizationID, arg.ProductID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListProductEventsRow{}
+	for rows.Next() {
+		var i ListProductEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Type,
+			&i.Details,
+			&i.OccurredAt,
+			&i.ChangedByName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProducts = `-- name: ListProducts :many
 SELECT pr.id, pr.organization_id, pr.plant_name_id, pr.variegation_id, pr.title, pr.description, pr.created_at, pr.product_type, pr.tags, pn.full_name AS plant_name, v.name AS variegation
 FROM products pr

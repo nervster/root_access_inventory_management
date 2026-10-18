@@ -308,6 +308,26 @@ export interface ProductDto {
   images: { photoId: number; viewUrl: string }[]
 }
 
+export type ProductEventType = 'price_changed' | 'sku_added' | 'sku_deleted' | 'sku_changed' | 'details_changed'
+
+/** One change to a product or its SKUs. Postgres records these; money is in cents. */
+export interface ProductEventDto {
+  type: ProductEventType
+  /** Depends on type: the SKU code and pot size name (kept as text), old and new values… */
+  details: {
+    sku?: string
+    potSize?: string
+    priceCents?: number | null
+    /** The old and new price (cents, null = no price), SKU code, or product field value. */
+    from?: number | string | string[] | null
+    to?: number | string | string[] | null
+    field?: 'title' | 'description' | 'productType' | 'tags'
+  }
+  occurredAt: string
+  /** Who: their name (their email if they have none). */
+  changedBy: string | null
+}
+
 /** A photo that can be one of a product's images: of a plant with its name and variegation. */
 export interface PhotoCandidateDto {
   id: number

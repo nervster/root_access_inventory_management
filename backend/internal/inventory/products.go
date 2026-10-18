@@ -75,6 +75,18 @@ func (s *Store) Product(ctx context.Context, orgID, productID int64) (product Pr
 	return product, err
 }
 
+// ProductHistory returns a product's price and details history, oldest first, or ErrNotFound.
+func (s *Store) ProductHistory(ctx context.Context, orgID, productID int64) (history []dbgen.ListProductEventsRow, err error) {
+	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		if _, err := q.GetProduct(ctx, dbgen.GetProductParams{OrganizationID: orgID, ID: productID}); err != nil {
+			return translate(err)
+		}
+		history, err = q.ListProductEvents(ctx, dbgen.ListProductEventsParams{OrganizationID: orgID, ProductID: productID})
+		return err
+	})
+	return history, err
+}
+
 // UpdateProduct changes the title or description (nil keeps a value). It fails with ErrNotFound.
 func (s *Store) UpdateProduct(ctx context.Context, params dbgen.UpdateProductParams) error {
 	return db.InTenant(ctx, s.conn, params.OrganizationID, func(q *dbgen.Queries) error {

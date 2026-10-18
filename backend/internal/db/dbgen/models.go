@@ -238,6 +238,51 @@ func (ns NullPlantStatus) Value() (driver.Value, error) {
 	return string(ns.PlantStatus), nil
 }
 
+type ProductEventType string
+
+const (
+	ProductEventTypePriceChanged   ProductEventType = "price_changed"
+	ProductEventTypeSkuAdded       ProductEventType = "sku_added"
+	ProductEventTypeSkuDeleted     ProductEventType = "sku_deleted"
+	ProductEventTypeSkuChanged     ProductEventType = "sku_changed"
+	ProductEventTypeDetailsChanged ProductEventType = "details_changed"
+)
+
+func (e *ProductEventType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ProductEventType(s)
+	case string:
+		*e = ProductEventType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ProductEventType: %T", src)
+	}
+	return nil
+}
+
+type NullProductEventType struct {
+	ProductEventType ProductEventType
+	Valid            bool // Valid is true if ProductEventType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullProductEventType) Scan(value interface{}) error {
+	if value == nil {
+		ns.ProductEventType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ProductEventType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullProductEventType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ProductEventType), nil
+}
+
 type Batch struct {
 	ID             int64
 	OrganizationID int64
@@ -408,6 +453,17 @@ type Product struct {
 	CreatedAt      time.Time
 	ProductType    *string
 	Tags           []string
+}
+
+type ProductEvent struct {
+	ID             int64
+	OrganizationID int64
+	ProductID      int64
+	Type           ProductEventType
+	Details        []byte
+	ChangedBy      *int64
+	ChangedByName  *string
+	OccurredAt     time.Time
 }
 
 type ProductPhoto struct {

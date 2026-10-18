@@ -56,6 +56,7 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, p
 
 	org.GET("/products", view, h.listProducts)
 	org.GET("/products/:productId", view, h.getProduct)
+	org.GET("/products/:productId/history", view, h.getProductHistory)
 	org.PATCH("/products/:productId", sell, h.updateProduct)
 	org.PATCH("/products/:productId/variants/:potSizeId", sell, h.updateVariant)
 	org.GET("/products/:productId/photo-candidates", view, h.photoCandidates)
