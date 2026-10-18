@@ -81,11 +81,11 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
 }
 
 const fieldClasses =
-  'block min-h-10 w-full rounded-lg border border-stone-300 bg-white px-3 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 dark:border-stone-700 dark:bg-stone-950'
+  'block min-h-10 w-full min-w-0 max-w-full appearance-none rounded-lg border border-stone-300 bg-white px-3 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30 dark:border-stone-700 dark:bg-stone-950'
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <label className="block">
+    <label className="block min-w-0">
       <span className="mb-1 block text-sm font-medium">{label}</span>
       {children}
       {hint && <span className="mt-1 block text-xs text-stone-500">{hint}</span>}
