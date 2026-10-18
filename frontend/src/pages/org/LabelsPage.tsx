@@ -5,6 +5,7 @@ import { useBatch, useMembership } from '../../api/hooks'
 import type { BatchDto, PlantDto } from '../../api/types'
 import { NotFound } from '../../components/Guards'
 import { LabelPrinter } from '../../components/LabelPrinter'
+import { formatReceived } from '../../labelCanvas'
 import { buildXlsx } from '../../labelsExcel'
 import { Button, ErrorBanner, Field, Input, LinkButton, Loading, Select } from '../../components/ui'
 
@@ -38,8 +39,8 @@ function saveLayout(layout: Layout) {
 // label data source, one label per row.
 function downloadExcel(plants: PlantDto[], batch: BatchDto) {
   const rows = [
-    ['Barcode', 'Plant', 'Batch'],
-    ...plants.map((p) => [p.barcode, `${p.plantName}${p.variegation ? ` ${p.variegation}` : ''}`, batch.code]),
+    ['Barcode', 'Plant', 'Batch', 'Received'],
+    ...plants.map((p) => [p.barcode, `${p.plantName}${p.variegation ? ` ${p.variegation}` : ''}`, batch.code, formatReceived(batch.receivedOn)]),
   ]
   const blob = new Blob([new Uint8Array(buildXlsx(rows))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   const url = URL.createObjectURL(blob)
@@ -125,6 +126,7 @@ export function LabelsPage() {
                 barcode: p.barcode,
                 name: `${p.plantName}${p.variegation ? ` ${p.variegation}` : ''}`,
                 batchCode: batch.data.batch.code,
+                receivedOn: batch.data.batch.receivedOn,
               }))}
             />
           </div>
@@ -157,15 +159,22 @@ export function LabelsPage() {
 /** `roll` sizes the label for a 50 × 30 mm roll: QR code 24 mm square on the left, text on the right. */
 function Label({ plant, batch, roll }: { plant: PlantDto; batch: BatchDto; roll?: boolean }) {
   return (
-    <div className={roll ? 'flex h-full items-center gap-[1mm] overflow-hidden px-[1.5mm]' : 'flex items-center gap-2 overflow-hidden px-2'}>
-      <QR text={plant.barcode} className={roll ? 'size-[24mm] shrink-0' : 'size-[0.8in] shrink-0'} />
+    <div
+      className={
+        roll
+          ? 'm-[1.8mm] box-border flex h-[calc(100%-3.6mm)] items-center gap-[0.8mm] overflow-hidden rounded-[2.5mm] border-[0.35mm] border-black px-[1.2mm]'
+          : 'flex items-center gap-2 overflow-hidden px-2'
+      }
+    >
+      <QR text={plant.barcode} className={roll ? 'size-[22mm] shrink-0' : 'size-[0.8in] shrink-0'} />
       <div className="min-w-0 leading-tight">
-        <p className={`font-mono font-bold ${roll ? 'text-[9pt]' : 'text-[11pt]'}`}>{plant.barcode}</p>
-        <p className={`line-clamp-2 break-words ${roll ? 'text-[6.5pt]' : 'text-[7.5pt]'}`}>
+        <p className={`line-clamp-2 break-words font-bold ${roll ? 'text-[7.5pt]' : 'text-[7.5pt]'}`}>
           {plant.plantName}
           {plant.variegation && ` ${plant.variegation}`}
         </p>
+        <p className={`font-mono font-bold ${roll ? 'text-[7pt]' : 'text-[11pt]'}`}>{plant.barcode}</p>
         <p className={`${roll ? 'text-[6pt]' : 'text-[7pt]'} text-stone-600`}>{batch.code}</p>
+        <p className={`${roll ? 'text-[6pt]' : 'text-[7pt]'} text-stone-600`}>Received {formatReceived(batch.receivedOn)}</p>
       </div>
     </div>
   )
