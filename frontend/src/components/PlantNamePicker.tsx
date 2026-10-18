@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { useNameActions, usePlantNames } from '../api/hooks'
 import type { PlantNameDto } from '../api/types'
 import { Button, ErrorBanner, Field, Input, Select } from './ui'
@@ -100,10 +100,15 @@ function AddPlantName({ orgId, initialName, onAdded, onCancel }: { orgId: number
   const ranks = parent ? childRanks[parent.rank] : []
   const chosenRank = rank && ranks.includes(rank) ? rank : ranks[ranks.length - 1] // default: the most specific (cultivar)
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
+  const submit = () => {
     if (!parent || !chosenRank) return
     addPlantName.mutate({ parentId: parent.id, rank: chosenRank, name, notes: notes || undefined }, { onSuccess: onAdded })
+  }
+
+  const submitOnEnter = (event: KeyboardEvent) => {
+    if (event.key !== 'Enter' || (event.target as HTMLElement).tagName !== 'INPUT') return
+    event.preventDefault() // otherwise Enter would submit the form this sits inside
+    if (name.trim() && !addPlantName.isPending) submit()
   }
 
   return (
@@ -142,7 +147,8 @@ function AddPlantName({ orgId, initialName, onAdded, onCancel }: { orgId: number
       )}
 
       {parent && (
-        <form onSubmit={submit} className="space-y-3">
+        // A div, not a <form>: this picker already sits inside the receive-batch form, and forms can't nest.
+        <div className="space-y-3" onKeyDown={submitOnEnter}>
           {ranks.length > 1 && (
             <Field label="It's a">
               <Select value={chosenRank} onChange={(e) => setRank(e.target.value as Rank)}>
@@ -155,21 +161,21 @@ function AddPlantName({ orgId, initialName, onAdded, onCancel }: { orgId: number
             </Field>
           )}
           <Field label="Name" hint={chosenRank === 'cultivar' ? "Just the cultivar, e.g. Moonshine (quotes are added for you)." : undefined}>
-            <Input required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+            <Input maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
           </Field>
           <Field label="Notes" hint="Optional, e.g. the trade name it's sold under.">
             <Input maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
           <ErrorBanner error={addPlantName.error} />
           <div className="flex gap-2">
-            <Button type="submit" disabled={addPlantName.isPending || !name.trim()}>
+            <Button type="button" onClick={submit} disabled={addPlantName.isPending || !name.trim()}>
               Add and use it
             </Button>
             <Button type="button" variant="secondary" onClick={onCancel}>
               Cancel
             </Button>
           </div>
-        </form>
+        </div>
       )}
       {!parent && (
         <Button type="button" variant="secondary" onClick={onCancel}>
