@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 420" width="1000" height="420" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>A plant's life in Plant Stock</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#4b5563"/>
+    </marker>
+  </defs>
+  <rect x="1" y="1" width="998" height="418" rx="16" fill="#ffffff" stroke="#e5e7eb" stroke-width="2"/>
+
+  <text x="32" y="44" font-size="21" font-weight="700" fill="#111827">A plant's life, from lab cup to customer</text>
+  <text x="32" y="68" font-size="13" fill="#6b7280">Every plant has its own barcode, so the nursery always knows exactly which plant is where, and Shopify stock is counted, not typed</text>
+
+  <g font-size="12" fill="#374151">
+    <!-- 1 -->
+    <rect x="24" y="92" width="140" height="160" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+    <circle cx="44" cy="114" r="11" fill="#16a34a"/><text x="44" y="118" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+    <text x="62" y="119" font-size="15" font-weight="700" fill="#14532d">Receive</text>
+    <text x="36" y="148">Tissue-culture batch</text>
+    <text x="36" y="166">one plant per barcode</text>
+    <text x="36" y="184" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11">RAH-ADF-000123</text>
+    <text x="36" y="202">QR labels printed</text>
+    <text x="36" y="220">(sheet or Bluetooth)</text>
+
+    <!-- 2 -->
+    <rect x="186" y="92" width="140" height="160" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+    <circle cx="206" cy="114" r="11" fill="#16a34a"/><text x="206" y="118" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+    <text x="224" y="119" font-size="15" font-weight="700" fill="#14532d">Grow on</text>
+    <text x="198" y="148">Repot through the</text>
+    <text x="198" y="166">nursery's pot sizes</text>
+    <text x="198" y="184">scan labels by phone</text>
+    <text x="198" y="202">photo growth timeline</text>
+    <text x="198" y="220">discard with a reason</text>
+
+    <!-- 3 -->
+    <rect x="348" y="92" width="140" height="160" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+    <circle cx="368" cy="114" r="11" fill="#2563eb"/><text x="368" y="118" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+    <text x="386" y="119" font-size="15" font-weight="700" fill="#1e3a8a">For sale</text>
+    <text x="360" y="148">Product = plant name</text>
+    <text x="360" y="166">+ variegation</text>
+    <text x="360" y="184">one SKU per pot size</text>
+    <text x="360" y="202">prices, images chosen</text>
+    <text x="360" y="220">from plant photos</text>
+
+    <!-- 4 -->
+    <rect x="510" y="92" width="140" height="160" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <circle cx="530" cy="114" r="11" fill="#7c3aed"/><text x="530" y="118" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+    <text x="548" y="119" font-size="15" font-weight="700" fill="#4c1d95">Sync</text>
+    <text x="522" y="148">Background jobs push</text>
+    <text x="522" y="166">products, variants,</text>
+    <text x="522" y="184">images, prices, stock</text>
+    <text x="522" y="202">to Shopify; a nightly</text>
+    <text x="522" y="220">check fixes any drift</text>
+
+    <!-- 5 -->
+    <rect x="672" y="92" width="140" height="160" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+    <circle cx="692" cy="114" r="11" fill="#7c3aed"/><text x="692" y="118" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">5</text>
+    <text x="710" y="119" font-size="15" font-weight="700" fill="#4c1d95">Order</text>
+    <text x="684" y="148">Webhook (plus a</text>
+    <text x="684" y="166">check every minute)</text>
+    <text x="684" y="184">holds the exact plants</text>
+    <text x="684" y="202">until pickup; cancel</text>
+    <text x="684" y="220">puts them back</text>
+
+    <!-- 6 -->
+    <rect x="834" y="92" width="140" height="160" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+    <circle cx="854" cy="114" r="11" fill="#d97706"/><text x="854" y="118" font-size="12" font-weight="700" fill="#ffffff" text-anchor="middle">6</text>
+    <text x="872" y="119" font-size="15" font-weight="700" fill="#78350f">Picked up</text>
+    <text x="846" y="148">Staff mark ready,</text>
+    <text x="846" y="166">then picked up</text>
+    <text x="846" y="184">fulfills the order</text>
+    <text x="846" y="202">in Shopify; plants</text>
+    <text x="846" y="220">are marked sold</text>
+  </g>
+
+  <g stroke="#4b5563" stroke-width="1.6" fill="none">
+    <line x1="164" y1="172" x2="184" y2="172" marker-end="url(#arrow)"/>
+    <line x1="326" y1="172" x2="346" y2="172" marker-end="url(#arrow)"/>
+    <line x1="488" y1="172" x2="508" y2="172" marker-end="url(#arrow)"/>
+    <line x1="650" y1="172" x2="670" y2="172" marker-end="url(#arrow)"/>
+    <line x1="812" y1="172" x2="832" y2="172" marker-end="url(#arrow)"/>
+    <path d="M904,252 V292 H418 V256" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  </g>
+  <rect x="470" y="281" width="384" height="22" fill="#ffffff"/>
+  <text x="662" y="296" font-size="12" fill="#4b5563" text-anchor="middle">Return: plant scanned back and checked, then back on sale or discarded</text>
+
+  <rect x="24" y="328" width="950" height="64" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="44" y="354" font-size="14" font-weight="700" fill="#111827">Plant history, written by Postgres triggers</text>
+  <text x="44" y="375" font-size="12.5" fill="#374151">Every step above (received, repotted, for sale, held, sold, returned, corrected, photos) is recorded with who did it and when. It can't be edited.</text>
+</svg>
