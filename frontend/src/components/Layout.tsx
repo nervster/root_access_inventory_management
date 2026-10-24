@@ -1,6 +1,8 @@
 import { UserButton } from '@clerk/react'
 import { Link, NavLink, Outlet, useMatch, useNavigate } from 'react-router'
 import { useMe } from '../api/hooks'
+import { useTheme } from '../theme'
+import { MoonIcon, SunIcon } from './icons'
 import { NurseryBottomBar, NurseryTabs } from './NurseryNav'
 import { ErrorBanner } from './ui'
 
@@ -67,6 +69,7 @@ export function Layout() {
                 Platform
               </Link>
             )}
+            <ThemeToggle />
             <UserButton />
           </div>
         </div>
@@ -87,5 +90,22 @@ export function Layout() {
       </main>
       {membership && <NurseryBottomBar membership={membership} />}
     </div>
+  )
+}
+
+/** Switches between light and dark; shows the one it switches to. */
+function ThemeToggle() {
+  const [theme, toggle] = useTheme()
+  const label = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={label}
+      title={label}
+      className="grid size-9 place-items-center rounded-lg text-stone-600 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800"
+    >
+      {theme === 'dark' ? <SunIcon className="size-5" /> : <MoonIcon className="size-5" />}
+    </button>
   )
 }
