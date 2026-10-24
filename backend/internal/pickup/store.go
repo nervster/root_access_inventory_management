@@ -62,13 +62,20 @@ func windowFrom(w dbgen.PickupWindow) Window {
 }
 
 // SetUpWindows replaces the nursery's windows with ones hours long from startHour (GenerateWindows).
-// Closures of the old windows go with them; whole-day closures stay.
-func (s *Store) SetUpWindows(ctx context.Context, orgID int64, startHour, hours int) error {
+// Closures of the old windows go with them; whole-day closures stay. It fails with ErrHasBookings while
+// any window that hasn't ended has a hold or booking: customers chose those windows.
+func (s *Store) SetUpWindows(ctx context.Context, orgID int64, startHour, hours int, now time.Time) error {
 	windows, err := GenerateWindows(startHour, hours)
 	if err != nil {
 		return err
 	}
 	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		switch upcoming, err := q.HasUpcomingPickupBookings(ctx, dbgen.HasUpcomingPickupBookingsParams{OrganizationID: orgID, Now: now}); {
+		case err != nil:
+			return err
+		case upcoming:
+			return ErrHasBookings
+		}
 		if err := q.DeletePickupWindows(ctx, orgID); err != nil {
 			return err
 		}
@@ -112,13 +119,15 @@ type Day struct {
 type Slot struct {
 	Window
 	Start, End time.Time
-	Status     string               // StatusOpen, StatusClosed, StatusTooSoon, StatusTooFar
-	Closure    *dbgen.PickupClosure // this window's own closure on this date, if any
+	Status     string                // StatusOpen, StatusClosed, StatusTaken, StatusTooSoon, StatusTooFar
+	Closure    *dbgen.PickupClosure  // this window's own closure on this date, if any
+	Bookings   []dbgen.PickupBooking // holds still running and bookings
 }
 
 // Calendar returns the nursery's rules and each day's windows from one date to another (inclusive),
-// with whether each can be booked at now.
-func (s *Store) Calendar(ctx context.Context, orgID int64, from, to, now time.Time) (rules Rules, days []Day, err error) {
+// with whether each can be booked at now. cartToken's own hold doesn't make a slot taken (for that cart),
+// so its choice still shows; staff pass "".
+func (s *Store) Calendar(ctx context.Context, orgID int64, from, to, now time.Time, cartToken string) (rules Rules, days []Day, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
 		if rules, err = loadRules(ctx, q, orgID); err != nil {
 			return err
@@ -127,22 +136,30 @@ func (s *Store) Calendar(ctx context.Context, orgID int64, from, to, now time.Ti
 		if err != nil {
 			return err
 		}
-		days = buildDays(rules, closures, from, to, now)
+		bookings, err := q.ListLivePickupBookings(ctx, dbgen.ListLivePickupBookingsParams{OrganizationID: orgID, FromDate: from, ToDate: to, Now: now})
+		if err != nil {
+			return err
+		}
+		lockers, err := q.ListPickupLockers(ctx, orgID)
+		if err != nil {
+			return err
+		}
+		days = buildDays(rules, closures, bookings, max(1, len(lockers)), cartToken, from, to, now)
 		return nil
 	})
 	return rules, days, err
 }
 
-// OpenSlots returns the slots customers can book now: every open one from today through the booking
-// range. Every date in the range is listed, those with nothing open too, so a date picker can mark
-// them as full.
-func (s *Store) OpenSlots(ctx context.Context, orgID int64, now time.Time) (Rules, []Day, error) {
+// OpenSlots returns the slots cartToken can book now: every open one from today through the booking
+// range (its own held slot included). Every date in the range is listed, those with nothing open too,
+// so a date picker can mark them as full.
+func (s *Store) OpenSlots(ctx context.Context, orgID int64, now time.Time, cartToken string) (Rules, []Day, error) {
 	rules, err := s.Rules(ctx, orgID)
 	if err != nil {
 		return Rules{}, nil, err
 	}
 	today := rules.Today(now)
-	rules, days, err := s.Calendar(ctx, orgID, today, today.AddDate(0, 0, rules.BookingDays-1), now)
+	rules, days, err := s.Calendar(ctx, orgID, today, today.AddDate(0, 0, rules.BookingDays-1), now, cartToken)
 	if err != nil {
 		return Rules{}, nil, err
 	}
@@ -158,7 +175,9 @@ func (s *Store) OpenSlots(ctx context.Context, orgID int64, now time.Time) (Rule
 	return rules, days, nil
 }
 
-func buildDays(rules Rules, closures []dbgen.PickupClosure, from, to, now time.Time) []Day {
+// buildDays lays out each date's windows. A slot is taken once every locker (lockers) has a live hold or
+// booking other than cartToken's.
+func buildDays(rules Rules, closures []dbgen.PickupClosure, bookings []dbgen.PickupBooking, lockers int, cartToken string, from, to, now time.Time) []Day {
 	type key struct {
 		date     string
 		windowID int64 // 0: the whole day
@@ -171,16 +190,31 @@ func buildDays(rules Rules, closures []dbgen.PickupClosure, from, to, now time.T
 		}
 		closed[k] = &closures[i]
 	}
+	booked := map[key][]dbgen.PickupBooking{}
+	for _, b := range bookings {
+		if b.WindowID != nil {
+			k := key{date: b.Date.Format(time.DateOnly), windowID: *b.WindowID}
+			booked[k] = append(booked[k], b)
+		}
+	}
 	days := []Day{}
 	for date := from; !date.After(to); date = date.AddDate(0, 0, 1) {
 		day := Day{Date: date, Closure: closed[key{date: date.Format(time.DateOnly)}], Slots: []Slot{}}
 		for _, w := range rules.Windows {
-			own := closed[key{date: date.Format(time.DateOnly), windowID: w.ID}]
+			k := key{date: date.Format(time.DateOnly), windowID: w.ID}
 			start, end := rules.Bounds(date, w)
-			day.Slots = append(day.Slots, Slot{
-				Window: w, Start: start, End: end, Closure: own,
-				Status: rules.Status(date, w, day.Closure != nil || own != nil, now),
-			})
+			slot := Slot{Window: w, Start: start, End: end, Closure: closed[k], Bookings: booked[k]}
+			others := 0
+			for _, b := range slot.Bookings {
+				if cartToken == "" || b.CartToken != cartToken {
+					others++
+				}
+			}
+			slot.Status = rules.Status(date, w, day.Closure != nil || slot.Closure != nil, now)
+			if slot.Status != StatusClosed && others >= lockers {
+				slot.Status = StatusTaken
+			}
+			day.Slots = append(day.Slots, slot)
 		}
 		days = append(days, day)
 	}

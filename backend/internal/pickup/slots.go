@@ -35,6 +35,7 @@ const (
 const (
 	StatusOpen    = "open"
 	StatusClosed  = "closed"   // closed on the calendar (the day or this window)
+	StatusTaken   = "taken"    // every locker is held or booked
 	StatusTooSoon = "too_soon" // starts sooner than the lead time allows, or has started
 	StatusTooFar  = "too_far"  // past the booking range
 )

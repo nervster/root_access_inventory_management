@@ -132,7 +132,11 @@ func (h handler) setUpWindows(c *gin.Context) {
 		web.Fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := h.store.SetUpWindows(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, *req.StartHour, *req.Hours); err != nil {
+	switch err := h.store.SetUpWindows(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, *req.StartHour, *req.Hours, h.now()); {
+	case errors.Is(err, ErrHasBookings):
+		web.Fail(c, http.StatusConflict, "customers have upcoming pickups in the current windows: close single windows or days instead, or wait until they've passed")
+		return
+	case err != nil:
 		web.FailInternal(c, err)
 		return
 	}
@@ -179,13 +183,19 @@ type closureResponse struct {
 	ClosedBy *string `json:"closedBy"` // name (email if none), as it was then
 }
 
+type bookingResponse struct {
+	Status    string    `json:"status"`    // held (a cart, until expiresAt) or booked (an order)
+	ExpiresAt time.Time `json:"expiresAt"` // when a hold runs out
+}
+
 type slotResponse struct {
-	WindowID int64            `json:"windowId"`
-	Name     string           `json:"name"`
-	Start    time.Time        `json:"start"`
-	End      time.Time        `json:"end"`
-	Status   string           `json:"status"`  // open, closed, too_soon, too_far
-	Closure  *closureResponse `json:"closure"` // this window's own closure, if any
+	WindowID int64             `json:"windowId"`
+	Name     string            `json:"name"`
+	Start    time.Time         `json:"start"`
+	End      time.Time         `json:"end"`
+	Status   string            `json:"status"`   // open, closed, taken, too_soon, too_far
+	Closure  *closureResponse  `json:"closure"`  // this window's own closure, if any
+	Bookings []bookingResponse `json:"bookings"` // holds still running, and bookings
 }
 
 type dayResponse struct {
@@ -229,7 +239,7 @@ func (h handler) calendar(c *gin.Context) {
 		web.Fail(c, http.StatusBadRequest, "from must be on or before to, at most 62 days apart")
 		return
 	}
-	rules, days, err := h.store.Calendar(ctx, orgID, from, to, now)
+	rules, days, err := h.store.Calendar(ctx, orgID, from, to, now, "")
 	if err != nil {
 		web.FailInternal(c, err)
 		return
@@ -245,8 +255,13 @@ func (h handler) calendar(c *gin.Context) {
 	for _, day := range days {
 		d := dayResponse{Date: day.Date.Format(time.DateOnly), Closure: closure(day.Closure), Slots: []slotResponse{}}
 		for _, slot := range day.Slots {
+			bookings := []bookingResponse{}
+			for _, b := range slot.Bookings {
+				bookings = append(bookings, bookingResponse{Status: string(b.Status), ExpiresAt: b.ExpiresAt})
+			}
 			d.Slots = append(d.Slots, slotResponse{
-				WindowID: slot.ID, Name: slot.Name, Start: slot.Start, End: slot.End, Status: slot.Status, Closure: closure(slot.Closure),
+				WindowID: slot.ID, Name: slot.Name, Start: slot.Start, End: slot.End, Status: slot.Status,
+				Closure: closure(slot.Closure), Bookings: bookings,
 			})
 		}
 		response.Days = append(response.Days, d)
