@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+/* Dark mode follows a `dark` class on <html> (src/theme.ts sets it, from the header's toggle or the
+   device's setting), not the device's setting directly, so people can choose. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   html {
-    color-scheme: light dark;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
   }
 
   body {
@@ -16,9 +23,7 @@
   --viz-growing: #2a78d6;
   --viz-for-sale: #eb6834;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --viz-growing: #3987e5;
-    --viz-for-sale: #d95926;
-  }
+.dark {
+  --viz-growing: #3987e5;
+  --viz-for-sale: #d95926;
 }
