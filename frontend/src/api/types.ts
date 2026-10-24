@@ -411,6 +411,13 @@ export interface OrderDto {
   pickedUpByName: string | null
   /** The order in the Shopify admin. */
   adminUrl: string
+  /** The pickup the cart chose: 2026-10-24, and the window's name. */
+  pickupDate: string | null
+  pickupWindow: string | null
+  /** The shopper's note about pickup, if any. */
+  pickupNote: string | null
+  /** Why its pickup booking needs staff: a clash, or no valid slot. */
+  pickupProblem: string | null
   items: OrderItemDto[]
 }
 

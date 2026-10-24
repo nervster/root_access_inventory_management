@@ -140,3 +140,9 @@ FROM returns r
 JOIN orders o ON o.organization_id = r.organization_id AND o.id = r.order_id
 WHERE ri.organization_id = @organization_id AND ri.return_id = r.id AND ri.customer_note IS NOT NULL
   AND o.shop = @shop AND (@all_orders::boolean OR o.shopify_order_id = ANY(@shopify_order_ids::text[]));
+
+-- name: RedactOrderPickupNotes :execrows
+-- Like RedactReturnNotes: the pickup notes customers wrote, for the orders given or every order from the store.
+UPDATE orders SET pickup_note = NULL
+WHERE organization_id = @organization_id AND pickup_note IS NOT NULL
+  AND shop = @shop AND (@all_orders::boolean OR shopify_order_id = ANY(@shopify_order_ids::text[]));

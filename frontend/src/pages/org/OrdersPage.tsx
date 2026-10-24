@@ -123,6 +123,29 @@ const EMPTY: Record<OrderStatus, string> = {
   cancelled: 'None yet.',
 }
 
+/** When the customer collects it, as booked from the cart; and anything about the booking staff must sort out. */
+function OrderPickup({ order }: { order: OrderDto }) {
+  if (!order.pickupDate && !order.pickupWindow && !order.pickupProblem) return null
+  const date = order.pickupDate
+    ? new Date(`${order.pickupDate}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
+    : null
+  return (
+    <div className="mb-3 space-y-1 text-sm">
+      {(date || order.pickupWindow) && (
+        <p>
+          <span className="font-medium">Pickup:</span> {[date, order.pickupWindow].filter(Boolean).join(', ')}
+        </p>
+      )}
+      {order.pickupNote && <p className="text-stone-600 dark:text-stone-400">“{order.pickupNote}”</p>}
+      {order.pickupProblem && (
+        <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-red-800 dark:bg-red-950 dark:text-red-300">
+          {order.pickupProblem} Contact the customer to agree a pickup time.
+        </p>
+      )}
+    </div>
+  )
+}
+
 function OrderCard({ orgId, order }: { orgId: number; order: OrderDto }) {
   return (
     <Card
@@ -139,6 +162,7 @@ function OrderCard({ orgId, order }: { orgId: number; order: OrderDto }) {
         {order.readyAt && <> · ready {formatDate(order.readyAt)}{order.readyByName && ` by ${order.readyByName}`}</>}
         {order.pickedUpAt && <> · picked up {formatDate(order.pickedUpAt)}{order.pickedUpByName && ` (marked by ${order.pickedUpByName})`}</>}
       </p>
+      <OrderPickup order={order} />
       <ul className="divide-y divide-stone-200 dark:divide-stone-800">
         {order.items.map((item) => (
           <li key={item.id} className="py-2">

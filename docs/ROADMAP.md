@@ -61,13 +61,13 @@ online. Root Access HTX is the first nursery.
 - [x] Background jobs: a `jobs` table the worker (`cmd/worker`) claims from (leases, retries with growing waits, dead after 5 failures); SQS at first, then Postgres alone
 - [x] Push products, SKUs (variants), images, prices, and stock to Shopify; SKUs without a price stay off it
 - [x] Orders arrive (checked each minute, plus webhooks once deployed) and hold specific plants until pickup; cancelled orders put them back on sale; Orders page lists what to pull
-- [ ] Pickup slot on the order: the cart's `Pickup date`, `Pickup window`, hold ID, and optional `Pickup note` are stored with the imported order
+- [x] Pickup slot on the order: the cart's `Pickup date`, `Pickup window`, hold ID, and optional `Pickup note` are stored with the imported order and shown on the Orders page (privacy requests clear the note)
 - [ ] Slot rules: windows per day, the 8-hour lead time, the 30-day limit, lockers
 - [ ] Pickup calendar (one per nursery), open by default: set the usual windows once, then close exceptions, a whole day or a single window; each customer pickup shows on its date and window; open a booking to move it to another slot. What the cart can book comes from this calendar
 - [x] Bookings and holds, with a database rule of at most one live hold or booking per locker slot (so two requests at the same moment can't both win); holds run 30 minutes, one per cart, 3 per visitor; shown on the Pickup calendar
 - [ ] App Proxy in `shopify/shopify.app.<site>.toml`, with Shopify's signature checked on every request
 - [ ] `GET pickup-slots`: every free slot for the next 30 days in one response, by date, in Houston time; `POST pickup-holds`: hold a slot (or say it was just taken), refresh, release; a refresh at Checkout re-checks the 8-hour lead time
-- [ ] Turn holds into bookings when orders are imported; flag clashes and orders with no valid slot
+- [x] Turn holds into bookings when orders are imported (or book the order's date and window directly when it has no usable hold); flag clashes and orders with no valid slot for staff on the Orders page; cancelled orders free their slot
 - [ ] Expire holds after 30 minutes; free the slot when an order is cancelled or its window ends without pickup
 - [ ] New-order email to team members who turned it on in their settings, with the order's "ready by" time: the start of its booked window (push notifications later)
 - [x] Ready for pickup, then picked up: team members who prepare orders (permission `orders.prepare`: Owners, Admins, Staff) mark each step on the Orders page; picked up fulfills the order in Shopify (without emailing the customer), then sells its plants. Bigger orders can be marked picked up in person

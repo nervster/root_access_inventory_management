@@ -71,3 +71,37 @@ SELECT EXISTS (
     SELECT 1 FROM pickup_bookings
     WHERE organization_id = @organization_id AND ends_at > @now
       AND (status = 'booked' OR (status = 'held' AND expires_at > @now)));
+
+-- name: PickupBookingByHoldToken :one
+-- The hold an order names (any cart: the order carries the token, not the cart).
+SELECT * FROM pickup_bookings WHERE organization_id = @organization_id AND hold_token = @hold_token;
+
+-- name: OrderPickupBooking :one
+SELECT * FROM pickup_bookings
+WHERE organization_id = @organization_id AND order_id = @order_id AND status = 'booked'
+LIMIT 1;
+
+-- name: BookPickupHold :one
+-- An order's hold becomes its booking, unless someone else has the slot now (its hold may have run
+-- out meanwhile). Run ExpirePickupHolds first, so a stale hold can't trip the unique index.
+UPDATE pickup_bookings b SET status = 'booked', order_id = @order_id
+WHERE b.organization_id = @organization_id AND b.id = @id AND b.status IN ('held', 'expired', 'released')
+  AND b.window_id IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM pickup_bookings o
+      WHERE o.organization_id = b.organization_id AND o.locker_id = b.locker_id AND o.date = b.date
+        AND o.window_id = b.window_id AND o.id <> b.id AND o.status IN ('held', 'booked'))
+RETURNING *;
+
+-- name: CreatePickupBooking :one
+-- A booking for an order that came without a usable hold (it still named a date and window).
+INSERT INTO pickup_bookings (organization_id, locker_id, date, window_id, window_name, starts_at, ends_at,
+                             status, hold_token, cart_token, expires_at, order_id)
+VALUES (@organization_id, @locker_id, @date, @window_id, @window_name, @starts_at, @ends_at,
+        'booked', @hold_token, @cart_token, @now, @order_id)
+RETURNING *;
+
+-- name: CancelOrderPickupBooking :exec
+-- A cancelled order frees its slot.
+UPDATE pickup_bookings SET status = 'cancelled'
+WHERE organization_id = @organization_id AND order_id = @order_id AND status = 'booked';

@@ -401,6 +401,10 @@ type Order struct {
 	ReadyByName              *string
 	PickedUpAt               *time.Time
 	PickedUpByName           *string
+	PickupDate               *time.Time
+	PickupWindow             *string
+	PickupNote               *string
+	PickupProblem            *string
 }
 
 type OrderItem struct {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
+	"github.com/nervster/root_access_inventory_management/backend/internal/pickup"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/jobs"
 )
 
@@ -51,6 +52,7 @@ const ordersQuery = `query Orders($query: String!, $after: String) {
   orders(first: 50, after: $after, sortKey: UPDATED_AT, query: $query) {
     nodes {
       id name createdAt updatedAt cancelledAt displayFulfillmentStatus
+      customAttributes { key value }
       lineItems(first: 100) {
         nodes { id title sku quantity variant { id } originalUnitPriceSet { shopMoney { amount } } }
       }
@@ -66,7 +68,11 @@ type shopifyOrder struct {
 	UpdatedAt                time.Time  `json:"updatedAt"`
 	CancelledAt              *time.Time `json:"cancelledAt"`
 	DisplayFulfillmentStatus string     `json:"displayFulfillmentStatus"`
-	LineItems                struct {
+	CustomAttributes         []struct {
+		Key   string  `json:"key"`
+		Value *string `json:"value"`
+	} `json:"customAttributes"` // the cart's attributes, e.g. the pickup the theme saved
+	LineItems struct {
 		Nodes []shopifyLineItem `json:"nodes"`
 	} `json:"lineItems"`
 }
@@ -201,7 +207,11 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 				return nil // over before Plant Stock saw it: nothing to hold
 			}
 			status = "open"
-			return s.createOrder(ctx, q, orgID, shop, order)
+			orderID, err := s.createOrder(ctx, q, orgID, shop, order)
+			if err != nil {
+				return err
+			}
+			return savePickup(ctx, q, orgID, orderID, order)
 		} else if err != nil {
 			return err
 		}
@@ -220,6 +230,9 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 			if err != nil {
 				return err
 			}
+			if err := pickup.CancelOrderBooking(ctx, q, orgID, existing.ID); err != nil {
+				return err
+			}
 			slog.Info("order cancelled; plants back on sale", "organization", orgID, "order", order.Name, "plants", len(released))
 			status = "cancelled"
 			return q.SetOrderStatus(ctx, dbgen.SetOrderStatusParams{OrganizationID: orgID, ID: existing.ID, Status: "cancelled"})
@@ -232,9 +245,44 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 			status = "picked_up"
 			return q.SetOrderStatus(ctx, dbgen.SetOrderStatusParams{OrganizationID: orgID, ID: existing.ID, Status: "picked_up"})
 		}
-		return nil
+		// Still to collect: book its pickup if that didn't work before (the slot may be free now), and
+		// keep its pickup details as Shopify has them.
+		return savePickup(ctx, q, orgID, existing.ID, order)
 	})
 	return status, err
+}
+
+// savePickup books the pickup the order's cart chose (its hold, or the date and window) and records
+// it on the order, with a problem for staff if it couldn't be booked.
+func savePickup(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, order shopifyOrder) error {
+	attributes := map[string]string{}
+	for _, a := range order.CustomAttributes {
+		if a.Value != nil {
+			attributes[a.Key] = strings.TrimSpace(*a.Value)
+		}
+	}
+	chosen := pickup.OrderPickup{HoldID: attributes["Pickup hold"], Window: attributes["Pickup window"]}
+	if date, err := pickup.ParseDate(attributes["Pickup date"]); err == nil {
+		chosen.Date = &date
+	}
+	problem, err := pickup.BookOrder(ctx, q, orgID, orderID, chosen, time.Now())
+	if err != nil {
+		return err
+	}
+	if problem != "" {
+		slog.Warn("order's pickup needs staff", "organization", orgID, "order", order.Name, "problem", problem)
+	}
+	return q.SetOrderPickup(ctx, dbgen.SetOrderPickupParams{
+		OrganizationID: orgID, ID: orderID, PickupDate: chosen.Date,
+		PickupWindow: nonEmpty(attributes["Pickup window"]), PickupNote: nonEmpty(attributes["Pickup note"]), PickupProblem: nonEmpty(problem),
+	})
+}
+
+func nonEmpty(text string) *string {
+	if text == "" {
+		return nil
+	}
+	return &text
 }
 
 // orderHandedOver reports whether Shopify shows the order as fulfilled (picked up).
@@ -242,13 +290,13 @@ func orderHandedOver(fulfillmentStatus string) bool {
 	return fulfillmentStatus == "FULFILLED"
 }
 
-func (s *Store) createOrder(ctx context.Context, q *dbgen.Queries, orgID int64, shop string, order shopifyOrder) error {
-	orderID, err := q.CreateOrder(ctx, dbgen.CreateOrderParams{
+func (s *Store) createOrder(ctx context.Context, q *dbgen.Queries, orgID int64, shop string, order shopifyOrder) (orderID int64, err error) {
+	orderID, err = q.CreateOrder(ctx, dbgen.CreateOrderParams{
 		OrganizationID: orgID, Shop: shop, ShopifyOrderID: order.ID, Name: order.Name, PlacedAt: order.CreatedAt,
 		ShopifyFulfillmentStatus: &order.DisplayFulfillmentStatus, ShopifyUpdatedAt: order.UpdatedAt,
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	for _, item := range order.LineItems.Nodes {
 		var shopifyVariantID *string
@@ -260,7 +308,7 @@ func (s *Store) createOrder(ctx context.Context, q *dbgen.Queries, orgID int64, 
 		if err == nil {
 			variantID = &id
 		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return err
+			return 0, err
 		}
 
 		itemID, err := q.CreateOrderItem(ctx, dbgen.CreateOrderItemParams{
@@ -268,14 +316,14 @@ func (s *Store) createOrder(ctx context.Context, q *dbgen.Queries, orgID int64, 
 			Sku: item.SKU, Title: item.Title, Quantity: int32(item.Quantity), PriceCents: priceCents(item.OriginalUnitPriceSet.ShopMoney.Amount),
 		})
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if variantID == nil {
 			continue // not one of Plant Stock's SKUs (e.g. a product made in Shopify): nothing to hold
 		}
 		held, err := q.HoldPlants(ctx, dbgen.HoldPlantsParams{OrderItemID: &itemID, VariantID: *variantID, OrganizationID: orgID, Quantity: int32(item.Quantity)})
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if len(held) < item.Quantity {
 			slog.Warn("order item oversold: not enough plants for sale", "organization", orgID, "order", order.Name,
@@ -283,7 +331,7 @@ func (s *Store) createOrder(ctx context.Context, q *dbgen.Queries, orgID int64, 
 		}
 	}
 	slog.Info("order imported", "organization", orgID, "order", order.Name, "items", len(order.LineItems.Nodes))
-	return nil
+	return orderID, nil
 }
 
 // priceCents turns Shopify's "15.00" into 1500 (nil if it isn't a price).
@@ -301,7 +349,7 @@ func priceCents(amount string) *int32 {
 
 // HandleWebhook acts on a verified webhook from shop: order changes queue an import; the app being
 // uninstalled means connecting again; Shopify's privacy requests to delete customer data clear the
-// notes customers wrote on returns (the only thing Plant Stock keeps that a customer wrote; it has
+// notes customers wrote on returns and pickups (all Plant Stock keeps that a customer wrote; it has
 // no names or contact details). customers/data_request needs nothing: the store already has those
 // notes, in Shopify.
 func (s *Store) HandleWebhook(ctx context.Context, topic, shop string, body []byte) error {
@@ -324,7 +372,7 @@ func (s *Store) HandleWebhook(ctx context.Context, topic, shop string, body []by
 	return nil
 }
 
-// redact clears customers' return notes: for the orders a customers/redact request lists, or for all
+// redact clears customers' return and pickup notes: for the orders a customers/redact request lists, or for all
 // of the store's orders on shop/redact (sent 48 hours after a store uninstalls Plant Stock). Shopify
 // sends customers/redact months after the customer's last order, when its returns are long settled,
 // so a later import doesn't read the notes back.
@@ -349,8 +397,13 @@ func (s *Store) redact(ctx context.Context, topic, shop string, body []byte) err
 	for _, orgID := range orgIDs {
 		params.OrganizationID = orgID
 		var cleared int64
-		if err := db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) (err error) {
-			cleared, err = q.RedactReturnNotes(ctx, params)
+		if err := db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+			returnNotes, err := q.RedactReturnNotes(ctx, params)
+			if err != nil {
+				return err
+			}
+			pickupNotes, err := q.RedactOrderPickupNotes(ctx, dbgen.RedactOrderPickupNotesParams(params))
+			cleared = returnNotes + pickupNotes
 			return err
 		}); err != nil {
 			return err

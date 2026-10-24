@@ -13,7 +13,7 @@ cookies and no identity: Plant Stock knows which store a request came through, n
 |---|---|
 | `GET pickup-slots` | Live on staging |
 | `POST pickup-holds`, `…/refresh`, `…/release` | Built (with `?cartToken` on `GET pickup-slots`); on staging once merged |
-| Hold → booking when the order is imported | Next |
+| Hold → booking when the order is imported | Built; on staging once merged |
 
 ## Slots, holds, and bookings
 

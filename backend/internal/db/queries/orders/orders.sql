@@ -102,7 +102,8 @@ WHERE organization_id = @organization_id AND id = @id;
 
 -- name: ListOrders :many
 SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status,
-       ready_at, ready_by_name, picked_up_at, picked_up_by_name
+       ready_at, ready_by_name, picked_up_at, picked_up_by_name,
+       pickup_date, pickup_window, pickup_note, pickup_problem
 FROM orders
 WHERE organization_id = @organization_id AND status = @status
 ORDER BY placed_at DESC, id DESC
@@ -146,3 +147,10 @@ SELECT organization_id FROM shopify_connections WHERE shop = @shop;
 -- For Shopify's privacy requests, which name the store: the nurseries that have its orders (even
 -- after disconnecting it).
 SELECT DISTINCT organization_id FROM orders WHERE shop = @shop;
+
+-- name: SetOrderPickup :exec
+-- The pickup the order's cart chose (its attributes), and why its booking needs staff, if it does.
+UPDATE orders
+SET pickup_date = sqlc.narg(pickup_date), pickup_window = sqlc.narg(pickup_window),
+    pickup_note = sqlc.narg(pickup_note), pickup_problem = sqlc.narg(pickup_problem)
+WHERE organization_id = @organization_id AND id = @id;

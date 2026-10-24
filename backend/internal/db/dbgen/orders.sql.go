@@ -75,7 +75,7 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 }
 
 const getOrder = `-- name: GetOrder :one
-SELECT id, organization_id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status, shopify_updated_at, created_at, ready_at, ready_by_name, picked_up_at, picked_up_by_name FROM orders
+SELECT id, organization_id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status, shopify_updated_at, created_at, ready_at, ready_by_name, picked_up_at, picked_up_by_name, pickup_date, pickup_window, pickup_note, pickup_problem FROM orders
 WHERE organization_id = $1 AND id = $2
 `
 
@@ -103,6 +103,10 @@ func (q *Queries) GetOrder(ctx context.Context, arg GetOrderParams) (Order, erro
 		&i.ReadyByName,
 		&i.PickedUpAt,
 		&i.PickedUpByName,
+		&i.PickupDate,
+		&i.PickupWindow,
+		&i.PickupNote,
+		&i.PickupProblem,
 	)
 	return i, err
 }
@@ -251,7 +255,8 @@ func (q *Queries) ListOrderItems(ctx context.Context, arg ListOrderItemsParams) 
 
 const listOrders = `-- name: ListOrders :many
 SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status,
-       ready_at, ready_by_name, picked_up_at, picked_up_by_name
+       ready_at, ready_by_name, picked_up_at, picked_up_by_name,
+       pickup_date, pickup_window, pickup_note, pickup_problem
 FROM orders
 WHERE organization_id = $1 AND status = $2
 ORDER BY placed_at DESC, id DESC
@@ -276,6 +281,10 @@ type ListOrdersRow struct {
 	ReadyByName              *string
 	PickedUpAt               *time.Time
 	PickedUpByName           *string
+	PickupDate               *time.Time
+	PickupWindow             *string
+	PickupNote               *string
+	PickupProblem            *string
 }
 
 func (q *Queries) ListOrders(ctx context.Context, arg ListOrdersParams) ([]ListOrdersRow, error) {
@@ -300,6 +309,10 @@ func (q *Queries) ListOrders(ctx context.Context, arg ListOrdersParams) ([]ListO
 			&i.ReadyByName,
 			&i.PickedUpAt,
 			&i.PickedUpByName,
+			&i.PickupDate,
+			&i.PickupWindow,
+			&i.PickupNote,
+			&i.PickupProblem,
 		); err != nil {
 			return nil, err
 		}
@@ -480,6 +493,35 @@ func (q *Queries) SellOrder(ctx context.Context, arg SellOrderParams) ([]string,
 		return nil, err
 	}
 	return items, nil
+}
+
+const setOrderPickup = `-- name: SetOrderPickup :exec
+UPDATE orders
+SET pickup_date = $1, pickup_window = $2,
+    pickup_note = $3, pickup_problem = $4
+WHERE organization_id = $5 AND id = $6
+`
+
+type SetOrderPickupParams struct {
+	PickupDate     *time.Time
+	PickupWindow   *string
+	PickupNote     *string
+	PickupProblem  *string
+	OrganizationID int64
+	ID             int64
+}
+
+// The pickup the order's cart chose (its attributes), and why its booking needs staff, if it does.
+func (q *Queries) SetOrderPickup(ctx context.Context, arg SetOrderPickupParams) error {
+	_, err := q.db.Exec(ctx, setOrderPickup,
+		arg.PickupDate,
+		arg.PickupWindow,
+		arg.PickupNote,
+		arg.PickupProblem,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
 }
 
 const setOrderStatus = `-- name: SetOrderStatus :exec
