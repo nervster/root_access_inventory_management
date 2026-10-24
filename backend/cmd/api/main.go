@@ -19,6 +19,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/inventory"
 	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
+	"github.com/nervster/root_access_inventory_management/backend/internal/pickup"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/config"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/email"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/storage"
@@ -148,6 +149,7 @@ func newRouter(d dependencies) *gin.Engine {
 	inventory.Routes(signedIn, d.orgs, d.inventory, d.photos)
 	shopify.Routes(api, signedIn, d.orgs, d.shopify, d.appURL)
 	orders.Routes(signedIn, d.orgs, orders.NewStore(d.conn))
+	pickup.Routes(signedIn, d.orgs, pickup.NewStore(d.conn))
 
 	return router
 }

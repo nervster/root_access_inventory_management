@@ -379,6 +379,31 @@ type Organization struct {
 	CreatedAt time.Time
 }
 
+type PickupClosure struct {
+	ID             int64
+	OrganizationID int64
+	Date           time.Time
+	WindowID       *int64
+	Reason         *string
+	ClosedByName   *string
+	CreatedAt      time.Time
+}
+
+type PickupSetting struct {
+	OrganizationID int64
+	LeadHours      int32
+	BookingDays    int32
+}
+
+type PickupWindow struct {
+	ID             int64
+	OrganizationID int64
+	Name           string
+	StartMinute    int32
+	LengthMinutes  int32
+	CreatedAt      time.Time
+}
+
 type Plant struct {
 	ID             int64
 	OrganizationID int64

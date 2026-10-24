@@ -22,6 +22,7 @@ export const Permissions = {
   ListingsManage: 'listings.manage',
   FinancialsView: 'financials.view',
   OrdersPrepare: 'orders.prepare',
+  PickupManage: 'pickup.manage',
   RefundsApprove: 'refunds.approve',
 } as const
 export type Permission = (typeof Permissions)[keyof typeof Permissions]
@@ -482,4 +483,56 @@ export interface ApprovedRefundDto extends UnreturnedRefundDto {
   approvedByName: string | null
   /** Why it was approved without a return. */
   note: string
+}
+
+/** One of the nursery's daily pickup windows (the same every day), in its time zone. */
+export interface PickupWindowDto {
+  id: number
+  /** e.g. "8 AM – 2 PM", or the nursery's own name ("Morning") */
+  name: string
+  /** Minutes after midnight. */
+  startMinute: number
+  lengthMinutes: number
+}
+
+export interface PickupSettingsDto {
+  /** e.g. America/Chicago */
+  timeZone: string
+  /** A window can be booked only if it starts at least this many hours from now. */
+  leadHours: number
+  /** Customers can book today and this many days in all. */
+  bookingDays: number
+  windows: PickupWindowDto[]
+}
+
+/** open: can be booked. closed: closed on the calendar. too_soon: starts within the lead time (or has started). too_far: past the booking range. */
+export type PickupSlotStatus = 'open' | 'closed' | 'too_soon' | 'too_far'
+
+export interface PickupClosureDto {
+  reason: string | null
+  /** Who closed it: their name (email if none), as it was then. */
+  closedBy: string | null
+}
+
+export interface PickupSlotDto {
+  windowId: number
+  name: string
+  start: string
+  end: string
+  status: PickupSlotStatus
+  /** This window's own closure on this date (a whole-day closure is on the day). */
+  closure: PickupClosureDto | null
+}
+
+export interface PickupDayDto {
+  /** 2026-10-25 */
+  date: string
+  closure: PickupClosureDto | null
+  slots: PickupSlotDto[]
+}
+
+export interface PickupCalendarDto extends PickupSettingsDto {
+  /** The nursery's date now. */
+  today: string
+  days: PickupDayDto[]
 }

@@ -12,6 +12,7 @@ import { PlantPage } from './pages/org/PlantPage'
 import { ProductsPage } from './pages/org/ProductsPage'
 import { ReceiveBatchPage } from './pages/org/ReceiveBatchPage'
 import { PhotoSessionPage } from './pages/org/PhotoSessionPage'
+import { PickupPage } from './pages/org/PickupPage'
 import { ScanPage } from './pages/org/ScanPage'
 import { PotSizesPage } from './pages/org/PotSizesPage'
 import { OrdersPage } from './pages/org/OrdersPage'
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="scan" element={<ScanPage />} />
             <Route path="scan/photos" element={<PhotoSessionPage />} />
             <Route path="orders" element={<OrdersPage />} />
+            <Route path="pickup" element={<PickupPage />} />
             <Route path="plants/:barcode" element={<PlantPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="pot-sizes" element={<PotSizesPage />} />

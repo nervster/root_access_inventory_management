@@ -112,3 +112,13 @@ export function MoonIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   )
 }
+
+export function CalendarIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+      <path d="M8 14h2M14 14h2M8 17.5h2" />
+    </Icon>
+  )
+}
