@@ -24,6 +24,10 @@ func TestRolePermissions(t *testing.T) {
 		{dbgen.OrgRoleStaff, OrdersPrepare, true}, // whoever packs the locker
 		{dbgen.OrgRoleViewer, OrdersPrepare, false},
 		{dbgen.OrgRoleOwner, RefundsApprove, true}, // special cases are the Owner's call
+		{dbgen.OrgRoleOwner, PickupManage, true},
+		{dbgen.OrgRoleAdmin, PickupManage, true},
+		{dbgen.OrgRoleStaff, PickupManage, false},
+		{dbgen.OrgRoleStaff, OrdersPrepare, true}, // staff close and reopen pickup windows
 		{dbgen.OrgRoleAdmin, RefundsApprove, false},
 		{dbgen.OrgRoleStaff, RefundsApprove, false},
 		{"superadmin", OrganizationView, false}, // unknown roles get nothing

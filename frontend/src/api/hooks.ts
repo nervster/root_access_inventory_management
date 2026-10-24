@@ -19,6 +19,8 @@ import type {
   BatchWithPlantsDto,
   PhotoCandidateDto,
   PhotoDto,
+  PickupCalendarDto,
+  PickupSettingsDto,
   PlantNameDto,
   PlantWithHistoryDto,
   ProductDto,
@@ -716,4 +718,54 @@ export function useCheckDrift(orgId: number) {
     mutationFn: () => api<void>(`/orgs/${orgId}/shopify/check`, { method: 'POST' }),
     onSuccess: () => setTimeout(() => client.invalidateQueries({ queryKey: queryKeys.shopify(orgId) }), 5000),
   })
+}
+
+// --- Pickup windows and calendar ---
+
+const pickupKeys = {
+  all: (orgId: number) => ['orgs', orgId, 'pickup'] as const,
+  settings: (orgId: number) => ['orgs', orgId, 'pickup', 'settings'] as const,
+  calendar: (orgId: number, from: string, to: string) => ['orgs', orgId, 'pickup', 'calendar', from, to] as const,
+}
+
+export function usePickupSettings(orgId: number) {
+  const api = useApi()
+  return useQuery({ queryKey: pickupKeys.settings(orgId), queryFn: () => api<PickupSettingsDto>(`/orgs/${orgId}/pickup`) })
+}
+
+/** Each day's windows from one date to another (2026-10-01), and whether each can be booked now. */
+export function usePickupCalendar(orgId: number, from: string, to: string) {
+  const api = useApi()
+  return useQuery({
+    queryKey: pickupKeys.calendar(orgId, from, to),
+    queryFn: () => api<PickupCalendarDto>(`/orgs/${orgId}/pickup/calendar?from=${from}&to=${to}`),
+    refetchInterval: 5 * 60_000, // "too soon" moves with the clock
+  })
+}
+
+export function usePickupActions(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  const onSuccess = () => client.invalidateQueries({ queryKey: pickupKeys.all(orgId) })
+  return {
+    setUpWindows: useMutation({
+      mutationFn: (body: { startHour: number; hours: number }) => api<PickupSettingsDto>(`/orgs/${orgId}/pickup/windows`, { method: 'PUT', json: body }),
+      onSuccess,
+    }),
+    renameWindow: useMutation({
+      mutationFn: ({ windowId, name }: { windowId: number; name: string }) =>
+        api<PickupSettingsDto>(`/orgs/${orgId}/pickup/windows/${windowId}`, { method: 'PATCH', json: { name } }),
+      onSuccess,
+    }),
+    setLimits: useMutation({
+      mutationFn: (body: { leadHours?: number; bookingDays?: number }) => api<PickupSettingsDto>(`/orgs/${orgId}/pickup`, { method: 'PATCH', json: body }),
+      onSuccess,
+    }),
+    /** Closes (closed: true) or reopens a day, or one window on it (windowId). */
+    setClosure: useMutation({
+      mutationFn: (body: { date: string; windowId?: number; closed: boolean; reason?: string }) =>
+        api<void>(`/orgs/${orgId}/pickup/closures`, { method: 'PUT', json: body }),
+      onSuccess,
+    }),
+  }
 }

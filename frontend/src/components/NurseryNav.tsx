@@ -2,7 +2,7 @@ import type { ComponentType, SVGProps } from 'react'
 import { NavLink } from 'react-router'
 import { can } from '../api/roles'
 import { Permissions, type MembershipDto, type Permission } from '../api/types'
-import { BatchesIcon, DashboardIcon, MoreIcon, OrdersIcon, PotIcon, ProductsIcon, ScanIcon, SettingsIcon, TeamIcon } from './icons'
+import { BatchesIcon, CalendarIcon, DashboardIcon, MoreIcon, OrdersIcon, PotIcon, ProductsIcon, ScanIcon, SettingsIcon, TeamIcon } from './icons'
 
 interface NavItem {
   label: string
@@ -21,6 +21,7 @@ const items: NavItem[] = [
   { label: 'Batches', path: 'batches', icon: BatchesIcon, permission: Permissions.InventoryView },
   { label: 'Scan', path: 'scan', icon: ScanIcon, permission: Permissions.InventoryView, primary: true },
   { label: 'Orders', path: 'orders', icon: OrdersIcon, permission: Permissions.InventoryView },
+  { label: 'Pickup', path: 'pickup', icon: CalendarIcon, permission: Permissions.InventoryView },
   { label: 'Products', path: 'products', icon: ProductsIcon, permission: Permissions.InventoryView },
   { label: 'Pot sizes', path: 'pot-sizes', icon: PotIcon, permission: Permissions.InventoryView },
   { label: 'Team', path: 'team', icon: TeamIcon, permission: Permissions.TeamView },

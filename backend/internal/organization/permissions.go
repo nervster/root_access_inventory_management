@@ -24,7 +24,8 @@ const (
 	ListingsManage Permission = "listings.manage" // publish listings, set prices, sync channels
 	FinancialsView Permission = "financials.view" // purchase cost, sale proceeds, fees, profit
 
-	OrdersPrepare  Permission = "orders.prepare"  // mark online orders ready for pickup, and picked up
+	OrdersPrepare  Permission = "orders.prepare"  // mark online orders ready for pickup, and picked up; close and reopen pickup windows
+	PickupManage   Permission = "pickup.manage"   // set up the pickup windows, lead time and booking range
 	RefundsApprove Permission = "refunds.approve" // approve a refund without a return as a special case
 )
 
@@ -34,12 +35,12 @@ var rolePermissions = map[dbgen.OrgRole][]Permission{
 		OrganizationView, OrganizationManage, IntegrationsManage,
 		TeamView, TeamManage, RolesManage,
 		InventoryView, InventoryEdit, ListingsManage, FinancialsView,
-		OrdersPrepare, RefundsApprove,
+		OrdersPrepare, PickupManage, RefundsApprove,
 	},
 	dbgen.OrgRoleAdmin: {
 		OrganizationView, TeamView, TeamManage,
 		InventoryView, InventoryEdit, ListingsManage,
-		OrdersPrepare,
+		OrdersPrepare, PickupManage,
 	},
 	dbgen.OrgRoleStaff: {
 		OrganizationView, TeamView, InventoryView, InventoryEdit,
