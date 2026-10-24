@@ -20,8 +20,41 @@ export const labelWidthPx = 567
 export const labelHeightPx = mm(30)
 const trimLeftPx = (mm(50) - labelWidthPx) / 2
 
-const sans = 'system-ui, "Helvetica Neue", Arial, sans-serif'
-const mono = 'ui-monospace, Menlo, Consolas, monospace'
+// Not system-ui: on a Mac that's San Francisco, which turns wider at small sizes, so the printed page
+// came out wider than the text was measured here (measured at 300 dpi, where it's narrower).
+export const sans = '"Helvetica Neue", Helvetica, Arial, sans-serif'
+export const mono = 'ui-monospace, Menlo, Consolas, monospace'
+
+/**
+ * The roll label's layout, in mm, shared by the printed page and the Bluetooth canvas so both look the
+ * same: a rounded border kept well inside the label (printers lose a little at the edges), the plant
+ * name across the top like a title, and below it the QR code with the barcode, batch and date beside it.
+ */
+export const roll = {
+  inset: 1.8, // label edge to border
+  border: 0.35,
+  pad: 1.2, // border to content
+  gap: 1, // title to the row below, and QR code to the text beside it
+  qr: 15, // QR code with a 1-module margin: about 0.6 mm modules, easy for a phone to scan
+  quiet: 1,
+  titleLineHeight: 1.15,
+  // Room kept on the right of the plant name: the printed page draws small text a little wider than it
+  // measures here, and without it long names ran into the border.
+  titleRightPad: 2,
+  smallPt: 6.5,
+}
+const contentWidthMm = 50 - 2 * (roll.inset + roll.border + roll.pad)
+const textWidthMm = contentWidthMm - roll.qr - roll.gap
+
+// Largest first: the name gets the biggest size at which it fits on two lines across the label.
+const titleSizesPt = [8, 7.5, 7, 6.5, 6, 5.5]
+
+let measurer: CanvasRenderingContext2D | null = null
+function measureContext(): CanvasRenderingContext2D {
+  measurer ??= document.createElement('canvas').getContext('2d')
+  if (!measurer) throw new Error('This browser cannot measure label text.')
+  return measurer
+}
 
 function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text
@@ -30,38 +63,55 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
   return `${t}…`
 }
 
-/** Shrinks the font, down to a floor, until the text fits; only then cuts it with "…". */
-function fillWidth(ctx: CanvasRenderingContext2D, text: string, family: string, weight: string, size: number, maxWidth: number): string {
-  for (let s = size; s >= pt(5); s--) {
-    ctx.font = `${weight} ${s}px ${family}`
-    if (ctx.measureText(text).width <= maxWidth) return text
-  }
-  return fitText(ctx, text, maxWidth)
-}
-
-/** Words onto at most two lines, the second one shortened with "…" if the name is still too long. */
-function wrapTwoLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+/** Words onto as many lines as they need at the context's current font. */
+function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = []
   let line = ''
-  const words = text.split(/\s+/).filter(Boolean)
-  for (let i = 0; i < words.length; i++) {
-    const next = line ? `${line} ${words[i]}` : words[i]
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const next = line ? `${line} ${word}` : word
     if (line && ctx.measureText(next).width > maxWidth) {
-      if (lines.length === 1) return [lines[0], fitText(ctx, [line, ...words.slice(i)].join(' '), maxWidth)]
       lines.push(line)
-      line = words[i]
+      line = word
     } else {
       line = next
     }
   }
   if (line) lines.push(line)
-  return lines.map((l) => fitText(ctx, l, maxWidth))
+  return lines
 }
 
 /**
- * Draws a roll label straight onto a canvas, the same layout as the on-screen one: a rounded border, the
- * QR code on the left, text on the right. Drawn rather than screenshotted from the page so the QR modules
- * and text are crisp black on white; the printer only prints black or white.
+ * The plant name as the label's title: the largest size (8 pt down to 5.5 pt) at which it fits on two
+ * lines across the label. Only a name too long even then has its second line cut with "…".
+ */
+export function titleLayout(name: string): { sizePt: number; lines: string[] } {
+  const ctx = measureContext()
+  const maxWidth = mm(contentWidthMm - roll.titleRightPad)
+  for (const sizePt of titleSizesPt) {
+    ctx.font = `bold ${pt(sizePt)}px ${sans}`
+    const lines = wrap(ctx, name, maxWidth)
+    if (lines.length <= 2 && lines.every((l) => ctx.measureText(l).width <= maxWidth)) return { sizePt, lines }
+  }
+  const sizePt = titleSizesPt[titleSizesPt.length - 1]
+  ctx.font = `bold ${pt(sizePt)}px ${sans}`
+  const [first, ...rest] = wrap(ctx, name, maxWidth)
+  return { sizePt, lines: [fitText(ctx, first, maxWidth), ...(rest.length ? [fitText(ctx, rest.join(' '), maxWidth)] : [])] }
+}
+
+/** The barcode's size beside the QR code: 8 pt, smaller if needed, so it's always on one line. */
+export function barcodeSizePt(barcode: string): number {
+  const ctx = measureContext()
+  for (let sizePt = 8; sizePt > 5; sizePt -= 0.5) {
+    ctx.font = `bold ${pt(sizePt)}px ${mono}`
+    if (ctx.measureText(barcode).width <= mm(textWidthMm)) return sizePt
+  }
+  return 5
+}
+
+/**
+ * Draws a roll label straight onto a canvas, in the same layout as the printed page (see `roll`). Drawn
+ * rather than screenshotted from the page so the QR modules and text are crisp black on white; the
+ * printer only prints black or white.
  */
 export function drawLabel(content: LabelContent): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
@@ -74,51 +124,50 @@ export function drawLabel(content: LabelContent): HTMLCanvasElement {
   ctx.translate(-trimLeftPx, 0)
   ctx.fillStyle = '#000'
   ctx.strokeStyle = '#000'
+  ctx.textBaseline = 'top'
 
-  // Kept well inside the label: printers lose a little at the edges and a clipped border looks broken.
-  const inset = mm(1.8)
-  ctx.lineWidth = 4
+  const inset = mm(roll.inset)
+  ctx.lineWidth = mm(roll.border)
   ctx.beginPath()
   ctx.roundRect(inset, inset, mm(50) - 2 * inset, labelHeightPx - 2 * inset, mm(2.5))
   ctx.stroke()
 
+  const left = mm(roll.inset + roll.border + roll.pad)
+  const top = left
+  const bottom = labelHeightPx - top
+
+  const title = titleLayout(content.name)
+  const titleSize = pt(title.sizePt)
+  const titleLineHeight = Math.round(titleSize * roll.titleLineHeight)
+  ctx.font = `bold ${titleSize}px ${sans}`
+  title.lines.forEach((line, i) => ctx.fillText(line, left, top + i * titleLineHeight))
+
+  // The row below the title: QR code and text, both centred in the space left.
+  const rowTop = top + title.lines.length * titleLineHeight + mm(roll.gap)
+  const rowHeight = bottom - rowTop
+
   const { modules } = QRCode.create(content.barcode, { errorCorrectionLevel: 'M' })
-  const quiet = 1
-  const qrSize = mm(22)
   // Whole pixels per module, so no module is blurred by scaling.
-  const cell = Math.floor(qrSize / (modules.size + 2 * quiet))
-  const qrDrawn = cell * (modules.size + 2 * quiet)
-  const qrX = inset + mm(1.2)
-  const qrY = Math.round((labelHeightPx - qrDrawn) / 2)
+  const cell = Math.floor(mm(roll.qr) / (modules.size + 2 * roll.quiet))
+  const qrDrawn = cell * (modules.size + 2 * roll.quiet)
+  const qrY = rowTop + Math.round((rowHeight - qrDrawn) / 2)
   for (let row = 0; row < modules.size; row++)
     for (let col = 0; col < modules.size; col++)
-      if (modules.get(row, col)) ctx.fillRect(qrX + (col + quiet) * cell, qrY + (row + quiet) * cell, cell, cell)
+      if (modules.get(row, col)) ctx.fillRect(left + (col + roll.quiet) * cell, qrY + (row + roll.quiet) * cell, cell, cell)
 
-  const textX = qrX + qrDrawn + mm(0.8)
-  const textWidth = mm(50) - inset - mm(1.5) - textX
-  ctx.textBaseline = 'top'
-  const nameSize = pt(7.5)
-  const barcodeSize = pt(8)
-  const smallSize = pt(6)
-  const nameLineHeight = Math.round(nameSize * 1.2)
+  const textX = left + qrDrawn + mm(roll.gap)
+  const barcodeSize = pt(barcodeSizePt(content.barcode))
+  const smallSize = pt(roll.smallPt)
   const barcodeHeight = Math.round(barcodeSize * 1.3)
   const smallHeight = Math.round(smallSize * 1.25)
+  let y = rowTop + Math.round((rowHeight - barcodeHeight - 2 * smallHeight) / 2)
 
-  ctx.font = `bold ${nameSize}px ${sans}`
-  const nameLines = wrapTwoLines(ctx, content.name, textWidth)
-  const blockHeight = nameLines.length * nameLineHeight + barcodeHeight + 2 * smallHeight
-  let y = Math.round((labelHeightPx - blockHeight) / 2)
-
-  for (const line of nameLines) {
-    ctx.fillText(line, textX, y)
-    y += nameLineHeight
-  }
-  // The barcode is the one line that must never be cut off, so it shrinks to fit instead.
-  const barcode = fillWidth(ctx, content.barcode, mono, 'bold', barcodeSize, textWidth)
-  ctx.fillText(barcode, textX, y)
+  ctx.font = `bold ${barcodeSize}px ${mono}`
+  ctx.fillText(content.barcode, textX, y)
   y += barcodeHeight
+  ctx.font = `${smallSize}px ${sans}`
   for (const text of [content.batchCode, `Received ${formatReceived(content.receivedOn)}`]) {
-    ctx.fillText(fillWidth(ctx, text, sans, '', smallSize, textWidth), textX, y)
+    ctx.fillText(fitText(ctx, text, mm(textWidthMm)), textX, y)
     y += smallHeight
   }
   return canvas
