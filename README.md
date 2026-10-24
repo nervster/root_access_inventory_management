@@ -57,9 +57,6 @@ Inventory and the Shopify integration are built; pickup scheduling and locker PI
 - **Automated delivery.** Every pull request runs CI; merges into `staging` build the images and deploy them to the
   VM, signing in to Google Cloud without a stored key. Nightly database backups, with a script that tests a restore.
 
-**By the numbers:** about 14,500 lines of Go (5,700 of them tests, 118 test functions), 6,200 lines of
-TypeScript, 3,500 lines of SQL across 30 migrations and the sqlc queries.
-
 ## Stack
 - **API:** Go + [Gin](https://gin-gonic.com) — `backend/`
 - **Web:** React + TypeScript + Vite — `frontend/`
