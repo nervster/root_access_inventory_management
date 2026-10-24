@@ -329,6 +329,33 @@ func (q *Queries) ReceiveReturnedPlant(ctx context.Context, arg ReceiveReturnedP
 	return err
 }
 
+const redactOrderPickupNotes = `-- name: RedactOrderPickupNotes :execrows
+UPDATE orders SET pickup_note = NULL
+WHERE organization_id = $1 AND pickup_note IS NOT NULL
+  AND shop = $2 AND ($3::boolean OR shopify_order_id = ANY($4::text[]))
+`
+
+type RedactOrderPickupNotesParams struct {
+	OrganizationID  int64
+	Shop            string
+	AllOrders       bool
+	ShopifyOrderIds []string
+}
+
+// Like RedactReturnNotes: the pickup notes customers wrote, for the orders given or every order from the store.
+func (q *Queries) RedactOrderPickupNotes(ctx context.Context, arg RedactOrderPickupNotesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, redactOrderPickupNotes,
+		arg.OrganizationID,
+		arg.Shop,
+		arg.AllOrders,
+		arg.ShopifyOrderIds,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const redactReturnNotes = `-- name: RedactReturnNotes :execrows
 UPDATE return_items ri
 SET customer_note = NULL

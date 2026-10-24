@@ -10,6 +10,64 @@ import (
 	"time"
 )
 
+const bookPickupHold = `-- name: BookPickupHold :one
+UPDATE pickup_bookings b SET status = 'booked', order_id = $1
+WHERE b.organization_id = $2 AND b.id = $3 AND b.status IN ('held', 'expired', 'released')
+  AND b.window_id IS NOT NULL
+  AND NOT EXISTS (
+      SELECT 1 FROM pickup_bookings o
+      WHERE o.organization_id = b.organization_id AND o.locker_id = b.locker_id AND o.date = b.date
+        AND o.window_id = b.window_id AND o.id <> b.id AND o.status IN ('held', 'booked'))
+RETURNING id, organization_id, locker_id, date, window_id, window_name, starts_at, ends_at, status, hold_token, cart_token, client_ip, expires_at, order_id, created_at
+`
+
+type BookPickupHoldParams struct {
+	OrderID        *int64
+	OrganizationID int64
+	ID             int64
+}
+
+// An order's hold becomes its booking, unless someone else has the slot now (its hold may have run
+// out meanwhile). Run ExpirePickupHolds first, so a stale hold can't trip the unique index.
+func (q *Queries) BookPickupHold(ctx context.Context, arg BookPickupHoldParams) (PickupBooking, error) {
+	row := q.db.QueryRow(ctx, bookPickupHold, arg.OrderID, arg.OrganizationID, arg.ID)
+	var i PickupBooking
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.LockerID,
+		&i.Date,
+		&i.WindowID,
+		&i.WindowName,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Status,
+		&i.HoldToken,
+		&i.CartToken,
+		&i.ClientIp,
+		&i.ExpiresAt,
+		&i.OrderID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const cancelOrderPickupBooking = `-- name: CancelOrderPickupBooking :exec
+UPDATE pickup_bookings SET status = 'cancelled'
+WHERE organization_id = $1 AND order_id = $2 AND status = 'booked'
+`
+
+type CancelOrderPickupBookingParams struct {
+	OrganizationID int64
+	OrderID        *int64
+}
+
+// A cancelled order frees its slot.
+func (q *Queries) CancelOrderPickupBooking(ctx context.Context, arg CancelOrderPickupBookingParams) error {
+	_, err := q.db.Exec(ctx, cancelOrderPickupBooking, arg.OrganizationID, arg.OrderID)
+	return err
+}
+
 const cartPickupHold = `-- name: CartPickupHold :one
 SELECT id, organization_id, locker_id, date, window_id, window_name, starts_at, ends_at, status, hold_token, cart_token, client_ip, expires_at, order_id, created_at FROM pickup_bookings
 WHERE organization_id = $1 AND cart_token = $2 AND status = 'held' AND expires_at > $3
@@ -70,6 +128,64 @@ func (q *Queries) CountVisitorPickupHolds(ctx context.Context, arg CountVisitorP
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const createPickupBooking = `-- name: CreatePickupBooking :one
+INSERT INTO pickup_bookings (organization_id, locker_id, date, window_id, window_name, starts_at, ends_at,
+                             status, hold_token, cart_token, expires_at, order_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7,
+        'booked', $8, $9, $10, $11)
+RETURNING id, organization_id, locker_id, date, window_id, window_name, starts_at, ends_at, status, hold_token, cart_token, client_ip, expires_at, order_id, created_at
+`
+
+type CreatePickupBookingParams struct {
+	OrganizationID int64
+	LockerID       int64
+	Date           time.Time
+	WindowID       *int64
+	WindowName     string
+	StartsAt       time.Time
+	EndsAt         time.Time
+	HoldToken      string
+	CartToken      string
+	Now            time.Time
+	OrderID        *int64
+}
+
+// A booking for an order that came without a usable hold (it still named a date and window).
+func (q *Queries) CreatePickupBooking(ctx context.Context, arg CreatePickupBookingParams) (PickupBooking, error) {
+	row := q.db.QueryRow(ctx, createPickupBooking,
+		arg.OrganizationID,
+		arg.LockerID,
+		arg.Date,
+		arg.WindowID,
+		arg.WindowName,
+		arg.StartsAt,
+		arg.EndsAt,
+		arg.HoldToken,
+		arg.CartToken,
+		arg.Now,
+		arg.OrderID,
+	)
+	var i PickupBooking
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.LockerID,
+		&i.Date,
+		&i.WindowID,
+		&i.WindowName,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Status,
+		&i.HoldToken,
+		&i.CartToken,
+		&i.ClientIp,
+		&i.ExpiresAt,
+		&i.OrderID,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createPickupHold = `-- name: CreatePickupHold :one
@@ -298,6 +414,73 @@ func (q *Queries) ListPickupLockers(ctx context.Context, organizationID int64) (
 		return nil, err
 	}
 	return items, nil
+}
+
+const orderPickupBooking = `-- name: OrderPickupBooking :one
+SELECT id, organization_id, locker_id, date, window_id, window_name, starts_at, ends_at, status, hold_token, cart_token, client_ip, expires_at, order_id, created_at FROM pickup_bookings
+WHERE organization_id = $1 AND order_id = $2 AND status = 'booked'
+LIMIT 1
+`
+
+type OrderPickupBookingParams struct {
+	OrganizationID int64
+	OrderID        *int64
+}
+
+func (q *Queries) OrderPickupBooking(ctx context.Context, arg OrderPickupBookingParams) (PickupBooking, error) {
+	row := q.db.QueryRow(ctx, orderPickupBooking, arg.OrganizationID, arg.OrderID)
+	var i PickupBooking
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.LockerID,
+		&i.Date,
+		&i.WindowID,
+		&i.WindowName,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Status,
+		&i.HoldToken,
+		&i.CartToken,
+		&i.ClientIp,
+		&i.ExpiresAt,
+		&i.OrderID,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const pickupBookingByHoldToken = `-- name: PickupBookingByHoldToken :one
+SELECT id, organization_id, locker_id, date, window_id, window_name, starts_at, ends_at, status, hold_token, cart_token, client_ip, expires_at, order_id, created_at FROM pickup_bookings WHERE organization_id = $1 AND hold_token = $2
+`
+
+type PickupBookingByHoldTokenParams struct {
+	OrganizationID int64
+	HoldToken      string
+}
+
+// The hold an order names (any cart: the order carries the token, not the cart).
+func (q *Queries) PickupBookingByHoldToken(ctx context.Context, arg PickupBookingByHoldTokenParams) (PickupBooking, error) {
+	row := q.db.QueryRow(ctx, pickupBookingByHoldToken, arg.OrganizationID, arg.HoldToken)
+	var i PickupBooking
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.LockerID,
+		&i.Date,
+		&i.WindowID,
+		&i.WindowName,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Status,
+		&i.HoldToken,
+		&i.CartToken,
+		&i.ClientIp,
+		&i.ExpiresAt,
+		&i.OrderID,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const pickupHoldByToken = `-- name: PickupHoldByToken :one
