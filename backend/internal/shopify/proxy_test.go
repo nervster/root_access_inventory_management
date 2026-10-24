@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func (s *shopTest) proxyRequest(method, path, shop, secret string, extra url.Val
 	s.t.Helper()
 	query := url.Values{
 		"shop": {shop}, "logged_in_customer_id": {""}, "path_prefix": {"/apps/plant-stock"},
-		"timestamp": {"1761300000"},
+		"timestamp": {strconv.FormatInt(time.Now().Unix(), 10)},
 	}
 	for k, v := range extra {
 		query[k] = v

@@ -286,10 +286,10 @@ func TestPrivacyRequestsClearReturnNotes(t *testing.T) {
 	orderID := strings.TrimPrefix(order["id"].(string), "gid://shopify/Order/")
 
 	// customers/redact clears notes only on the orders it lists.
-	if code := s.webhook("customers/redact", testShop, `{"orders_to_redact": [999999]}`, true); code != 200 || note() == nil {
+	if code := s.webhook("customers/redact", testShop, `{"shop_domain": "`+testShop+`", "orders_to_redact": [999999]}`, true); code != 200 || note() == nil {
 		t.Errorf("redact for another order: %d, note %v; want 200 and the note kept", code, note())
 	}
-	if code := s.webhook("customers/redact", testShop, `{"orders_to_redact": [`+orderID+`]}`, true); code != 200 || note() != nil {
+	if code := s.webhook("customers/redact", testShop, `{"shop_domain": "`+testShop+`", "orders_to_redact": [`+orderID+`]}`, true); code != 200 || note() != nil {
 		t.Errorf("redact for the order: %d, note %v; want 200 and the note gone", code, note())
 	}
 

@@ -44,6 +44,9 @@ ssh_vm --command 'rm -rf ~/plant-stock-upload && mkdir ~/plant-stock-upload'
 gcloud compute scp "${FILES[@]}" "$VM:plant-stock-upload/" --zone "$ZONE" --tunnel-through-iap
 
 ssh_vm --command "set -e; cd ~/plant-stock-upload
+  # Caddy runs on the Caddyfile it was started with (a new file is a new inode its mount doesn't see),
+  # so it's restarted below when the Caddyfile changed.
+  caddyfile_changed=\$(sudo cmp -s Caddyfile $APP_DIR/Caddyfile || echo yes)
   sudo install -m 0644 compose.yml Caddyfile $APP_DIR/
   if [ -f .env.$SITE ]; then sudo install -m 0600 .env.$SITE $APP_DIR/.env; fi
   sudo install -m 0755 backup-db.sh /usr/local/bin/plant-stock-backup
@@ -54,6 +57,7 @@ ssh_vm --command "set -e; cd ~/plant-stock-upload
   sudo docker tag plant-stock-api:$TAG plant-stock-api:current
   sudo docker tag plant-stock-web:$TAG plant-stock-web:current
   sudo docker compose up -d --quiet-pull --remove-orphans
+  if [ -n \"\$caddyfile_changed\" ]; then sudo docker compose restart caddy; fi
   sudo docker image prune -af --filter until=720h > /dev/null # keeps a month of images to roll back to
   sudo docker compose ps"
 echo "Deployed $TAG to $SITE"

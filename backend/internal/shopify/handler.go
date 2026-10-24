@@ -333,7 +333,12 @@ func (h handler) webhook(c *gin.Context) {
 		return
 	}
 	topic, shop := c.GetHeader("X-Shopify-Topic"), c.GetHeader("X-Shopify-Shop-Domain")
-	if err := h.store.HandleWebhook(c.Request.Context(), topic, shop, body); err != nil {
+	switch err := h.store.HandleWebhook(c.Request.Context(), topic, shop, body); {
+	case errors.Is(err, ErrWebhookShop):
+		slog.Warn("webhook refused: its store doesn't match its body", "topic", topic, "shop", shop)
+		c.Status(http.StatusUnauthorized)
+		return
+	case err != nil:
 		web.FailInternal(c, err) // Shopify retries
 		return
 	}
