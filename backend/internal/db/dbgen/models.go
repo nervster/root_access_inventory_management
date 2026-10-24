@@ -406,6 +406,7 @@ type Order struct {
 	PickupNote               *string
 	PickupProblem            *string
 	PickupChangedAt          *time.Time
+	LockerCode               string
 }
 
 type OrderItem struct {

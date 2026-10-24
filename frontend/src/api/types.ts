@@ -420,6 +420,10 @@ export interface OrderDto {
   pickupProblem: string | null
   /** When the customer last changed the pickup time on the store's My pickup page. */
   pickupChangedAt: string | null
+  /** When it must be in the locker: the start of its booked window (null without a booked slot). */
+  readyBy: string | null
+  /** The locker PIN for this order (4 digits). Only for members who prepare orders. */
+  lockerCode: string | null
   items: OrderItemDto[]
 }
 

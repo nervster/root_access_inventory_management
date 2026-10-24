@@ -72,7 +72,8 @@ online. Root Access HTX is the first nursery.
 - [ ] Expire holds after 30 minutes; free the slot when an order is cancelled or its window ends without pickup
 - [ ] New-order email to team members who turned it on in their settings, with the order's "ready by" time: the start of its booked window (push notifications later)
 - [x] Ready for pickup, then picked up: team members who prepare orders (permission `orders.prepare`: Owners, Admins, Staff) mark each step on the Orders page; picked up fulfills the order in Shopify (without emailing the customer), then sells its plants. Bigger orders can be marked picked up in person
-- [ ] Prepare orders: sorted by "ready by" (the start of each booked window), with overdue ones flagged; staff scan the held plants to confirm them before they go in the locker
+- [x] Prepare orders by "ready by" (the start of the booked window): orders still to collect sorted soonest first, those with no booked slot at the top; open orders flagged due soon (within 2 hours) or overdue
+- [ ] Staff scan the held plants to confirm them before they go in the locker
 - [ ] Missed windows: once a window ends without pickup, its slot is freed for another customer and the customer who missed it is emailed to choose a new window; an order that's never collected is cancelled and its plants go straight back on sale
 - [x] Customers change their pickup time or cancel their order on the store (a My pickup page; the page itself is in the theme): order number + email (checked against Shopify, never stored); the time can change until pickup (staff see changes to orders already ready), following the cart's rules; cancelling refunds in full automatically, until the order has been ready for 2 hours (`docs/pickup-storefront.md`). Needs the `write_orders` scope and the Email protected customer field
 - [x] What the customer ordered and paid on the My pickup page (theme PR #11): every `my-pickup` answer's order gets `items` (title, variant title or null, quantity, `totalCents` after discounts: Shopify's `discountedTotalSet`) and `amounts` (currency, subtotal, discount, tax, total charged and refunded, from the order's `subtotalPriceSet`, `totalDiscountsSet`, `totalTaxSet`, `totalPriceSet`, `totalRefundedSet` in shop money, as cents), including the order inside `too_late`; after a cancel, `refundedCents` shows the refund. Order details, not customer details: still no name, email, address or note. Read from Shopify when answering, like the email (the subtotal is returned before discounts, so the page's lines add up). Documented in `docs/pickup-storefront.md`, "The order, as the page shows it"
@@ -84,7 +85,8 @@ online. Root Access HTX is the first nursery.
 - [x] Nightly check (3 am, nursery time; or Check now) that finds and fixes drift between Plant Stock and Shopify: missing products, titles, SKUs, prices, stock
 
 ### 4. Lockers and customer emails (optional per nursery)
-- [ ] Locker code: a 4-digit code per order, shown to staff and written onto the Shopify order; marking the order ready for pickup sends Shopify's "Ready for local pickup" email with the code, pickup time and locker instructions (#38)
+- [x] Locker code: 4 random digits per order, made when it's imported and never changed, shown to staff who prepare orders on the Orders page to set the locker's PIN pad
+- [ ] Send the locker code to the customer with the pickup time and locker instructions, in the notification emails (the same code staff see; part of notifications, later) (#38)
 - [ ] Team notifications: event-based emails to the nursery's team (e.g. order placed, return requested), each nursery choosing which events, who gets them, and the wording
 - [ ] Locations (greenhouses, locker sites), each with its lockers and compartments
 - [ ] More lockers: an order can use several, and a locker can hold more than one order
