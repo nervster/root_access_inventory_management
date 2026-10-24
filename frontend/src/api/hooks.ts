@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useApi } from './client'
 import type {
   CreateOrganizationResponse,
@@ -433,26 +433,34 @@ export function usePlantPhotos(orgId: number, barcode: string) {
 }
 
 /**
- * Adding and deleting a plant's photos. Adding takes three steps so the file goes straight from the
- * phone to storage: get an upload link from the API, PUT the file there, then record it.
+ * Adds a photo to a plant in three steps, so the file goes straight from the phone to storage: get an
+ * upload link from the API, PUT the file there, then record it.
  */
+async function uploadPlantPhoto(
+  api: ReturnType<typeof useApi>,
+  orgId: number,
+  barcode: string,
+  { photo, caption, takenAt }: { photo: Blob; caption?: string; takenAt?: string },
+): Promise<PhotoDto> {
+  const path = `/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}/photos`
+  const link = await api<{ uploadUrl: string; contentType: string; key: string }>(`${path}/upload-link`, {
+    method: 'POST',
+    json: { contentType: 'image/jpeg' },
+  })
+  // Straight to storage: no API session token here, the link itself grants the upload.
+  const upload = await fetch(link.uploadUrl, { method: 'PUT', headers: { 'Content-Type': link.contentType }, body: photo })
+  if (!upload.ok) throw new Error(`The photo didn't upload (${upload.status}). Try again.`)
+  return api<PhotoDto>(path, { method: 'POST', json: { key: link.key, caption, takenAt } })
+}
+
+/** Adding and deleting one plant's photos (its plant page). */
 export function usePlantPhotoActions(orgId: number, barcode: string) {
   const api = useApi()
   const client = useQueryClient()
-  const path = `/orgs/${orgId}/plants/by-barcode/${encodeURIComponent(barcode)}/photos`
   const onSuccess = () => client.invalidateQueries({ queryKey: inventoryKeys.plantPhotos(orgId, barcode) })
   return {
     add: useMutation({
-      mutationFn: async ({ photo, caption, takenAt }: { photo: Blob; caption?: string; takenAt?: string }) => {
-        const link = await api<{ uploadUrl: string; contentType: string; key: string }>(`${path}/upload-link`, {
-          method: 'POST',
-          json: { contentType: 'image/jpeg' },
-        })
-        // Straight to storage: no API session token here, the link itself grants the upload.
-        const upload = await fetch(link.uploadUrl, { method: 'PUT', headers: { 'Content-Type': link.contentType }, body: photo })
-        if (!upload.ok) throw new Error(`The photo didn't upload (${upload.status}). Try again.`)
-        return api<PhotoDto>(path, { method: 'POST', json: { key: link.key, caption, takenAt } })
-      },
+      mutationFn: (photo: { photo: Blob; caption?: string; takenAt?: string }) => uploadPlantPhoto(api, orgId, barcode, photo),
       onSuccess,
     }),
     remove: useMutation({
@@ -460,6 +468,35 @@ export function usePlantPhotoActions(orgId: number, barcode: string) {
       onSuccess,
     }),
   }
+}
+
+/**
+ * Photos for any of the nursery's plants, for the photo session, which moves from plant to plant and
+ * keeps uploads going in the background (plain promises rather than one mutation per plant).
+ */
+export function usePlantPhotoSession(orgId: number) {
+  const api = useApi()
+  const client = useQueryClient()
+  return useMemo(() => {
+    const refresh = (barcode: string) => client.invalidateQueries({ queryKey: inventoryKeys.plantPhotos(orgId, barcode) })
+    return {
+      upload: async (barcode: string, photo: Blob, takenAt: string) => {
+        const saved = await uploadPlantPhoto(api, orgId, barcode, { photo, takenAt })
+        void refresh(barcode)
+        return saved
+      },
+      /** An empty caption clears it. */
+      setCaption: async (barcode: string, photoId: number, caption: string) => {
+        const saved = await api<PhotoDto>(`/orgs/${orgId}/photos/${photoId}`, { method: 'PATCH', json: { caption } })
+        void refresh(barcode)
+        return saved
+      },
+      remove: async (barcode: string, photoId: number) => {
+        await api<void>(`/orgs/${orgId}/photos/${photoId}`, { method: 'DELETE' })
+        void refresh(barcode)
+      },
+    }
+  }, [api, client, orgId])
 }
 
 /** Photos of a product's plants that can be its images (only fetched while choosing). */

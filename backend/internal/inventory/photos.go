@@ -67,6 +67,15 @@ func (s *Store) PlantPhotos(ctx context.Context, orgID, plantID int64) (photos [
 	return photos, err
 }
 
+// SetPlantPhotoCaption changes a photo's caption (nil clears it), or fails with ErrNotFound.
+func (s *Store) SetPlantPhotoCaption(ctx context.Context, orgID, photoID int64, caption *string) (photo dbgen.PlantPhoto, err error) {
+	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		photo, err = q.SetPlantPhotoCaption(ctx, dbgen.SetPlantPhotoCaptionParams{OrganizationID: orgID, ID: photoID, Caption: caption})
+		return translate(err)
+	})
+	return photo, err
+}
+
 // DeletePlantPhoto removes a photo's record and returns where its file is, or fails with ErrNotFound.
 func (s *Store) DeletePlantPhoto(ctx context.Context, orgID, photoID int64) (storageKey string, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
@@ -220,6 +229,41 @@ func (h handler) listPlantPhotos(c *gin.Context) {
 		response[i] = photoResponse{ID: p.ID, ViewURL: viewURL, TakenAt: p.TakenAt, Caption: p.Caption, UploadedBy: p.UploadedByName}
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+type captionRequest struct {
+	Caption *string `json:"caption"` // null or blank clears it
+}
+
+// updatePlantPhoto handles PATCH /photos/:photoId: a caption added or changed after the photo was
+// taken (the photo session captions each photo once it's uploading).
+func (h handler) updatePlantPhoto(c *gin.Context) {
+	photoID, ok := web.IDParam(c, "photoId")
+	if !ok {
+		web.Fail(c, http.StatusNotFound, "photo not found")
+		return
+	}
+	var req captionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		web.Fail(c, http.StatusBadRequest, "request body must be JSON")
+		return
+	}
+	ctx := c.Request.Context()
+	photo, err := h.store.SetPlantPhotoCaption(ctx, organization.CurrentAccess(c).OrganizationID, photoID, trimmed(req.Caption))
+	switch {
+	case errors.Is(err, ErrNotFound):
+		web.Fail(c, http.StatusNotFound, "photo not found")
+		return
+	case err != nil:
+		web.FailInternal(c, err)
+		return
+	}
+	viewURL, err := h.photos.ViewURL(ctx, photo.StorageKey)
+	if err != nil {
+		web.FailInternal(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, photoResponse{ID: photo.ID, ViewURL: viewURL, TakenAt: photo.TakenAt, Caption: photo.Caption, UploadedBy: photo.UploadedByName})
 }
 
 func (h handler) deletePlantPhoto(c *gin.Context) {

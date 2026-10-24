@@ -14,3 +14,15 @@ export async function shrinkPhoto(file: File, maxSide = 2000, quality = 0.85): P
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't read that photo."))), 'image/jpeg', quality),
   )
 }
+
+/** The camera's current picture as a photo, shrunk the same way as shrinkPhoto. */
+export function photoFromVideo(video: HTMLVideoElement, maxSide = 2000, quality = 0.85): Promise<Blob> {
+  const scale = Math.min(1, maxSide / Math.max(video.videoWidth, video.videoHeight))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(video.videoWidth * scale)
+  canvas.height = Math.round(video.videoHeight * scale)
+  canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't take the photo."))), 'image/jpeg', quality),
+  )
+}

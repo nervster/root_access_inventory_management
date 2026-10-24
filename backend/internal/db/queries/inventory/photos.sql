@@ -13,6 +13,12 @@ SELECT * FROM plant_photos
 WHERE organization_id = @organization_id AND plant_id = @plant_id
 ORDER BY taken_at DESC, id DESC;
 
+-- name: SetPlantPhotoCaption :one
+-- NULL clears it. For captions added after the photo, e.g. during a photo session.
+UPDATE plant_photos SET caption = sqlc.narg(caption)
+WHERE organization_id = @organization_id AND id = @id
+RETURNING *;
+
 -- name: DeletePlantPhoto :one
 DELETE FROM plant_photos
 WHERE organization_id = @organization_id AND id = @id
