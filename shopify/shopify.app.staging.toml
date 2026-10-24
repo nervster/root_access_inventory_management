@@ -35,3 +35,11 @@ use_legacy_install_flow = false
 redirect_urls = [
   "https://stock-staging.rootaccesshtx.com/api/shopify/callback"
 ]
+
+# The storefront calls Plant Stock through the store's own domain: /apps/plant-stock/… is forwarded,
+# signed by Shopify, to the API's /api/shopify/proxy/… (backend/internal/shopify/proxy.go), e.g. the
+# cart's GET /apps/plant-stock/pickup-slots.
+[app_proxy]
+url = "https://stock-staging.rootaccesshtx.com/api/shopify/proxy"
+subpath = "plant-stock"
+prefix = "apps"

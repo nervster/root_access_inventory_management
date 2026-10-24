@@ -147,9 +147,10 @@ func newRouter(d dependencies) *gin.Engine {
 	organization.Routes(signedIn, d.orgs, d.deliverer)
 	organization.PlatformRoutes(signedIn, d.orgs, d.deliverer, d.platformAdmins)
 	inventory.Routes(signedIn, d.orgs, d.inventory, d.photos)
-	shopify.Routes(api, signedIn, d.orgs, d.shopify, d.appURL)
+	pickupStore := pickup.NewStore(d.conn)
+	shopify.Routes(api, signedIn, d.orgs, d.shopify, pickupStore, d.appURL)
 	orders.Routes(signedIn, d.orgs, orders.NewStore(d.conn))
-	pickup.Routes(signedIn, d.orgs, pickup.NewStore(d.conn))
+	pickup.Routes(signedIn, d.orgs, pickupStore)
 
 	return router
 }

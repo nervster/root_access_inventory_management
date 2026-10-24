@@ -3,6 +3,7 @@ package shopify
 import (
 	"bytes"
 	"encoding/base64"
+	"net/url"
 	"testing"
 )
 
@@ -66,5 +67,18 @@ func TestSealer(t *testing.T) {
 		if _, err := NewSealer(key); err == nil {
 			t.Errorf("NewSealer(%q) succeeded, want an error", key)
 		}
+	}
+}
+
+// Shopify's worked example (shopify.dev, Authenticate app proxies): the text it signs for these
+// parameters. (Its example signature can't be checked: the docs replaced the store's name with {shop}.)
+func TestProxyMessageMatchesShopifysExample(t *testing.T) {
+	query, err := url.ParseQuery("extra=1&extra=2&shop={shop}.myshopify.com&logged_in_customer_id=&path_prefix=%2Fapps%2Fawesome_reviews&timestamp=1317327555&signature=e072b6d7e6622d85912a5214b860d3100dc1e73d9bc29f43796ac8c9ff8093cb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "extra=1,2logged_in_customer_id=path_prefix=/apps/awesome_reviewsshop={shop}.myshopify.comtimestamp=1317327555"
+	if got := proxyMessage(query); got != want {
+		t.Errorf("message = %q, want %q", got, want)
 	}
 }

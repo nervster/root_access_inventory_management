@@ -101,13 +101,90 @@ func (s *Store) SetLimits(ctx context.Context, orgID int64, leadHours, bookingDa
 	})
 }
 
-// Closures lists the calendar's closures from one date to another, inclusive.
-func (s *Store) Closures(ctx context.Context, orgID int64, from, to time.Time) (closures []dbgen.PickupClosure, err error) {
+// Day is one date's windows, as the calendar shows them.
+type Day struct {
+	Date    time.Time
+	Closure *dbgen.PickupClosure // the whole day's, if it's closed
+	Slots   []Slot
+}
+
+// Slot is one window on one date.
+type Slot struct {
+	Window
+	Start, End time.Time
+	Status     string               // StatusOpen, StatusClosed, StatusTooSoon, StatusTooFar
+	Closure    *dbgen.PickupClosure // this window's own closure on this date, if any
+}
+
+// Calendar returns the nursery's rules and each day's windows from one date to another (inclusive),
+// with whether each can be booked at now.
+func (s *Store) Calendar(ctx context.Context, orgID int64, from, to, now time.Time) (rules Rules, days []Day, err error) {
 	err = db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
-		closures, err = q.ListPickupClosures(ctx, dbgen.ListPickupClosuresParams{OrganizationID: orgID, FromDate: from, ToDate: to})
-		return err
+		if rules, err = loadRules(ctx, q, orgID); err != nil {
+			return err
+		}
+		closures, err := q.ListPickupClosures(ctx, dbgen.ListPickupClosuresParams{OrganizationID: orgID, FromDate: from, ToDate: to})
+		if err != nil {
+			return err
+		}
+		days = buildDays(rules, closures, from, to, now)
+		return nil
 	})
-	return closures, err
+	return rules, days, err
+}
+
+// OpenSlots returns the slots customers can book now: every open one from today through the booking
+// range. Every date in the range is listed, those with nothing open too, so a date picker can mark
+// them as full.
+func (s *Store) OpenSlots(ctx context.Context, orgID int64, now time.Time) (Rules, []Day, error) {
+	rules, err := s.Rules(ctx, orgID)
+	if err != nil {
+		return Rules{}, nil, err
+	}
+	today := rules.Today(now)
+	rules, days, err := s.Calendar(ctx, orgID, today, today.AddDate(0, 0, rules.BookingDays-1), now)
+	if err != nil {
+		return Rules{}, nil, err
+	}
+	for i, day := range days {
+		open := []Slot{}
+		for _, slot := range day.Slots {
+			if slot.Status == StatusOpen {
+				open = append(open, slot)
+			}
+		}
+		days[i].Slots = open
+	}
+	return rules, days, nil
+}
+
+func buildDays(rules Rules, closures []dbgen.PickupClosure, from, to, now time.Time) []Day {
+	type key struct {
+		date     string
+		windowID int64 // 0: the whole day
+	}
+	closed := map[key]*dbgen.PickupClosure{}
+	for i, cl := range closures {
+		k := key{date: cl.Date.Format(time.DateOnly)}
+		if cl.WindowID != nil {
+			k.windowID = *cl.WindowID
+		}
+		closed[k] = &closures[i]
+	}
+	days := []Day{}
+	for date := from; !date.After(to); date = date.AddDate(0, 0, 1) {
+		day := Day{Date: date, Closure: closed[key{date: date.Format(time.DateOnly)}], Slots: []Slot{}}
+		for _, w := range rules.Windows {
+			own := closed[key{date: date.Format(time.DateOnly), windowID: w.ID}]
+			start, end := rules.Bounds(date, w)
+			day.Slots = append(day.Slots, Slot{
+				Window: w, Start: start, End: end, Closure: own,
+				Status: rules.Status(date, w, day.Closure != nil || own != nil, now),
+			})
+		}
+		days = append(days, day)
+	}
+	return days
 }
 
 // Close closes a date (windowID nil) or one window on it; closing it again only updates the reason.
