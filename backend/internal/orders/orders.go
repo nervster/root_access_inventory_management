@@ -147,6 +147,8 @@ type orderResponse struct {
 	PickupNote               *string        `json:"pickupNote"`      // the shopper's note, if any
 	PickupProblem            *string        `json:"pickupProblem"`   // why its booking needs staff (a clash, no valid slot)
 	PickupChangedAt          *time.Time     `json:"pickupChangedAt"` // when the customer last changed the time (My pickup page)
+	ReadyBy                  *time.Time     `json:"readyBy"`         // when it must be in the locker: its booked window's start
+	LockerCode               *string        `json:"lockerCode"`      // the locker PIN for it; only to those who prepare orders
 	Items                    []itemResponse `json:"items"`
 }
 
@@ -282,6 +284,8 @@ func (h handler) list(c *gin.Context) {
 		web.FailInternal(c, err)
 		return
 	}
+	// The locker code opens the locker: only for those who load it.
+	seesCode := organization.Has(organization.CurrentAccess(c).Role, organization.OrdersPrepare)
 	response := make([]orderResponse, len(orders))
 	for i, o := range orders {
 		response[i] = orderResponse{
@@ -289,11 +293,15 @@ func (h handler) list(c *gin.Context) {
 			ShopifyFulfillmentStatus: o.ShopifyFulfillmentStatus, AdminURL: adminOrderURL(o.Shop, o.ShopifyOrderID),
 			ReadyAt: o.ReadyAt, ReadyByName: o.ReadyByName, PickedUpAt: o.PickedUpAt, PickedUpByName: o.PickedUpByName,
 			PickupWindow: o.PickupWindow, PickupNote: o.PickupNote, PickupProblem: o.PickupProblem, PickupChangedAt: o.PickupChangedAt,
-			Items: make([]itemResponse, len(o.Items)),
+			ReadyBy: o.ReadyBy,
+			Items:   make([]itemResponse, len(o.Items)),
 		}
 		if o.PickupDate != nil {
 			date := o.PickupDate.Format(time.DateOnly)
 			response[i].PickupDate = &date
+		}
+		if seesCode {
+			response[i].LockerCode = &o.LockerCode
 		}
 		for j, item := range o.Items {
 			response[i].Items[j] = itemResponse{

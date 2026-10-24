@@ -101,12 +101,17 @@ SELECT * FROM orders
 WHERE organization_id = @organization_id AND id = @id;
 
 -- name: ListOrders :many
-SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status,
-       ready_at, ready_by_name, picked_up_at, picked_up_by_name,
-       pickup_date, pickup_window, pickup_note, pickup_problem, pickup_changed_at
-FROM orders
-WHERE organization_id = @organization_id AND status = @status
-ORDER BY placed_at DESC, id DESC
+-- Orders still to collect come in the order staff work through them: those with no booked slot first
+-- (they need sorting out), then by ready by (the start of the booked window). The rest, newest first.
+SELECT o.id, o.shop, o.shopify_order_id, o.name, o.status, o.placed_at, o.cancelled_at, o.shopify_fulfillment_status,
+       o.ready_at, o.ready_by_name, o.picked_up_at, o.picked_up_by_name,
+       o.pickup_date, o.pickup_window, o.pickup_note, o.pickup_problem, o.pickup_changed_at, o.locker_code,
+       b.starts_at AS ready_by
+FROM orders o
+LEFT JOIN pickup_bookings b ON b.organization_id = o.organization_id AND b.order_id = o.id AND b.status = 'booked'
+WHERE o.organization_id = @organization_id AND o.status = @status
+ORDER BY CASE WHEN o.status IN ('open', 'ready_for_pickup') THEN b.starts_at END ASC NULLS FIRST,
+         o.placed_at DESC, o.id DESC
 LIMIT 200;
 
 -- name: ListOrderItems :many

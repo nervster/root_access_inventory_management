@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
 import { useCheckOrders, useMembership, useOrderActions, useOrders, useOrdersStatus, usePickupCalendar } from '../../api/hooks'
 import { can } from '../../api/roles'
@@ -124,6 +124,35 @@ const EMPTY: Record<OrderStatus, string> = {
 }
 
 /** When the customer collects it, as booked from the cart; and anything about the booking staff must sort out. */
+const dueSoonMs = 2 * 60 * 60 * 1000
+
+/** The time now, updated each minute, so "due soon" and "overdue" move on their own. */
+function useNow() {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
+  return now
+}
+
+/** An order still being prepared is due soon within 2 hours of its ready by, and overdue from then. */
+function ReadyBy({ order }: { order: OrderDto }) {
+  const now = useNow()
+  if (!order.readyBy || (order.status !== 'open' && order.status !== 'ready_for_pickup')) return null
+  const due = new Date(order.readyBy).getTime()
+  const when = new Date(order.readyBy).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return (
+    <p className="flex flex-wrap items-center gap-2">
+      <span>
+        <span className="font-medium">Ready by:</span> {when}
+      </span>
+      {order.status === 'open' && now >= due && <Badge tone="red">Overdue</Badge>}
+      {order.status === 'open' && now < due && due - now <= dueSoonMs && <Badge tone="amber">Due soon</Badge>}
+    </p>
+  )
+}
+
 function OrderPickup({ order }: { order: OrderDto }) {
   if (!order.pickupDate && !order.pickupWindow && !order.pickupProblem) return null
   // Changed after staff put it in the locker: the plants may need moving until the new time.
@@ -136,6 +165,13 @@ function OrderPickup({ order }: { order: OrderDto }) {
       {(date || order.pickupWindow) && (
         <p>
           <span className="font-medium">Pickup:</span> {[date, order.pickupWindow].filter(Boolean).join(', ')}
+        </p>
+      )}
+      <ReadyBy order={order} />
+      {order.lockerCode && (order.status === 'open' || order.status === 'ready_for_pickup') && (
+        <p>
+          <span className="font-medium">Locker code:</span>{' '}
+          <span className="rounded-md bg-stone-100 px-2 py-0.5 font-mono text-base font-bold tracking-widest dark:bg-stone-800">{order.lockerCode}</span>
         </p>
       )}
       {order.pickupChangedAt && (
