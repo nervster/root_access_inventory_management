@@ -153,6 +153,13 @@ newest backup restores (into a throwaway database) with `deploy/restore-db.sh st
 `deploy/restore-db.sh staging --replace [backup]`. On the VM: `sudo systemctl start plant-stock-backup` backs up now,
 `journalctl -u plant-stock-backup` shows how the last ones went.
 
+Monitoring: `deploy/setup-monitoring.sh <site> you@example.com` (once per site) sets up a Google Cloud uptime check
+on `https://<site>/api/health` every 5 minutes, and an alert emailing you when it fails for 10 minutes. A failed
+nightly backup emails `ALERT_EMAIL` (set it in `deploy/.env.<site>`) through the site's SMTP settings
+([deploy/backup-failed.sh](deploy/backup-failed.sh)). Production deploys like staging, on each merge into `main`
+([.github/workflows/deploy-production.yml](.github/workflows/deploy-production.yml)), once
+`deploy/setup-github-deploy.sh production` has been run.
+
 Shopify app settings (scopes, URLs, webhook subscriptions) live in `shopify/shopify.app.staging.toml`. Change them
 there, then `cd shopify && npm install && npm run deploy:staging`: it shows what changes and, once you confirm,
 releases a new version of the "Plant Stock Staging" app. Don't run `shopify app config link` on an existing file:

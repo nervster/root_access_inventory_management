@@ -3,6 +3,8 @@
 Description=Plant Stock: back up the database to Cloud Storage
 Requires=docker.service
 After=docker.service
+# A failed backup emails ALERT_EMAIL (backup-failed.sh).
+OnFailure=plant-stock-backup-failed.service
 
 [Service]
 Type=oneshot
