@@ -210,7 +210,10 @@ Every successful `my-pickup` response has the order like this:
   "canCancel": true,
   "cancelUntil": null,
   "pickup": { "date": "2026-10-27", "windowId": 12, "window": "Morning",
-              "start": "2026-10-27T08:00:00-05:00", "end": "2026-10-27T16:00:00-05:00" }
+              "start": "2026-10-27T08:00:00-05:00", "end": "2026-10-27T16:00:00-05:00" },
+  "items": [{ "title": "Monstera Thai Constellation", "variant": "6\" pot", "quantity": 1, "totalCents": 8500 }],
+  "amounts": { "currency": "USD", "subtotalCents": 11500, "discountCents": 1000, "taxCents": 866,
+               "totalCents": 11366, "refundedCents": 0 }
 }
 ```
 - `status`: `open` (being prepared), `ready_for_pickup` (in the locker), `picked_up`, or `cancelled`.
@@ -220,7 +223,18 @@ Every successful `my-pickup` response has the order like this:
   can say "You can cancel until 10:00 AM"; `null` while it's being prepared, or when it can't be cancelled.
 - Show each button only when its flag is `true`.
 - `pickup`: the booked slot, or `null` if the order has none (then staff are sorting it out; say so).
-- Nothing about the customer (no name, email or note) is ever returned.
+- `items`: one per line of the order. `title` is the product's title; `variant` the variant's title, or `null`
+  for a product's default variant; `totalCents` the line's price after all its discounts (Shopify's
+  `discountedTotalSet` with code discounts).
+- `amounts`: the order's money in the shop's currency, as integer cents, from Shopify at that moment:
+  `subtotalCents` is **before** discounts (Shopify's own subtotal is after them; this way subtotal − discount
+  + tax = total on a pickup order), `discountCents` (`totalDiscountsSet`), `taxCents` (`totalTaxSet`),
+  `totalCents` what was charged (`totalPriceSet`), and `refundedCents` (`totalRefundedSet`: after a cancel,
+  the refund).
+- Show the items, then subtotal, discount (only if > 0), tax, total, and refunded (only if > 0). `items` and
+  `amounts` are left out when Shopify couldn't be asked; hide that section then.
+- Nothing about the customer (no name, email, address or note) is ever returned: items and amounts are
+  the order's details.
 
 ## Errors
 Same shape as the cart's: `{ "error": "<code>", "message": "<sentence you can show>" }`.
