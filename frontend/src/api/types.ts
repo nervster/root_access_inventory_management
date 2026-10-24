@@ -505,8 +505,15 @@ export interface PickupSettingsDto {
   windows: PickupWindowDto[]
 }
 
-/** open: can be booked. closed: closed on the calendar. too_soon: starts within the lead time (or has started). too_far: past the booking range. */
-export type PickupSlotStatus = 'open' | 'closed' | 'too_soon' | 'too_far'
+/** open: can be booked. closed: closed on the calendar. taken: every locker is held or booked. too_soon: starts within the lead time (or has started). too_far: past the booking range. */
+export type PickupSlotStatus = 'open' | 'closed' | 'taken' | 'too_soon' | 'too_far'
+
+/** A hold (a shopper's cart, for 30 minutes while they pay) or a booking (an order). */
+export interface PickupBookingDto {
+  status: 'held' | 'booked'
+  /** When a hold runs out. */
+  expiresAt: string
+}
 
 export interface PickupClosureDto {
   reason: string | null
@@ -522,6 +529,7 @@ export interface PickupSlotDto {
   status: PickupSlotStatus
   /** This window's own closure on this date (a whole-day closure is on the day). */
   closure: PickupClosureDto | null
+  bookings: PickupBookingDto[]
 }
 
 export interface PickupDayDto {

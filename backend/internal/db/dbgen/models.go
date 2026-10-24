@@ -96,6 +96,51 @@ func (ns NullOrganizationStatus) Value() (driver.Value, error) {
 	return string(ns.OrganizationStatus), nil
 }
 
+type PickupBookingStatus string
+
+const (
+	PickupBookingStatusHeld      PickupBookingStatus = "held"
+	PickupBookingStatusBooked    PickupBookingStatus = "booked"
+	PickupBookingStatusExpired   PickupBookingStatus = "expired"
+	PickupBookingStatusReleased  PickupBookingStatus = "released"
+	PickupBookingStatusCancelled PickupBookingStatus = "cancelled"
+)
+
+func (e *PickupBookingStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PickupBookingStatus(s)
+	case string:
+		*e = PickupBookingStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PickupBookingStatus: %T", src)
+	}
+	return nil
+}
+
+type NullPickupBookingStatus struct {
+	PickupBookingStatus PickupBookingStatus
+	Valid               bool // Valid is true if PickupBookingStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPickupBookingStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.PickupBookingStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PickupBookingStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPickupBookingStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PickupBookingStatus), nil
+}
+
 type PlantEventType string
 
 const (
@@ -379,6 +424,24 @@ type Organization struct {
 	CreatedAt time.Time
 }
 
+type PickupBooking struct {
+	ID             int64
+	OrganizationID int64
+	LockerID       int64
+	Date           time.Time
+	WindowID       *int64
+	WindowName     string
+	StartsAt       time.Time
+	EndsAt         time.Time
+	Status         PickupBookingStatus
+	HoldToken      string
+	CartToken      string
+	ClientIp       *string
+	ExpiresAt      time.Time
+	OrderID        *int64
+	CreatedAt      time.Time
+}
+
 type PickupClosure struct {
 	ID             int64
 	OrganizationID int64
@@ -386,6 +449,13 @@ type PickupClosure struct {
 	WindowID       *int64
 	Reason         *string
 	ClosedByName   *string
+	CreatedAt      time.Time
+}
+
+type PickupLocker struct {
+	ID             int64
+	OrganizationID int64
+	Name           string
 	CreatedAt      time.Time
 }
 

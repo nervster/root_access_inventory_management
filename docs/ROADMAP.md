@@ -64,7 +64,7 @@ online. Root Access HTX is the first nursery.
 - [ ] Pickup slot on the order: the cart's `Pickup date`, `Pickup window`, hold ID, and optional `Pickup note` are stored with the imported order
 - [ ] Slot rules: windows per day, the 8-hour lead time, the 30-day limit, lockers
 - [ ] Pickup calendar (one per nursery), open by default: set the usual windows once, then close exceptions, a whole day or a single window; each customer pickup shows on its date and window; open a booking to move it to another slot. What the cart can book comes from this calendar
-- [ ] Bookings and holds, with a database rule of at most one live hold or booking per locker slot (so two requests at the same moment can't both win)
+- [x] Bookings and holds, with a database rule of at most one live hold or booking per locker slot (so two requests at the same moment can't both win); holds run 30 minutes, one per cart, 3 per visitor; shown on the Pickup calendar
 - [ ] App Proxy in `shopify/shopify.app.<site>.toml`, with Shopify's signature checked on every request
 - [ ] `GET pickup-slots`: every free slot for the next 30 days in one response, by date, in Houston time; `POST pickup-holds`: hold a slot (or say it was just taken), refresh, release; a refresh at Checkout re-checks the 8-hour lead time
 - [ ] Turn holds into bookings when orders are imported; flag clashes and orders with no valid slot

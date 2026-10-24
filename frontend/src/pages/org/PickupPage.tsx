@@ -5,10 +5,11 @@ import { can } from '../../api/roles'
 import { Permissions, type PickupDayDto, type PickupSettingsDto, type PickupSlotDto, type PickupSlotStatus, type PickupWindowDto } from '../../api/types'
 import { Badge, Button, Card, ErrorBanner, Field, Input, Loading, Notice, PageHeader, Select } from '../../components/ui'
 
-const statusLabels: Record<PickupSlotStatus, string> = { open: 'Open', closed: 'Closed', too_soon: 'Too soon', too_far: 'Too far ahead' }
+const statusLabels: Record<PickupSlotStatus, string> = { open: 'Open', closed: 'Closed', taken: 'Taken', too_soon: 'Too soon', too_far: 'Too far ahead' }
 const statusDots: Record<PickupSlotStatus, string> = {
   open: 'bg-emerald-500',
   closed: 'bg-red-500',
+  taken: 'bg-amber-500',
   too_soon: 'bg-stone-400 dark:bg-stone-600',
   too_far: 'border border-stone-400 dark:border-stone-600',
 }
@@ -193,8 +194,17 @@ function DayPanel({ orgId, day, today, canClose }: { orgId: number; day: PickupD
                 {slot.closure?.reason && ` · ${slot.closure.reason}`}
                 {slot.closure?.closedBy && ` · closed by ${slot.closure.closedBy}`}
               </p>
+              {slot.bookings.map((b, i) => (
+                <p key={i} className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                  {b.status === 'booked'
+                    ? 'Booked'
+                    : `Held by a shopper until ${new Date(b.expiresAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone })}`}
+                </p>
+              ))}
             </div>
-            <Badge tone={slot.status === 'open' ? 'green' : slot.status === 'closed' ? 'red' : 'neutral'}>{statusLabels[slot.status]}</Badge>
+            <Badge tone={slot.status === 'open' ? 'green' : slot.status === 'closed' ? 'red' : slot.status === 'taken' ? 'amber' : 'neutral'}>
+              {statusLabels[slot.status]}
+            </Badge>
             {editable && !day.closure && (
               <Button
                 variant={slot.closure ? 'secondary' : 'ghost'}
