@@ -36,6 +36,7 @@ func (s *Store) JobHandlers() map[string]jobs.Handler {
 		JobSyncStock:           s.syncStockJob,
 		JobImportOrders:        s.importOrdersJob,
 		orders.JobFulfillOrder: s.fulfillOrderJob,
+		JobUpdateOrderPickup:   s.updateOrderPickupJob,
 		JobCheckDrift:          s.checkDriftJob,
 	}
 }

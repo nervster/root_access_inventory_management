@@ -126,6 +126,8 @@ const EMPTY: Record<OrderStatus, string> = {
 /** When the customer collects it, as booked from the cart; and anything about the booking staff must sort out. */
 function OrderPickup({ order }: { order: OrderDto }) {
   if (!order.pickupDate && !order.pickupWindow && !order.pickupProblem) return null
+  // Changed after staff put it in the locker: the plants may need moving until the new time.
+  const changedWhileReady = order.pickupChangedAt && order.readyAt && order.pickupChangedAt > order.readyAt && order.status === 'ready_for_pickup'
   const date = order.pickupDate
     ? new Date(`${order.pickupDate}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })
     : null
@@ -134,6 +136,12 @@ function OrderPickup({ order }: { order: OrderDto }) {
       {(date || order.pickupWindow) && (
         <p>
           <span className="font-medium">Pickup:</span> {[date, order.pickupWindow].filter(Boolean).join(', ')}
+        </p>
+      )}
+      {order.pickupChangedAt && (
+        <p className={changedWhileReady ? 'rounded-lg bg-amber-50 px-3 py-2 text-amber-900 dark:bg-amber-950 dark:text-amber-200' : 'text-xs text-stone-500'}>
+          The customer changed the pickup time {formatDate(order.pickupChangedAt)}
+          {changedWhileReady && ', after it was ready: check the locker'}.
         </p>
       )}
       {order.pickupNote && <p className="text-stone-600 dark:text-stone-400">“{order.pickupNote}”</p>}

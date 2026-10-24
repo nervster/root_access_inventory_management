@@ -75,7 +75,7 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 }
 
 const getOrder = `-- name: GetOrder :one
-SELECT id, organization_id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status, shopify_updated_at, created_at, ready_at, ready_by_name, picked_up_at, picked_up_by_name, pickup_date, pickup_window, pickup_note, pickup_problem FROM orders
+SELECT id, organization_id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status, shopify_updated_at, created_at, ready_at, ready_by_name, picked_up_at, picked_up_by_name, pickup_date, pickup_window, pickup_note, pickup_problem, pickup_changed_at FROM orders
 WHERE organization_id = $1 AND id = $2
 `
 
@@ -107,6 +107,45 @@ func (q *Queries) GetOrder(ctx context.Context, arg GetOrderParams) (Order, erro
 		&i.PickupWindow,
 		&i.PickupNote,
 		&i.PickupProblem,
+		&i.PickupChangedAt,
+	)
+	return i, err
+}
+
+const getOrderByName = `-- name: GetOrderByName :one
+SELECT id, organization_id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status, shopify_updated_at, created_at, ready_at, ready_by_name, picked_up_at, picked_up_by_name, pickup_date, pickup_window, pickup_note, pickup_problem, pickup_changed_at FROM orders WHERE organization_id = $1 AND name = $2
+`
+
+type GetOrderByNameParams struct {
+	OrganizationID int64
+	Name           string
+}
+
+// For the store's My pickup page: the customer types the order number ("#1042").
+func (q *Queries) GetOrderByName(ctx context.Context, arg GetOrderByNameParams) (Order, error) {
+	row := q.db.QueryRow(ctx, getOrderByName, arg.OrganizationID, arg.Name)
+	var i Order
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.Shop,
+		&i.ShopifyOrderID,
+		&i.Name,
+		&i.Status,
+		&i.PlacedAt,
+		&i.CancelledAt,
+		&i.ShopifyFulfillmentStatus,
+		&i.ShopifyUpdatedAt,
+		&i.CreatedAt,
+		&i.ReadyAt,
+		&i.ReadyByName,
+		&i.PickedUpAt,
+		&i.PickedUpByName,
+		&i.PickupDate,
+		&i.PickupWindow,
+		&i.PickupNote,
+		&i.PickupProblem,
+		&i.PickupChangedAt,
 	)
 	return i, err
 }
@@ -256,7 +295,7 @@ func (q *Queries) ListOrderItems(ctx context.Context, arg ListOrderItemsParams) 
 const listOrders = `-- name: ListOrders :many
 SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status,
        ready_at, ready_by_name, picked_up_at, picked_up_by_name,
-       pickup_date, pickup_window, pickup_note, pickup_problem
+       pickup_date, pickup_window, pickup_note, pickup_problem, pickup_changed_at
 FROM orders
 WHERE organization_id = $1 AND status = $2
 ORDER BY placed_at DESC, id DESC
@@ -285,6 +324,7 @@ type ListOrdersRow struct {
 	PickupWindow             *string
 	PickupNote               *string
 	PickupProblem            *string
+	PickupChangedAt          *time.Time
 }
 
 func (q *Queries) ListOrders(ctx context.Context, arg ListOrdersParams) ([]ListOrdersRow, error) {
@@ -313,6 +353,7 @@ func (q *Queries) ListOrders(ctx context.Context, arg ListOrdersParams) ([]ListO
 			&i.PickupWindow,
 			&i.PickupNote,
 			&i.PickupProblem,
+			&i.PickupChangedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -518,6 +559,32 @@ func (q *Queries) SetOrderPickup(ctx context.Context, arg SetOrderPickupParams) 
 		arg.PickupWindow,
 		arg.PickupNote,
 		arg.PickupProblem,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
+const setOrderPickupChanged = `-- name: SetOrderPickupChanged :exec
+UPDATE orders
+SET pickup_date = $1, pickup_window = $2, pickup_problem = NULL, pickup_changed_at = $3
+WHERE organization_id = $4 AND id = $5
+`
+
+type SetOrderPickupChangedParams struct {
+	PickupDate     *time.Time
+	PickupWindow   *string
+	ChangedAt      *time.Time
+	OrganizationID int64
+	ID             int64
+}
+
+// The customer moved the pickup to another slot.
+func (q *Queries) SetOrderPickupChanged(ctx context.Context, arg SetOrderPickupChangedParams) error {
+	_, err := q.db.Exec(ctx, setOrderPickupChanged,
+		arg.PickupDate,
+		arg.PickupWindow,
+		arg.ChangedAt,
 		arg.OrganizationID,
 		arg.ID,
 	)

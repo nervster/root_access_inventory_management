@@ -53,6 +53,9 @@ type fakeShopify struct {
 	returns     map[string][]map[string]any // returns by order ID, as the Admin API returns them
 	refunds     map[string][]map[string]any // refunds by order ID
 
+	emailWithheld bool   // when set, order emails come back withheld, as for an app without the Email field
+	cancelRefusal string // when set, orderCancel refuses with this message
+
 	stocked     map[string]bool // "item@location" pairs an SKU is stocked at
 	onHand      map[string]int  // by "item@location"
 	activations int

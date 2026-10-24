@@ -227,16 +227,8 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 		}
 		switch {
 		case order.CancelledAt != nil:
-			released, err := q.ReleaseOrder(ctx, dbgen.ReleaseOrderParams{OrganizationID: orgID, OrderID: existing.ID})
-			if err != nil {
-				return err
-			}
-			if err := pickup.CancelOrderBooking(ctx, q, orgID, existing.ID); err != nil {
-				return err
-			}
-			slog.Info("order cancelled; plants back on sale", "organization", orgID, "order", order.Name, "plants", len(released))
 			status = "cancelled"
-			return q.SetOrderStatus(ctx, dbgen.SetOrderStatusParams{OrganizationID: orgID, ID: existing.ID, Status: "cancelled"})
+			return cancelInPlantStock(ctx, q, orgID, existing.ID, order.Name)
 		case orderHandedOver(order.DisplayFulfillmentStatus):
 			sold, err := q.SellOrder(ctx, dbgen.SellOrderParams{OrganizationID: orgID, OrderID: existing.ID})
 			if err != nil {
@@ -278,9 +270,17 @@ func savePickup(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, ord
 	if problem != "" {
 		slog.Warn("order's pickup needs staff", "organization", orgID, "order", order.Name, "problem", problem)
 	}
+	// Once booked, the booking is the truth: the customer may have changed the time on the My pickup page
+	// before Shopify's copy (the attributes) was updated.
+	window := nonEmpty(attributes["Pickup window"])
+	if booking, err := q.OrderPickupBooking(ctx, dbgen.OrderPickupBookingParams{OrganizationID: orgID, OrderID: &orderID}); err == nil {
+		chosen.Date, window = &booking.Date, &booking.WindowName
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
 	return q.SetOrderPickup(ctx, dbgen.SetOrderPickupParams{
 		OrganizationID: orgID, ID: orderID, PickupDate: chosen.Date,
-		PickupWindow: nonEmpty(attributes["Pickup window"]), PickupNote: note, PickupProblem: nonEmpty(problem),
+		PickupWindow: window, PickupNote: note, PickupProblem: nonEmpty(problem),
 	})
 }
 
@@ -289,6 +289,20 @@ func nonEmpty(text string) *string {
 		return nil
 	}
 	return &text
+}
+
+// cancelInPlantStock records a cancelled order: its held plants go back on sale and its pickup slot
+// is freed. (Whoever cancelled it: in Shopify, or the customer on the My pickup page.)
+func cancelInPlantStock(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, name string) error {
+	released, err := q.ReleaseOrder(ctx, dbgen.ReleaseOrderParams{OrganizationID: orgID, OrderID: orderID})
+	if err != nil {
+		return err
+	}
+	if err := pickup.CancelOrderBooking(ctx, q, orgID, orderID); err != nil {
+		return err
+	}
+	slog.Info("order cancelled; plants back on sale", "organization", orgID, "order", name, "plants", len(released))
+	return q.SetOrderStatus(ctx, dbgen.SetOrderStatusParams{OrganizationID: orgID, ID: orderID, Status: "cancelled"})
 }
 
 // orderHandedOver reports whether Shopify shows the order as fulfilled (picked up).

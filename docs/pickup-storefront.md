@@ -1,7 +1,7 @@
 # Pickup slots: the storefront contract
 
-How a nursery's Shopify theme (Root Access: `root_access_shopify_theme`) gets pickup slots from Plant Stock and
-books one. Plant Stock owns the slot rules and bookings (see `ROADMAP.md`, Decisions: Pickup slot rules,
+How a nursery's Shopify theme (Root Access: `root_access_shopify_theme`) gets pickup slots from Plant Stock,
+books one, and lets customers change their pickup time or cancel their order afterwards. Plant Stock owns the slot rules and bookings (see `ROADMAP.md`, Decisions: Pickup slot rules,
 Booking from the cart); the theme only shows them and passes the shopper's choice to the order.
 
 Everything goes through the Plant Stock app's **App Proxy**: `/apps/plant-stock/…` on the store's own domain,
@@ -12,8 +12,9 @@ cookies and no identity: Plant Stock knows which store a request came through, n
 | Endpoint | Status |
 |---|---|
 | `GET pickup-slots` | Live on staging |
-| `POST pickup-holds`, `…/refresh`, `…/release` | Built (with `?cartToken` on `GET pickup-slots`); on staging once merged |
-| Hold → booking when the order is imported | Built; on staging once merged |
+| `POST pickup-holds`, `…/refresh`, `…/release` | Live on staging |
+| Hold → booking when the order is imported | Live on staging |
+| `POST my-pickup/lookup`, `my-pickup`, `…/change`, `…/cancel` (customers change or cancel) | Built; on staging once merged (needs `write_orders`: deploy the app config and connect the store again) |
 
 ## Slots, holds, and bookings
 
@@ -165,3 +166,113 @@ Order placed ── (Plant Stock imports it) ──▶ the hold becomes a bookin
 
 If any call can't reach Plant Stock, show "Pickup times are unavailable right now. Please try again
 shortly." and disable Checkout.
+
+---
+
+# After the order: customers change their pickup time or cancel
+
+A **My pickup** page in the theme (e.g. `/pages/my-pickup`) where a customer enters their **order number and
+email**, then sees their pickup time and can **change it** or **cancel the order**.
+
+## Rules
+- **Changing the time**: until the order is picked up (or cancelled), even after staff mark it ready. If it
+  was already ready, the order stays ready and staff see that the time changed (the plants may need moving).
+- **Cancelling**: until the order has been **ready for more than 2 hours** (so while it's being prepared, and
+  for 2 hours after staff mark it ready). After that it can't be cancelled from the page, only moved to
+  another time.
+- **A new time follows the cart's rules**: an open slot from `GET pickup-slots`, at least the lead time
+  (8 hours) away, within the booking range. Plant Stock moves the booking in one step, so the order never
+  goes without a slot, and updates the Shopify order's `Pickup date` and `Pickup window`.
+- **Cancelling refunds the order in full automatically**: Plant Stock cancels it in Shopify with a refund to
+  the original payment, and Shopify sends the customer its order-cancelled email. The plants go back on sale
+  and the slot is freed.
+- Shopify doesn't email the customer about a changed time: the page confirms it, and Shopify's order status
+  page shows the new `Pickup date` and `Pickup window`.
+
+## Proving it's their order
+The customer types the **order number** (`1042` or `#1042`) and the **email** they ordered with. Plant Stock
+asks Shopify for that order's email at that moment and compares (ignoring case and spaces); it never stores
+emails. A wrong number and a wrong email get the **same** answer, so the form can't reveal which emails
+belong to which orders. A visitor gets **10 lookups per 15 minutes**.
+
+A match returns a **key**: proof for the next hour that this visitor looked the order up. Send it with every
+other `my-pickup` request; keep it only in the page (or `sessionStorage`), never in the cart or a cookie.
+When it runs out, requests fail with `expired`: ask for the order number and email again.
+
+## The order, as the page shows it
+Every successful `my-pickup` response has the order like this:
+
+```json
+{
+  "order": "#1042",
+  "status": "open",
+  "canChangeTime": true,
+  "canCancel": true,
+  "cancelUntil": null,
+  "pickup": { "date": "2026-10-27", "windowId": 12, "window": "Morning",
+              "start": "2026-10-27T08:00:00-05:00", "end": "2026-10-27T16:00:00-05:00" }
+}
+```
+- `status`: `open` (being prepared), `ready_for_pickup` (in the locker), `picked_up`, or `cancelled`.
+- `canChangeTime`: whether the time can be changed now (until it's picked up or cancelled).
+- `canCancel`: whether it can be cancelled now (until it's been ready for 2 hours).
+- `cancelUntil`: once the order is ready, when cancelling stops (`2026-10-27T10:00:00-05:00`), so the page
+  can say "You can cancel until 10:00 AM"; `null` while it's being prepared, or when it can't be cancelled.
+- Show each button only when its flag is `true`.
+- `pickup`: the booked slot, or `null` if the order has none (then staff are sorting it out; say so).
+- Nothing about the customer (no name, email or note) is ever returned.
+
+## Errors
+Same shape as the cart's: `{ "error": "<code>", "message": "<sentence you can show>" }`.
+
+| `error` | HTTP | Meaning | What the page does |
+|---|---|---|---|
+| `not_found` | 404 | No order with that number and email | Show the message; let them try again |
+| `too_many_lookups` | 429 | 10 lookups in 15 minutes from this visitor | Show the message; no automatic retry |
+| `expired` | 401 | The key ran out (or isn't valid) | Ask for the order number and email again |
+| `too_late` | 409 | Too late for that: cancelling after 2 hours ready, or anything once picked up or cancelled | Show the message and the order as it is now (in the body's `order`) |
+| `taken`, `too_soon`, `closed`, `too_far` | 409 | The chosen new slot can't be booked (as in the cart) | Reload slots, ask to pick again |
+| `invalid` | 400 | Missing or malformed fields | A bug in the page: log it |
+| (none) | 5xx, network error | Plant Stock or Shopify unavailable | "We can't reach your order right now. Please try again shortly." |
+
+## `POST /apps/plant-stock/my-pickup/lookup`
+```json
+{ "orderNumber": "1042", "email": "Jane@Example.com" }
+```
+`200`: `{ "key": "mp_…", "order": { … } }`. Failures: `not_found`, `too_many_lookups`, `invalid`.
+
+## `POST /apps/plant-stock/my-pickup`
+The order as it is now, e.g. when the page reloads with a saved key.
+```json
+{ "key": "mp_…" }
+```
+`200`: `{ "order": { … } }`. Failures: `expired`.
+
+## `POST /apps/plant-stock/my-pickup/change`
+Move the pickup to another slot. Load the choices with `GET pickup-slots` (no `cartToken`); the order's
+current slot isn't listed there, since it's booked: show it separately as "Current".
+```json
+{ "key": "mp_…", "date": "2026-10-29", "windowId": 13 }
+```
+`200`: `{ "order": { … } }` with the new `pickup`. Choosing the slot it already has changes nothing (`200`).
+Failures: `expired`, `too_late`, `taken`, `too_soon`, `closed`, `too_far`, `invalid`.
+
+## `POST /apps/plant-stock/my-pickup/cancel`
+Cancel the order with a full refund. Ask the customer to confirm first ("Cancel order #1042? You'll be
+refunded in full.").
+```json
+{ "key": "mp_…" }
+```
+`200`: `{ "order": { … } }` with `status: "cancelled"`, `canChangeTime: false` and `canCancel: false`.
+Failures: `expired`, `too_late`.
+
+## The page's flow
+```
+Order number + email ── POST my-pickup/lookup ──▶ 200: key + order   (404: "couldn't find…", try again)
+Shows the pickup; if canChangeTime:
+  Change time ── GET pickup-slots ──▶ pick ── POST my-pickup/change ──▶ 200: new time shown
+                                                                     409: show message (reload slots / show order)
+If canCancel:
+  Cancel order ── confirm ── POST my-pickup/cancel ──▶ 200: "Cancelled; your refund is on its way"
+Page reloaded with a saved key ── POST my-pickup ──▶ order   (401 expired: ask again)
+```

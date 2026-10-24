@@ -105,3 +105,8 @@ RETURNING *;
 -- A cancelled order frees its slot.
 UPDATE pickup_bookings SET status = 'cancelled'
 WHERE organization_id = @organization_id AND order_id = @order_id AND status = 'booked';
+
+-- name: ReleaseOrderPickupBooking :exec
+-- The order moved to another slot: this one is free again.
+UPDATE pickup_bookings SET status = 'released'
+WHERE organization_id = @organization_id AND id = @id AND status = 'booked';

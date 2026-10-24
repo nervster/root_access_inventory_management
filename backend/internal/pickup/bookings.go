@@ -102,3 +102,57 @@ func CancelOrderBooking(ctx context.Context, q *dbgen.Queries, orgID, orderID in
 func slotName(date time.Time, window string) string {
 	return date.Format("Jan 2") + ", " + window
 }
+
+// MoveOrderBooking moves an order's pickup to the window on date, inside the caller's transaction q: the
+// new slot must be bookable by the cart's rules (open, at least the lead time away, within the range),
+// then the old booking is given back and the new one made, together, so the order is never left without
+// a slot. An order with no booking (one with a pickup problem) just gets the new one. Choosing the slot it
+// already has changes nothing. It fails with ErrNotFound (no such window), ErrClosed, ErrTooSoon,
+// ErrTooFar, or ErrTaken.
+func MoveOrderBooking(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, date time.Time, windowID int64, now time.Time) (dbgen.PickupBooking, error) {
+	window, err := checkSlot(ctx, q, orgID, date, windowID, now)
+	if err != nil {
+		return dbgen.PickupBooking{}, err
+	}
+	if err := q.ExpirePickupHolds(ctx, dbgen.ExpirePickupHoldsParams{OrganizationID: orgID, Now: now}); err != nil {
+		return dbgen.PickupBooking{}, err
+	}
+	current, err := q.OrderPickupBooking(ctx, dbgen.OrderPickupBookingParams{OrganizationID: orgID, OrderID: &orderID})
+	switch {
+	case err == nil && current.Date.Equal(date) && current.WindowID != nil && *current.WindowID == windowID:
+		return current, nil
+	case err == nil:
+		if err := q.ReleaseOrderPickupBooking(ctx, dbgen.ReleaseOrderPickupBookingParams{OrganizationID: orgID, ID: current.ID}); err != nil {
+			return dbgen.PickupBooking{}, err
+		}
+	case !errors.Is(err, pgx.ErrNoRows):
+		return dbgen.PickupBooking{}, err
+	}
+
+	if err := ensureLocker(ctx, q, orgID); err != nil {
+		return dbgen.PickupBooking{}, err
+	}
+	lockerID, err := q.FreePickupLocker(ctx, dbgen.FreePickupLockerParams{OrganizationID: orgID, Date: date, WindowID: &windowID, Now: now})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return dbgen.PickupBooking{}, ErrTaken
+	} else if err != nil {
+		return dbgen.PickupBooking{}, err
+	}
+	token, err := newHoldToken()
+	if err != nil {
+		return dbgen.PickupBooking{}, err
+	}
+	rules, err := loadRules(ctx, q, orgID)
+	if err != nil {
+		return dbgen.PickupBooking{}, err
+	}
+	start, end := rules.Bounds(date, window)
+	booking, err := q.CreatePickupBooking(ctx, dbgen.CreatePickupBookingParams{
+		OrganizationID: orgID, LockerID: lockerID, Date: date, WindowID: &windowID, WindowName: window.Name,
+		StartsAt: start, EndsAt: end, HoldToken: token, CartToken: fmt.Sprintf("order:%d", orderID), Now: now, OrderID: &orderID,
+	})
+	if isUniqueViolation(err) { // another cart took it in the same moment
+		return dbgen.PickupBooking{}, ErrTaken
+	}
+	return booking, err
+}

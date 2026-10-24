@@ -135,11 +135,12 @@ type orderResponse struct {
 	ReadyByName              *string        `json:"readyByName"`
 	PickedUpAt               *time.Time     `json:"pickedUpAt"`
 	PickedUpByName           *string        `json:"pickedUpByName"`
-	AdminURL                 string         `json:"adminUrl"`      // the order in the Shopify admin
-	PickupDate               *string        `json:"pickupDate"`    // 2026-10-24, as the cart chose
-	PickupWindow             *string        `json:"pickupWindow"`  // the window's name
-	PickupNote               *string        `json:"pickupNote"`    // the shopper's note, if any
-	PickupProblem            *string        `json:"pickupProblem"` // why its booking needs staff (a clash, no valid slot)
+	AdminURL                 string         `json:"adminUrl"`        // the order in the Shopify admin
+	PickupDate               *string        `json:"pickupDate"`      // 2026-10-24, as the cart chose
+	PickupWindow             *string        `json:"pickupWindow"`    // the window's name
+	PickupNote               *string        `json:"pickupNote"`      // the shopper's note, if any
+	PickupProblem            *string        `json:"pickupProblem"`   // why its booking needs staff (a clash, no valid slot)
+	PickupChangedAt          *time.Time     `json:"pickupChangedAt"` // when the customer last changed the time (My pickup page)
 	Items                    []itemResponse `json:"items"`
 }
 
@@ -206,7 +207,7 @@ func (h handler) list(c *gin.Context) {
 			ID: o.ID, Name: o.Name, Status: o.Status, PlacedAt: o.PlacedAt, CancelledAt: o.CancelledAt,
 			ShopifyFulfillmentStatus: o.ShopifyFulfillmentStatus, AdminURL: adminOrderURL(o.Shop, o.ShopifyOrderID),
 			ReadyAt: o.ReadyAt, ReadyByName: o.ReadyByName, PickedUpAt: o.PickedUpAt, PickedUpByName: o.PickedUpByName,
-			PickupWindow: o.PickupWindow, PickupNote: o.PickupNote, PickupProblem: o.PickupProblem,
+			PickupWindow: o.PickupWindow, PickupNote: o.PickupNote, PickupProblem: o.PickupProblem, PickupChangedAt: o.PickupChangedAt,
 			Items: make([]itemResponse, len(o.Items)),
 		}
 		if o.PickupDate != nil {
