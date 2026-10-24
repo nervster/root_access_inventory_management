@@ -207,6 +207,37 @@ func checkSlot(ctx context.Context, q *dbgen.Queries, orgID int64, date time.Tim
 	return window, nil
 }
 
+// checkSlotForStaff is checkSlot without the lead time and booking range: staff may book a window
+// starting soon, or far ahead, as long as it isn't closed and hasn't ended.
+func checkSlotForStaff(ctx context.Context, q *dbgen.Queries, orgID int64, date time.Time, windowID int64, now time.Time) (Window, error) {
+	rules, err := loadRules(ctx, q, orgID)
+	if err != nil {
+		return Window{}, err
+	}
+	var window Window
+	for _, w := range rules.Windows {
+		if w.ID == windowID {
+			window = w
+		}
+	}
+	if window.ID == 0 {
+		return Window{}, ErrNotFound
+	}
+	closures, err := q.ListPickupClosures(ctx, dbgen.ListPickupClosuresParams{OrganizationID: orgID, FromDate: date, ToDate: date})
+	if err != nil {
+		return Window{}, err
+	}
+	for _, cl := range closures {
+		if cl.WindowID == nil || *cl.WindowID == windowID {
+			return Window{}, ErrClosed
+		}
+	}
+	if _, end := rules.Bounds(date, window); !end.After(now) {
+		return Window{}, ErrTooSoon // it has ended
+	}
+	return window, nil
+}
+
 // ensureLocker gives a nursery its first locker the first time a slot is held. (One locker for now;
 // more lockers mean more slots per window.)
 func ensureLocker(ctx context.Context, q *dbgen.Queries, orgID int64) error {
