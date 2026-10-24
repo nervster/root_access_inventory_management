@@ -21,6 +21,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbtest"
 	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
+	"github.com/nervster/root_access_inventory_management/backend/internal/pickup"
 )
 
 const testShop = "root-access-test.myshopify.com"
@@ -170,7 +171,7 @@ func (s *shopTest) router(as string) *gin.Engine {
 		auth.SetCurrentUser(c, s.users[as], false)
 		c.Next()
 	})
-	Routes(api, signedIn, organization.NewStore(s.db), s.store, "http://localhost:5173")
+	Routes(api, signedIn, organization.NewStore(s.db), s.store, pickup.NewStore(s.db), "http://localhost:5173")
 	return router
 }
 

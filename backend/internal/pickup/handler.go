@@ -229,43 +229,27 @@ func (h handler) calendar(c *gin.Context) {
 		web.Fail(c, http.StatusBadRequest, "from must be on or before to, at most 62 days apart")
 		return
 	}
-	closures, err := h.store.Closures(ctx, orgID, from, to)
+	rules, days, err := h.store.Calendar(ctx, orgID, from, to, now)
 	if err != nil {
 		web.FailInternal(c, err)
 		return
 	}
 
-	type key struct {
-		date     string
-		windowID int64 // 0: the whole day
-	}
-	closed := map[key]dbgen.PickupClosure{}
-	for _, cl := range closures {
-		k := key{date: cl.Date.Format(time.DateOnly)}
-		if cl.WindowID != nil {
-			k.windowID = *cl.WindowID
+	closure := func(cl *dbgen.PickupClosure) *closureResponse {
+		if cl == nil {
+			return nil
 		}
-		closed[k] = cl
+		return &closureResponse{Reason: cl.Reason, ClosedBy: cl.ClosedByName}
 	}
-	closureOf := func(k key) *closureResponse {
-		if cl, ok := closed[k]; ok {
-			return &closureResponse{Reason: cl.Reason, ClosedBy: cl.ClosedByName}
-		}
-		return nil
-	}
-
 	response := calendarResponse{settingsResponse: newSettingsResponse(rules), Today: today.Format(time.DateOnly), Days: []dayResponse{}}
-	for date := from; !date.After(to); date = date.AddDate(0, 0, 1) {
-		day := dayResponse{Date: date.Format(time.DateOnly), Closure: closureOf(key{date: date.Format(time.DateOnly)}), Slots: []slotResponse{}}
-		for _, w := range rules.Windows {
-			own := closureOf(key{date: day.Date, windowID: w.ID})
-			start, end := rules.Bounds(date, w)
-			day.Slots = append(day.Slots, slotResponse{
-				WindowID: w.ID, Name: w.Name, Start: start, End: end,
-				Status: rules.Status(date, w, day.Closure != nil || own != nil, now), Closure: own,
+	for _, day := range days {
+		d := dayResponse{Date: day.Date.Format(time.DateOnly), Closure: closure(day.Closure), Slots: []slotResponse{}}
+		for _, slot := range day.Slots {
+			d.Slots = append(d.Slots, slotResponse{
+				WindowID: slot.ID, Name: slot.Name, Start: slot.Start, End: slot.End, Status: slot.Status, Closure: closure(slot.Closure),
 			})
 		}
-		response.Days = append(response.Days, day)
+		response.Days = append(response.Days, d)
 	}
 	c.JSON(http.StatusOK, response)
 }

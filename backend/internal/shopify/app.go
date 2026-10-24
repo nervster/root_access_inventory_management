@@ -124,6 +124,32 @@ func (a *App) VerifyWebhook(body []byte, signature string) bool {
 	return hmac.Equal(given, mac.Sum(nil))
 }
 
+// VerifyProxy reports whether Shopify signed an App Proxy request (the storefront calling Plant Stock
+// through /apps/plant-stock/…): the signature parameter is a hex HMAC-SHA256 of the other parameters,
+// each "key=value" (several values joined by commas), sorted and concatenated with no separator.
+// https://shopify.dev/docs/apps/build/online-store/app-proxies/authenticate-app-proxies
+func (a *App) VerifyProxy(query url.Values) bool {
+	given, err := hex.DecodeString(query.Get("signature"))
+	if err != nil || len(given) == 0 {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(a.ClientSecret))
+	mac.Write([]byte(proxyMessage(query)))
+	return hmac.Equal(given, mac.Sum(nil))
+}
+
+// proxyMessage is what Shopify signs for an App Proxy request: every parameter but the signature.
+func proxyMessage(query url.Values) string {
+	pairs := make([]string, 0, len(query))
+	for key, values := range query {
+		if key != "signature" {
+			pairs = append(pairs, key+"="+strings.Join(values, ","))
+		}
+	}
+	slices.Sort(pairs)
+	return strings.Join(pairs, "")
+}
+
 func (a *App) sign(query url.Values) []byte {
 	keys := make([]string, 0, len(query))
 	for key := range query {

@@ -15,18 +15,21 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
+	"github.com/nervster/root_access_inventory_management/backend/internal/pickup"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/web"
 )
 
 const stateCookie = "shopify_state"
 const callbackPath = "/api/shopify/callback"
 
-// Routes adds the Shopify routes: the callback to api (Shopify sends the browser there, with no
-// session token) and the Owner's settings to signedIn.
-func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, appURL string) {
-	h := handler{orgs: orgs, store: store, appURL: strings.TrimSuffix(appURL, "/")}
+// Routes adds the Shopify routes: to api, those Shopify calls without a session token (the OAuth
+// callback, webhooks, and the storefront through the App Proxy); to signedIn, the Owner's settings.
+// slots answers the storefront's pickup questions.
+func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, slots *pickup.Store, appURL string) {
+	h := handler{orgs: orgs, store: store, slots: slots, appURL: strings.TrimSuffix(appURL, "/"), now: time.Now}
 	api.GET(strings.TrimPrefix(callbackPath, "/api"), h.callback)
 	api.POST("/shopify/webhooks", h.webhook)
+	proxyRoutes(api, h)
 
 	shopify := signedIn.Group("/orgs/:orgId/shopify",
 		organization.RequireMember(orgs), organization.RequirePermission(organization.IntegrationsManage))
@@ -48,7 +51,9 @@ func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Sto
 type handler struct {
 	orgs   *organization.Store
 	store  *Store
+	slots  *pickup.Store
 	appURL string
+	now    func() time.Time // tests set the clock
 }
 
 type connectionResponse struct {
