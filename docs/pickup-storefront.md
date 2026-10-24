@@ -45,11 +45,13 @@ To stop one visitor holding many slots across carts, Plant Stock allows at most 
 | `Pickup date` | the slot's `date` | `2026-10-24` |
 | `Pickup window` | the slot's `window` (the nursery's name for it) | `Morning` |
 | `Pickup hold` | the hold's `holdId` | `ph_8f3k2…` |
-| `Pickup note` | optional free text from the shopper | `Gate code 1234` |
 
 Save them with `POST /cart/update.js` after the hold succeeds. When the hold is released or replaced, update
-all three pickup attributes together. Orders over 4 plants don't use the locker: no slots, no hold, no
-attributes (in-person pickup instead).
+all three together.
+
+A shopper's note about pickup goes in the cart's own **note** (Shopify's cart note, which becomes the order
+note), not an attribute. Plant Stock reads the order note when it imports the order and shows it to staff with
+the pickup.
 
 ## Errors
 
@@ -140,8 +142,8 @@ and go to checkout only if it succeeds.
 
 ## `POST /apps/plant-stock/pickup-holds/release`
 
-Give the slot back. Call it when the cart is emptied, or switches to in-person pickup (over 4 plants).
-(Picking a different window doesn't need it: holding the new slot releases the old one.)
+Give the slot back. Call it when the cart is emptied. (Picking a different window doesn't need it: holding
+the new slot releases the old one.)
 
 ```json
 { "cartToken": "c1-7a2…", "holdId": "ph_8f3k2…" }
@@ -157,7 +159,7 @@ Shopper picks a window ── POST pickup-holds ──▶ 201: save Pickup date 
                                               409: reload slots, pick again
 Checkout clicked ── POST pickup-holds/refresh ──▶ 200: go to checkout
                                                  409: stay, reload slots, pick again
-Cart emptied / over 4 plants ── POST pickup-holds/release ──▶ clear the attributes
+Cart emptied ── POST pickup-holds/release ──▶ clear the attributes
 Order placed ── (Plant Stock imports it) ──▶ the hold becomes a booking
 ```
 

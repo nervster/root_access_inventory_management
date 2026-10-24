@@ -51,7 +51,7 @@ func (s *Store) QueueOrderImport(ctx context.Context, orgID int64) error {
 const ordersQuery = `query Orders($query: String!, $after: String) {
   orders(first: 50, after: $after, sortKey: UPDATED_AT, query: $query) {
     nodes {
-      id name createdAt updatedAt cancelledAt displayFulfillmentStatus
+      id name createdAt updatedAt cancelledAt displayFulfillmentStatus note
       customAttributes { key value }
       lineItems(first: 100) {
         nodes { id title sku quantity variant { id } originalUnitPriceSet { shopMoney { amount } } }
@@ -68,6 +68,7 @@ type shopifyOrder struct {
 	UpdatedAt                time.Time  `json:"updatedAt"`
 	CancelledAt              *time.Time `json:"cancelledAt"`
 	DisplayFulfillmentStatus string     `json:"displayFulfillmentStatus"`
+	Note                     *string    `json:"note"` // the cart note: the shopper's note about pickup
 	CustomAttributes         []struct {
 		Key   string  `json:"key"`
 		Value *string `json:"value"`
@@ -252,8 +253,9 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 	return status, err
 }
 
-// savePickup books the pickup the order's cart chose (its hold, or the date and window) and records
-// it on the order, with a problem for staff if it couldn't be booked.
+// savePickup books the pickup the order's cart chose (its hold, or the date and window, from the cart
+// attributes) and records it on the order with the order note (the shopper's note), and a problem for
+// staff if it couldn't be booked.
 func savePickup(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, order shopifyOrder) error {
 	attributes := map[string]string{}
 	for _, a := range order.CustomAttributes {
@@ -265,6 +267,10 @@ func savePickup(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, ord
 	if date, err := pickup.ParseDate(attributes["Pickup date"]); err == nil {
 		chosen.Date = &date
 	}
+	var note *string
+	if order.Note != nil {
+		note = nonEmpty(strings.TrimSpace(*order.Note))
+	}
 	problem, err := pickup.BookOrder(ctx, q, orgID, orderID, chosen, time.Now())
 	if err != nil {
 		return err
@@ -274,7 +280,7 @@ func savePickup(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, ord
 	}
 	return q.SetOrderPickup(ctx, dbgen.SetOrderPickupParams{
 		OrganizationID: orgID, ID: orderID, PickupDate: chosen.Date,
-		PickupWindow: nonEmpty(attributes["Pickup window"]), PickupNote: nonEmpty(attributes["Pickup note"]), PickupProblem: nonEmpty(problem),
+		PickupWindow: nonEmpty(attributes["Pickup window"]), PickupNote: note, PickupProblem: nonEmpty(problem),
 	})
 }
 
