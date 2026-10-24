@@ -1,11 +1,11 @@
 import QRCode from 'qrcode'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { useParams } from 'react-router'
 import { useBatch, useMembership } from '../../api/hooks'
 import type { BatchDto, PlantDto } from '../../api/types'
 import { NotFound } from '../../components/Guards'
 import { LabelPrinter } from '../../components/LabelPrinter'
-import { formatReceived } from '../../labelCanvas'
+import { barcodeSizePt, formatReceived, mono, roll, sans, titleLayout } from '../../labelCanvas'
 import { buildXlsx } from '../../labelsExcel'
 import { Button, ErrorBanner, Field, Input, LinkButton, Loading, Select } from '../../components/ui'
 
@@ -79,7 +79,8 @@ export function LabelsPage() {
       <style>{roll ? `@page { size: 50mm 30mm; margin: 0; }` : `@page { size: letter; margin: 0; }`}</style>
 
       <div className="mx-auto flex max-w-[8.5in] flex-wrap items-end gap-3 p-4 print:hidden">
-        <div className="min-w-0 flex-1">
+        {/* Its own row: beside the controls it was squeezed down to a word per line. */}
+        <div className="w-full">
           <h1 className="text-lg font-semibold">
             Labels for {batch.data.batch.code} · {plants.length} plant{plants.length === 1 ? '' : 's'}
           </h1>
@@ -140,7 +141,7 @@ export function LabelsPage() {
               key={plant.id}
               className="mx-auto mb-6 box-border h-[30mm] w-[50mm] overflow-hidden break-after-page border border-dashed border-stone-300 print:mb-0 print:border-0 print:last:break-after-auto"
             >
-              <Label plant={plant} batch={batch.data.batch} roll />
+              <RollLabel plant={plant} batch={batch.data.batch} />
             </section>
           ))
         : pages.map((page, i) => (
@@ -156,32 +157,66 @@ export function LabelsPage() {
   )
 }
 
-/** `roll` sizes the label for a 50 × 30 mm roll: QR code 24 mm square on the left, text on the right. */
-function Label({ plant, batch, roll }: { plant: PlantDto; batch: BatchDto; roll?: boolean }) {
+/** A label in a 3 × 10 Letter sheet: QR code on the left, text on the right. */
+function Label({ plant, batch }: { plant: PlantDto; batch: BatchDto }) {
   return (
-    <div
-      className={
-        roll
-          ? 'm-[1.8mm] box-border flex h-[calc(100%-3.6mm)] items-center gap-[0.8mm] overflow-hidden rounded-[2.5mm] border-[0.35mm] border-black px-[1.2mm]'
-          : 'flex items-center gap-2 overflow-hidden px-2'
-      }
-    >
-      <QR text={plant.barcode} className={roll ? 'size-[22mm] shrink-0' : 'size-[0.8in] shrink-0'} />
+    <div className="flex items-center gap-2 overflow-hidden px-2">
+      <QR text={plant.barcode} className="size-[0.8in] shrink-0" />
       <div className="min-w-0 leading-tight">
-        <p className={`line-clamp-2 break-words font-bold ${roll ? 'text-[7.5pt]' : 'text-[7.5pt]'}`}>
+        <p className="line-clamp-2 break-words text-[7.5pt] font-bold">
           {plant.plantName}
           {plant.variegation && ` ${plant.variegation}`}
         </p>
-        <p className={`font-mono font-bold ${roll ? 'text-[7pt]' : 'text-[11pt]'}`}>{plant.barcode}</p>
-        <p className={`${roll ? 'text-[6pt]' : 'text-[7pt]'} text-stone-600`}>{batch.code}</p>
-        <p className={`${roll ? 'text-[6pt]' : 'text-[7pt]'} text-stone-600`}>Received {formatReceived(batch.receivedOn)}</p>
+        <p className="font-mono text-[11pt] font-bold">{plant.barcode}</p>
+        <p className="text-[7pt] text-stone-600">{batch.code}</p>
+        <p className="text-[7pt] text-stone-600">Received {formatReceived(batch.receivedOn)}</p>
       </div>
     </div>
   )
 }
 
-/** A QR code drawn as SVG squares, so it prints sharp at any size. */
-function QR({ text, className }: { text: string; className?: string }) {
+/**
+ * A 50 × 30 mm roll label, laid out like the Bluetooth one (`roll` and `titleLayout` in labelCanvas): the
+ * plant name across the top, sized to fit on two lines, and below it the QR code with the barcode on
+ * one line, the batch and the date. All black: grey prints speckled on a thermal printer.
+ */
+function RollLabel({ plant, batch }: { plant: PlantDto; batch: BatchDto }) {
+  const title = titleLayout(`${plant.plantName}${plant.variegation ? ` ${plant.variegation}` : ''}`)
+  return (
+    <div
+      className="box-border flex flex-col overflow-hidden border-black text-black"
+      style={{
+        margin: `${roll.inset}mm`,
+        height: `calc(100% - ${2 * roll.inset}mm)`,
+        padding: `${roll.pad}mm`,
+        borderWidth: `${roll.border}mm`,
+        borderRadius: '2.5mm',
+        fontFamily: sans,
+      }}
+    >
+      <p className="font-bold" style={{ fontSize: `${title.sizePt}pt`, lineHeight: roll.titleLineHeight, paddingRight: `${roll.titleRightPad}mm` }}>
+        {title.lines.map((line, i) => (
+          <span key={i} className="block whitespace-nowrap">
+            {line}
+          </span>
+        ))}
+      </p>
+      <div className="flex min-h-0 flex-1 items-center" style={{ gap: `${roll.gap}mm`, marginTop: `${roll.gap}mm` }}>
+        <QR text={plant.barcode} quiet={roll.quiet} className="shrink-0" style={{ width: `${roll.qr}mm`, height: `${roll.qr}mm` }} />
+        <div className="min-w-0 leading-tight" style={{ fontSize: `${roll.smallPt}pt` }}>
+          <p className="whitespace-nowrap font-bold" style={{ fontFamily: mono, fontSize: `${barcodeSizePt(plant.barcode)}pt` }}>
+            {plant.barcode}
+          </p>
+          <p className="whitespace-nowrap">{batch.code}</p>
+          <p className="whitespace-nowrap">Received {formatReceived(batch.receivedOn)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** A QR code drawn as SVG squares, so it prints sharp at any size. `quiet` is the white margin, in modules. */
+function QR({ text, className, style, quiet = 2 }: { text: string; className?: string; style?: CSSProperties; quiet?: number }) {
   const path = useMemo(() => {
     const { modules } = QRCode.create(text, { errorCorrectionLevel: 'M' })
     let d = ''
@@ -189,10 +224,10 @@ function QR({ text, className }: { text: string; className?: string }) {
       for (let col = 0; col < modules.size; col++) if (modules.get(row, col)) d += `M${col} ${row}h1v1h-1z`
     return { d, size: modules.size }
   }, [text])
-  const quiet = 2 // white margin, in modules, that scanners need around the code
   return (
     <svg
       className={className}
+      style={style}
       viewBox={`${-quiet} ${-quiet} ${path.size + 2 * quiet} ${path.size + 2 * quiet}`}
       shapeRendering="crispEdges"
       role="img"
