@@ -16,6 +16,7 @@ import (
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
 	"github.com/nervster/root_access_inventory_management/backend/internal/organization"
+	"github.com/nervster/root_access_inventory_management/backend/internal/pickup"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/jobs"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/web"
 )
@@ -26,6 +27,10 @@ var statuses = []string{"open", "ready_for_pickup", "picked_up", "cancelled"}
 
 // JobFulfillOrder fulfills a picked-up order in Shopify, then sells its plants (internal/shopify).
 const JobFulfillOrder = "shopify.fulfill_order"
+
+// JobUpdateOrderPickup copies an order's changed pickup time to its Shopify order (the Pickup date and
+// Pickup window attributes), so the admin and the order status page show it (internal/shopify).
+const JobUpdateOrderPickup = "shopify.update_order_pickup"
 
 var (
 	ErrNotFound   = errors.New("order not found")
@@ -119,6 +124,7 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store) {
 	org.POST("/orders/:orderId/ready", organization.RequirePermission(organization.OrdersPrepare), h.markReady)
 	org.POST("/orders/:orderId/not-ready", organization.RequirePermission(organization.OrdersPrepare), h.markNotReady)
 	org.POST("/orders/:orderId/picked-up", organization.RequirePermission(organization.OrdersPrepare), h.markPickedUp)
+	org.POST("/orders/:orderId/pickup", organization.RequirePermission(organization.OrdersPrepare), h.movePickup)
 	returnRoutes(org, h)
 }
 
@@ -158,6 +164,81 @@ type itemResponse struct {
 // markReady handles POST /orgs/:orgId/orders/:orderId/ready.
 func (h handler) markReady(c *gin.Context) {
 	h.changeStatus(c, h.store.MarkReady, "the order isn't waiting to be prepared")
+}
+
+// MovePickup moves an order still to collect to another pickup slot, as staff (agreed with the
+// customer: the lead time and booking range don't apply, a closed, ended or taken window does). Any
+// pickup problem is cleared, and the Shopify order's Pickup date and window follow (a job). It fails with
+// ErrNotFound, ErrWrongState (picked up or cancelled), or pickup's ErrNotFound, ErrClosed, ErrTooSoon or
+// ErrTaken.
+func (s *Store) MovePickup(ctx context.Context, orgID, orderID int64, date time.Time, windowID int64, now time.Time) error {
+	return db.InTenant(ctx, s.conn, orgID, func(q *dbgen.Queries) error {
+		order, err := q.GetOrder(ctx, dbgen.GetOrderParams{OrganizationID: orgID, ID: orderID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		if order.Status != "open" && order.Status != "ready_for_pickup" {
+			return ErrWrongState
+		}
+		before, err := q.OrderPickupBooking(ctx, dbgen.OrderPickupBookingParams{OrganizationID: orgID, OrderID: &orderID})
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return err
+		}
+		booking, err := pickup.MoveOrderBooking(ctx, q, orgID, orderID, date, windowID, now, true)
+		if err != nil || booking.ID == before.ID { // the slot it already had: nothing changes
+			return err
+		}
+		if err := q.SetOrderPickupSlot(ctx, dbgen.SetOrderPickupSlotParams{
+			OrganizationID: orgID, ID: orderID, PickupDate: &booking.Date, PickupWindow: &booking.WindowName,
+		}); err != nil {
+			return err
+		}
+		return jobs.Enqueue(ctx, q, orgID, JobUpdateOrderPickup, map[string]int64{"orderId": orderID})
+	})
+}
+
+type movePickupRequest struct {
+	Date     string `json:"date"` // 2026-10-27
+	WindowID int64  `json:"windowId"`
+}
+
+// movePickup handles POST /orgs/:orgId/orders/:orderId/pickup {date, windowId}.
+func (h handler) movePickup(c *gin.Context) {
+	orderID, ok := web.IDParam(c, "orderId")
+	if !ok {
+		web.Fail(c, http.StatusNotFound, "order not found")
+		return
+	}
+	var req movePickupRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.WindowID <= 0 {
+		web.Fail(c, http.StatusBadRequest, "date and windowId are required")
+		return
+	}
+	date, err := pickup.ParseDate(req.Date)
+	if err != nil {
+		web.Fail(c, http.StatusBadRequest, "date must be a date like 2026-10-27")
+		return
+	}
+	switch err := h.store.MovePickup(c.Request.Context(), organization.CurrentAccess(c).OrganizationID, orderID, date, req.WindowID, time.Now()); {
+	case errors.Is(err, ErrNotFound):
+		web.Fail(c, http.StatusNotFound, "order not found")
+	case errors.Is(err, ErrWrongState):
+		web.Fail(c, http.StatusConflict, "only orders still to collect can be moved")
+	case errors.Is(err, pickup.ErrNotFound):
+		web.Fail(c, http.StatusNotFound, "that pickup window doesn't exist")
+	case errors.Is(err, pickup.ErrClosed):
+		web.Fail(c, http.StatusConflict, "that time is closed on the Pickup calendar: reopen it there first")
+	case errors.Is(err, pickup.ErrTooSoon):
+		web.Fail(c, http.StatusConflict, "that time has already ended")
+	case errors.Is(err, pickup.ErrTaken):
+		web.Fail(c, http.StatusConflict, "another order already has that time")
+	case err != nil:
+		web.FailInternal(c, err)
+	default:
+		c.Status(http.StatusNoContent)
+	}
 }
 
 // markNotReady handles POST /orgs/:orgId/orders/:orderId/not-ready.

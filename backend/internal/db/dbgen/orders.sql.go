@@ -591,6 +591,29 @@ func (q *Queries) SetOrderPickupChanged(ctx context.Context, arg SetOrderPickupC
 	return err
 }
 
+const setOrderPickupSlot = `-- name: SetOrderPickupSlot :exec
+UPDATE orders SET pickup_date = $1, pickup_window = $2, pickup_problem = NULL
+WHERE organization_id = $3 AND id = $4
+`
+
+type SetOrderPickupSlotParams struct {
+	PickupDate     *time.Time
+	PickupWindow   *string
+	OrganizationID int64
+	ID             int64
+}
+
+// Staff moved the pickup to another slot: that's its time now, and any pickup problem is sorted.
+func (q *Queries) SetOrderPickupSlot(ctx context.Context, arg SetOrderPickupSlotParams) error {
+	_, err := q.db.Exec(ctx, setOrderPickupSlot,
+		arg.PickupDate,
+		arg.PickupWindow,
+		arg.OrganizationID,
+		arg.ID,
+	)
+	return err
+}
+
 const setOrderStatus = `-- name: SetOrderStatus :exec
 UPDATE orders SET status = $1
 WHERE organization_id = $2 AND id = $3

@@ -164,3 +164,8 @@ SELECT * FROM orders WHERE organization_id = @organization_id AND name = @name;
 UPDATE orders
 SET pickup_date = @pickup_date, pickup_window = @pickup_window, pickup_problem = NULL, pickup_changed_at = @changed_at
 WHERE organization_id = @organization_id AND id = @id;
+
+-- name: SetOrderPickupSlot :exec
+-- Staff moved the pickup to another slot: that's its time now, and any pickup problem is sorted.
+UPDATE orders SET pickup_date = @pickup_date, pickup_window = @pickup_window, pickup_problem = NULL
+WHERE organization_id = @organization_id AND id = @id;

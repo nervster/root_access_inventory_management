@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/pickup"
 )
 
@@ -148,7 +149,7 @@ func TestMyPickupChangeTime(t *testing.T) {
 	if attributes["Pickup window"] != evening.Name || attributes["Pickup date"] != p.date.Format(time.DateOnly) || attributes["Pickup hold"] == "" {
 		t.Errorf("Shopify's attributes = %v, want the new window and date, and the hold kept", attributes)
 	}
-	if p.waitingJobs(JobUpdateOrderPickup, 0) == 0 {
+	if p.waitingJobs(orders.JobUpdateOrderPickup, 0) == 0 {
 		t.Error("no job queued to update Shopify")
 	}
 

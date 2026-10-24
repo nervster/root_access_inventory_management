@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router'
-import { useCheckOrders, useMembership, useOrderActions, useOrders, useOrdersStatus } from '../../api/hooks'
+import { useCheckOrders, useMembership, useOrderActions, useOrders, useOrdersStatus, usePickupCalendar } from '../../api/hooks'
 import { can } from '../../api/roles'
 import { Permissions, type OrderDto, type OrderItemDto, type OrderStatus } from '../../api/types'
 import { ReturnsView } from '../../components/Returns'
-import { Badge, Button, Card, ErrorBanner, Loading, Notice, PageHeader } from '../../components/ui'
+import { Badge, Button, Card, ErrorBanner, Field, Loading, Notice, PageHeader, Select } from '../../components/ui'
 import { formatDate, formatMoney } from '../../lib/format'
 
 type Tab = OrderStatus | 'returns'
@@ -171,6 +171,7 @@ function OrderCard({ orgId, order }: { orgId: number; order: OrderDto }) {
         {order.pickedUpAt && <> · picked up {formatDate(order.pickedUpAt)}{order.pickedUpByName && ` (marked by ${order.pickedUpByName})`}</>}
       </p>
       <OrderPickup order={order} />
+      <MovePickup orgId={orgId} order={order} />
       <ul className="divide-y divide-stone-200 dark:divide-stone-800">
         {order.items.map((item) => (
           <li key={item.id} className="py-2">
@@ -184,6 +185,95 @@ function OrderCard({ orgId, order }: { orgId: number; order: OrderDto }) {
 }
 
 /** The next step for an order, for those who prepare orders. */
+/**
+ * Staff move an order still to collect to another pickup slot, as agreed with the customer (a clash, or a
+ * call): windows starting within the lead time or past the booking range are fine; closed, taken and
+ * finished ones aren't offered.
+ */
+function MovePickup({ orgId, order }: { orgId: number; order: OrderDto }) {
+  const membership = useMembership(orgId)
+  const [open, setOpen] = useState(false)
+  if (!can(membership, Permissions.OrdersPrepare) || (order.status !== 'open' && order.status !== 'ready_for_pickup')) return null
+  if (!open)
+    return (
+      <Button variant="secondary" className="mb-3" onClick={() => setOpen(true)}>
+        Change pickup time
+      </Button>
+    )
+  return <MovePickupForm orgId={orgId} order={order} onDone={() => setOpen(false)} />
+}
+
+function MovePickupForm({ orgId, order, onDone }: { orgId: number; order: OrderDto; onDone: () => void }) {
+  const calendar = usePickupCalendar(orgId, '', '')
+  const { movePickup } = useOrderActions(orgId)
+  const [now] = useState(() => Date.now())
+  const [date, setDate] = useState(order.pickupDate ?? '')
+  const [windowId, setWindowId] = useState('')
+  const bookable = (calendar.data?.days ?? []).map((d) => ({
+    ...d,
+    slots: d.slots.filter((s) => s.status !== 'closed' && s.status !== 'taken' && new Date(s.end).getTime() > now),
+  }))
+  const day = bookable.find((d) => d.date === date)
+  const timeZone = calendar.data?.timeZone
+  const time = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone })
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault()
+    movePickup.mutate({ orderId: order.id, date, windowId: Number(windowId) }, { onSuccess: onDone })
+  }
+
+  return (
+    <form onSubmit={submit} className="mb-3 space-y-2 rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+      <p className="text-sm font-medium">Change pickup time</p>
+      {calendar.isPending ? (
+        <Loading />
+      ) : (
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-48">
+            <Field label="Date">
+              <Select
+                value={date}
+                onChange={(e) => {
+                  setDate(e.target.value)
+                  setWindowId('')
+                }}
+              >
+                <option value="">Choose a date</option>
+                {bookable.map((d) => (
+                  <option key={d.date} value={d.date} disabled={d.slots.length === 0}>
+                    {new Date(`${d.date}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                    {d.slots.length === 0 ? ' (full or closed)' : ''}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="w-64">
+            <Field label="Window">
+              <Select value={windowId} onChange={(e) => setWindowId(e.target.value)} disabled={!day?.slots.length}>
+                <option value="">Choose a window</option>
+                {day?.slots.map((s) => (
+                  <option key={s.windowId} value={s.windowId}>
+                    {s.name} ({time(s.start)} – {time(s.end)}){s.status === 'too_soon' ? ', starts within 8 hours' : ''}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <Button type="submit" disabled={!date || !windowId || movePickup.isPending}>
+            Move
+          </Button>
+          <Button type="button" variant="ghost" onClick={onDone}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      <ErrorBanner error={calendar.error ?? movePickup.error} />
+      <p className="text-xs text-stone-500">Shopify’s copy of the order is updated too. Let the customer know the new time.</p>
+    </form>
+  )
+}
+
 function OrderButtons({ orgId, order }: { orgId: number; order: OrderDto }) {
   const membership = useMembership(orgId)
   const actions = useOrderActions(orgId)

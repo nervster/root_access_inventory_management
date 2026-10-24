@@ -19,6 +19,7 @@ import (
 
 	"github.com/nervster/root_access_inventory_management/backend/internal/db"
 	"github.com/nervster/root_access_inventory_management/backend/internal/db/dbgen"
+	"github.com/nervster/root_access_inventory_management/backend/internal/orders"
 	"github.com/nervster/root_access_inventory_management/backend/internal/pickup"
 	"github.com/nervster/root_access_inventory_management/backend/internal/platform/jobs"
 )
@@ -32,10 +33,6 @@ const (
 	lookupPeriod     = 15 * time.Minute //
 	cancelAfterReady = 2 * time.Hour    // an order can be cancelled until it's been ready this long
 )
-
-// JobUpdateOrderPickup copies an order's changed pickup time to its Shopify order (the Pickup date and
-// Pickup window attributes), so the admin and the order status page show it.
-const JobUpdateOrderPickup = "shopify.update_order_pickup"
 
 func myPickupRoutes(proxy *gin.RouterGroup, h handler) {
 	proxy.POST("/my-pickup/lookup", h.lookupOrder)
@@ -343,7 +340,7 @@ func (h handler) changePickup(c *gin.Context) {
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
-		booking, err := pickup.MoveOrderBooking(ctx, q, orgID, orderID, date, req.WindowID, now)
+		booking, err := pickup.MoveOrderBooking(ctx, q, orgID, orderID, date, req.WindowID, now, false)
 		if err != nil || booking.ID == before.ID { // the slot it already had: nothing changes
 			return err
 		}
@@ -353,7 +350,7 @@ func (h handler) changePickup(c *gin.Context) {
 			return err
 		}
 		slog.Info("customer changed their pickup time", "organization", orgID, "order", order.Name, "date", req.Date, "window", booking.WindowName)
-		return jobs.Enqueue(ctx, q, orgID, JobUpdateOrderPickup, map[string]int64{"orderId": orderID})
+		return jobs.Enqueue(ctx, q, orgID, orders.JobUpdateOrderPickup, map[string]int64{"orderId": orderID})
 	})
 	switch {
 	case errors.Is(err, errTooLate):

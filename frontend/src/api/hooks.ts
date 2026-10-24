@@ -626,6 +626,15 @@ export function useOrderActions(orgId: number) {
       mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/not-ready`, { method: 'POST' }),
       onSuccess: refresh,
     }),
+    /** Staff move the order to another pickup slot (agreed with the customer). */
+    movePickup: useMutation({
+      mutationFn: ({ orderId, date, windowId }: { orderId: number; date: string; windowId: number }) =>
+        api<void>(`/orgs/${orgId}/orders/${orderId}/pickup`, { method: 'POST', json: { date, windowId } }),
+      onSuccess: () => {
+        void refresh()
+        void client.invalidateQueries({ queryKey: ['orgs', orgId, 'pickup'] })
+      },
+    }),
     pickedUp: useMutation({
       mutationFn: (orderId: number) => api<void>(`/orgs/${orgId}/orders/${orderId}/picked-up`, { method: 'POST' }),
       onSuccess: refresh,

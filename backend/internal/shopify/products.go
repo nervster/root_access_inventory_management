@@ -31,13 +31,13 @@ const potSizeOption = "Pot size"
 // JobHandlers are the Shopify jobs the worker runs.
 func (s *Store) JobHandlers() map[string]jobs.Handler {
 	return map[string]jobs.Handler{
-		JobSyncProduct:         s.syncProductJob,
-		JobSyncAll:             s.syncAllJob,
-		JobSyncStock:           s.syncStockJob,
-		JobImportOrders:        s.importOrdersJob,
-		orders.JobFulfillOrder: s.fulfillOrderJob,
-		JobUpdateOrderPickup:   s.updateOrderPickupJob,
-		JobCheckDrift:          s.checkDriftJob,
+		JobSyncProduct:              s.syncProductJob,
+		JobSyncAll:                  s.syncAllJob,
+		JobSyncStock:                s.syncStockJob,
+		JobImportOrders:             s.importOrdersJob,
+		orders.JobFulfillOrder:      s.fulfillOrderJob,
+		orders.JobUpdateOrderPickup: s.updateOrderPickupJob,
+		JobCheckDrift:               s.checkDriftJob,
 	}
 }
 

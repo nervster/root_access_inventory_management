@@ -106,11 +106,16 @@ func slotName(date time.Time, window string) string {
 // MoveOrderBooking moves an order's pickup to the window on date, inside the caller's transaction q: the
 // new slot must be bookable by the cart's rules (open, at least the lead time away, within the range),
 // then the old booking is given back and the new one made, together, so the order is never left without
-// a slot. An order with no booking (one with a pickup problem) just gets the new one. Choosing the slot it
-// already has changes nothing. It fails with ErrNotFound (no such window), ErrClosed, ErrTooSoon,
-// ErrTooFar, or ErrTaken.
-func MoveOrderBooking(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, date time.Time, windowID int64, now time.Time) (dbgen.PickupBooking, error) {
-	window, err := checkSlot(ctx, q, orgID, date, windowID, now)
+// a slot. Staff (staff true) agreed the time with the customer, so for them only a closed window, one
+// that has ended, or one that's taken is refused. An order with no booking (one with a pickup problem)
+// just gets the new one. Choosing the slot it already has changes nothing. It fails with ErrNotFound (no
+// such window), ErrClosed, ErrTooSoon, ErrTooFar, or ErrTaken.
+func MoveOrderBooking(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, date time.Time, windowID int64, now time.Time, staff bool) (dbgen.PickupBooking, error) {
+	check := checkSlot
+	if staff {
+		check = checkSlotForStaff
+	}
+	window, err := check(ctx, q, orgID, date, windowID, now)
 	if err != nil {
 		return dbgen.PickupBooking{}, err
 	}
