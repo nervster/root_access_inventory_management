@@ -57,7 +57,8 @@ func TestHoldTakesTheSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hold.ID) < 20 || hold.Window != "8 AM – 4 PM" || !hold.ExpiresAt.Equal(h.now.Add(30*time.Minute)) || hold.Start.Hour() != 8 {
+	if len(hold.ID) < 20 || hold.Window != "8 AM – 4 PM" || !hold.ExpiresAt.Equal(h.now.Add(30*time.Minute)) ||
+		!hold.Start.Equal(time.Date(2026, 10, 24, 8, 0, 0, 0, h.now.Location())) { // 8 AM Houston, whatever the machine's zone
 		t.Errorf("hold = %+v, want a long random ID, the window, 8 AM, and 30 minutes", hold)
 	}
 	// Taken for everyone else (staff see it taken too); still open for the cart that holds it.
