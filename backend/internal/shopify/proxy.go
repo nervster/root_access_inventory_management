@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,7 +36,10 @@ func proxyRoutes(api *gin.RouterGroup, h handler) {
 // notes which nursery.
 func (h handler) requireProxy(c *gin.Context) {
 	query := c.Request.URL.Query()
-	if !h.store.Configured() || !h.store.app.VerifyProxy(query) || !ValidShop(query.Get("shop")) {
+	// A signed address stays valid only for an hour, so one captured can't be replayed for long.
+	signedAt, err := strconv.ParseInt(query.Get("timestamp"), 10, 64)
+	fresh := err == nil && h.now().Sub(time.Unix(signedAt, 0)).Abs() < time.Hour
+	if !h.store.Configured() || !h.store.app.VerifyProxy(query) || !ValidShop(query.Get("shop")) || !fresh {
 		web.Fail(c, http.StatusUnauthorized, "not a signed request from the store")
 		c.Abort()
 		return
@@ -178,11 +182,14 @@ func bindHold(c *gin.Context, needsHoldID bool) (holdRequest, bool) {
 	return req, false
 }
 
-// clientIP is the shopper's address, as Shopify forwards it: the first X-Forwarded-For entry (the
-// proxies after Shopify add theirs after it).
+// clientIP is the shopper's address, for the per-visitor limits. Shopify sends it as X-Forwarded-For,
+// but Caddy, in front, replaces that header with Shopify's own address; Caddy keeps Shopify's value as
+// X-Shopify-Forwarded-For (deploy/Caddyfile). Its first entry is the shopper.
 func clientIP(c *gin.Context) string {
-	if first, _, _ := strings.Cut(c.GetHeader("X-Forwarded-For"), ","); strings.TrimSpace(first) != "" {
-		return strings.TrimSpace(first)
+	for _, header := range []string{"X-Shopify-Forwarded-For", "X-Forwarded-For"} {
+		if first, _, _ := strings.Cut(c.GetHeader(header), ","); strings.TrimSpace(first) != "" {
+			return strings.TrimSpace(first)
+		}
 	}
 	return c.ClientIP()
 }

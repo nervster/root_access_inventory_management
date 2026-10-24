@@ -291,6 +291,35 @@ func nonEmpty(text string) *string {
 	return &text
 }
 
+// ErrWebhookShop means a webhook's store (the X-Shopify-Shop-Domain header, which Shopify's signature
+// doesn't cover) isn't the store its signed body names.
+var ErrWebhookShop = errors.New("shopify: webhook's store doesn't match its body")
+
+// checkWebhookShop makes sure the webhooks that change things act on the store their signed body names:
+// only the body is signed, so a replayed webhook with another store's domain in the header must not
+// uninstall or erase data for that store. Order webhooks only queue an import, so they're not checked.
+func checkWebhookShop(topic, shop string, body []byte) error {
+	var named struct {
+		ShopDomain      string `json:"shop_domain"`      // customers/data_request, customers/redact, shop/redact
+		MyshopifyDomain string `json:"myshopify_domain"` // app/uninstalled (the shop resource)
+	}
+	var signed string
+	switch topic {
+	case "customers/data_request", "customers/redact", "shop/redact":
+		_ = json.Unmarshal(body, &named)
+		signed = named.ShopDomain
+	case "app/uninstalled":
+		_ = json.Unmarshal(body, &named)
+		signed = named.MyshopifyDomain
+	default:
+		return nil
+	}
+	if !strings.EqualFold(signed, shop) {
+		return ErrWebhookShop
+	}
+	return nil
+}
+
 // cancelInPlantStock records a cancelled order: its held plants go back on sale and its pickup slot
 // is freed. (Whoever cancelled it: in Shopify, or the customer on the My pickup page.)
 func cancelInPlantStock(ctx context.Context, q *dbgen.Queries, orgID, orderID int64, name string) error {
@@ -373,6 +402,9 @@ func priceCents(amount string) *int32 {
 // no names or contact details). customers/data_request needs nothing: the store already has those
 // notes, in Shopify.
 func (s *Store) HandleWebhook(ctx context.Context, topic, shop string, body []byte) error {
+	if err := checkWebhookShop(topic, shop, body); err != nil {
+		return err
+	}
 	if topic == "customers/redact" || topic == "shop/redact" {
 		return s.redact(ctx, topic, shop, body)
 	}

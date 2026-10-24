@@ -183,7 +183,7 @@ func TestPrivacyRequestsClearPickupNotes(t *testing.T) {
 	order["note"] = "Call me"
 	p.importOrders()
 	orderID := strings.TrimPrefix(order["id"].(string), "gid://shopify/Order/")
-	if code := p.webhook("customers/redact", testShop, `{"orders_to_redact": [`+orderID+`]}`, true); code != 200 {
+	if code := p.webhook("customers/redact", testShop, `{"shop_domain": "`+testShop+`", "orders_to_redact": [`+orderID+`]}`, true); code != 200 {
 		t.Fatalf("redact: %d", code)
 	}
 	if o := p.ordersPickup("open")["#1001"]; o.PickupNote != nil || o.PickupWindow == nil {
