@@ -228,3 +228,43 @@ func TestMyPickupCancel(t *testing.T) {
 		t.Errorf("cancelling again = %+v, want too_late", r)
 	}
 }
+
+func TestMyPickupItemsAndAmounts(t *testing.T) {
+	p := newPickupTest(t)
+	order, _ := p.bookedOrder("#1001")
+	line := order["lineItems"].(map[string]any)["nodes"].([]map[string]any)[0]
+	line["variantTitle"] = `6" pot`
+	line["discountedTotal"] = 1400              // $15.00 less a $1.00 code discount: only with withCodeDiscounts
+	order["subtotalPriceSet"] = money("105.00") // Shopify's subtotal: after discounts
+	order["totalDiscountsSet"] = money("10.00")
+	order["totalTaxSet"] = money("8.66")
+	order["totalPriceSet"] = money("113.66")
+
+	found := p.lookup("1001")
+	items, amounts := found.Order.Items, found.Order.Amounts
+	if len(items) != 1 || items[0].Title == "" || items[0].Variant == nil || *items[0].Variant != `6" pot` || items[0].Quantity != 1 || items[0].TotalCents != 1400 {
+		t.Errorf("items = %+v, want the line with its variant and its total after the code discount", items)
+	}
+	want := myPickupAmounts{Currency: "USD", SubtotalCents: 11500, DiscountCents: 1000, TaxCents: 866, TotalCents: 11366}
+	if amounts == nil || *amounts != want {
+		t.Errorf("amounts = %+v, want %+v (subtotal before discounts, so the page's lines add up)", amounts, want)
+	}
+
+	// A product's default variant has no variant to show.
+	line["variantTitle"] = "Default Title"
+	if got := p.myPickup("/my-pickup", fmt.Sprintf(`{"key":%q}`, found.Key), 200).Order.Items; len(got) != 1 || got[0].Variant != nil {
+		t.Errorf("default variant = %+v, want variant null", got)
+	}
+
+	// Shopify not answering: the order still comes back, without what was ordered and paid.
+	p.fake.emailWithheld = true
+	if got := p.myPickup("/my-pickup", fmt.Sprintf(`{"key":%q}`, found.Key), 200).Order; got.Items != nil || got.Amounts != nil || got.Order != "#1001" {
+		t.Errorf("without Shopify = %+v, want the order without items or amounts", got)
+	}
+	p.fake.emailWithheld = false
+
+	// After cancelling, the refund shows.
+	if got := p.myPickup("/my-pickup/cancel", fmt.Sprintf(`{"key":%q}`, found.Key), 200).Order.Amounts; got == nil || got.RefundedCents != 11366 {
+		t.Errorf("after cancelling: amounts = %+v, want 11366 refunded", got)
+	}
+}

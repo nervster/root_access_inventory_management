@@ -54,7 +54,7 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 	switch {
-	case strings.Contains(request.Query, "OrderEmail"):
+	case strings.Contains(request.Query, "OrderDetails"):
 		order := findOrder()
 		if order == nil {
 			data = map[string]any{"order": nil}
@@ -67,7 +67,7 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		data = map[string]any{"order": map[string]any{"email": order["email"]}}
+		data = map[string]any{"order": f.orderDetails(order, strings.Contains(request.Query, "withCodeDiscounts: true"))}
 	case strings.Contains(request.Query, "OrderAttributes"):
 		order := findOrder()
 		attributes := order["customAttributes"]
@@ -471,4 +471,46 @@ func (f *fakeShopify) productNodes(raw json.RawMessage) []any {
 		nodes[i] = map[string]any{"id": product.ID, "title": product.Title, "variants": map[string]any{"nodes": variants}}
 	}
 	return nodes
+}
+
+func money(amount string) map[string]any {
+	return map[string]any{"shopMoney": map[string]string{"amount": amount, "currencyCode": "USD"}}
+}
+
+// orderDetails answers the My pickup page's order query: the email, lines (each its unit price × quantity
+// unless the test set "discountedTotal"), and the order's money (the test's "subtotalPriceSet" etc. if
+// set, otherwise worked out from the lines; a cancelled order refunded in full).
+func (f *fakeShopify) orderDetails(order map[string]any, withCodeDiscounts bool) map[string]any {
+	lines := []map[string]any{}
+	sum := 0
+	for _, raw := range order["lineItems"].(map[string]any)["nodes"].([]map[string]any) {
+		unit := *priceCents(raw["originalUnitPriceSet"].(map[string]any)["shopMoney"].(map[string]string)["amount"])
+		total := int(unit) * raw["quantity"].(int)
+		if d, ok := raw["discountedTotal"].(int); ok && withCodeDiscounts {
+			total = d
+		}
+		sum += total
+		lines = append(lines, map[string]any{
+			"title": raw["title"], "variantTitle": raw["variantTitle"], "quantity": raw["quantity"],
+			"discountedTotalSet": money(fmt.Sprintf("%d.%02d", total/100, total%100)),
+		})
+	}
+	details := map[string]any{"email": order["email"], "lineItems": map[string]any{"nodes": lines}}
+	whole := money(fmt.Sprintf("%d.%02d", sum/100, sum%100))
+	for _, field := range []string{"subtotalPriceSet", "totalDiscountsSet", "totalTaxSet", "totalPriceSet", "totalRefundedSet"} {
+		if v, ok := order[field]; ok {
+			details[field] = v
+			continue
+		}
+		switch field {
+		case "subtotalPriceSet", "totalPriceSet":
+			details[field] = whole
+		default:
+			details[field] = money("0.00")
+		}
+	}
+	if order["refunded"] == true {
+		details["totalRefundedSet"] = details["totalPriceSet"]
+	}
+	return details
 }
