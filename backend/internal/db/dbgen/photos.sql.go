@@ -276,3 +276,33 @@ func (q *Queries) ProductPhotoCandidates(ctx context.Context, arg ProductPhotoCa
 	}
 	return items, nil
 }
+
+const setPlantPhotoCaption = `-- name: SetPlantPhotoCaption :one
+UPDATE plant_photos SET caption = $1
+WHERE organization_id = $2 AND id = $3
+RETURNING id, organization_id, plant_id, storage_key, taken_at, caption, uploaded_by, created_at, uploaded_by_name
+`
+
+type SetPlantPhotoCaptionParams struct {
+	Caption        *string
+	OrganizationID int64
+	ID             int64
+}
+
+// NULL clears it. For captions added after the photo, e.g. during a photo session.
+func (q *Queries) SetPlantPhotoCaption(ctx context.Context, arg SetPlantPhotoCaptionParams) (PlantPhoto, error) {
+	row := q.db.QueryRow(ctx, setPlantPhotoCaption, arg.Caption, arg.OrganizationID, arg.ID)
+	var i PlantPhoto
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.PlantID,
+		&i.StorageKey,
+		&i.TakenAt,
+		&i.Caption,
+		&i.UploadedBy,
+		&i.CreatedAt,
+		&i.UploadedByName,
+	)
+	return i, err
+}

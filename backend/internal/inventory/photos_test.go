@@ -124,3 +124,39 @@ func TestPlantPhotoRules(t *testing.T) {
 	photos := n.plantPhotos("viewer", "IT-ABDS-000001", 200)
 	n.expect("rival", "DELETE", fmt.Sprintf("/api/orgs/{org}/photos/%d", photos[0].ID), "", 404)
 }
+
+func TestPlantPhotoCaption(t *testing.T) {
+	n := newRepotNursery(t)
+	photo, _ := n.uploadPhoto("IT-ABDS-000001", "image/jpeg", 300_000, 201)
+	path := fmt.Sprintf("/api/orgs/{org}/photos/%d", photo.ID)
+	caption := func() *string {
+		return n.plantPhotos("viewer", "IT-ABDS-000001", 200)[0].Caption
+	}
+
+	// Set (trimmed), then cleared by blank or null.
+	var updated photoResponse
+	_ = json.Unmarshal(n.expect("staff", "PATCH", path, `{"caption":"  First unfurl  "}`, 200).Body.Bytes(), &updated)
+	if updated.Caption == nil || *updated.Caption != "First unfurl" || updated.ViewURL == "" {
+		t.Errorf("response = %+v, want the trimmed caption and a view link", updated)
+	}
+	if got := caption(); got == nil || *got != "First unfurl" {
+		t.Errorf("caption = %v, want First unfurl", got)
+	}
+	n.expect("staff", "PATCH", path, `{"caption":"   "}`, 200)
+	if got := caption(); got != nil {
+		t.Errorf("after a blank caption: %q, want none", *got)
+	}
+	n.expect("staff", "PATCH", path, `{"caption":"Again"}`, 200)
+	n.expect("staff", "PATCH", path, `{"caption":null}`, 200)
+	if got := caption(); got != nil {
+		t.Errorf("after a null caption: %q, want none", *got)
+	}
+
+	// Viewers can't; another nursery's member and a missing photo get not found.
+	n.expect("viewer", "PATCH", path, `{"caption":"Nope"}`, 403)
+	n.expect("rival", "PATCH", path, `{"caption":"Nope"}`, 404)
+	n.expect("staff", "PATCH", "/api/orgs/{org}/photos/999999999", `{"caption":"Nope"}`, 404)
+	if got := caption(); got != nil {
+		t.Errorf("caption = %q after refused changes, want none", *got)
+	}
+}

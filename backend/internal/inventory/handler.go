@@ -49,6 +49,7 @@ func Routes(signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, p
 	org.GET("/plants/by-barcode/:barcode/photos", view, h.listPlantPhotos)
 	org.POST("/plants/by-barcode/:barcode/photos/upload-link", edit, h.photoUploadLink)
 	org.POST("/plants/by-barcode/:barcode/photos", edit, h.addPlantPhoto)
+	org.PATCH("/photos/:photoId", edit, h.updatePlantPhoto)
 	org.DELETE("/photos/:photoId", edit, h.deletePlantPhoto)
 
 	org.POST("/repot", edit, h.repot)
