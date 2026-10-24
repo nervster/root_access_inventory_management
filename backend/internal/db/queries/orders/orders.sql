@@ -103,7 +103,7 @@ WHERE organization_id = @organization_id AND id = @id;
 -- name: ListOrders :many
 SELECT id, shop, shopify_order_id, name, status, placed_at, cancelled_at, shopify_fulfillment_status,
        ready_at, ready_by_name, picked_up_at, picked_up_by_name,
-       pickup_date, pickup_window, pickup_note, pickup_problem
+       pickup_date, pickup_window, pickup_note, pickup_problem, pickup_changed_at
 FROM orders
 WHERE organization_id = @organization_id AND status = @status
 ORDER BY placed_at DESC, id DESC
@@ -153,4 +153,14 @@ SELECT DISTINCT organization_id FROM orders WHERE shop = @shop;
 UPDATE orders
 SET pickup_date = sqlc.narg(pickup_date), pickup_window = sqlc.narg(pickup_window),
     pickup_note = sqlc.narg(pickup_note), pickup_problem = sqlc.narg(pickup_problem)
+WHERE organization_id = @organization_id AND id = @id;
+
+-- name: GetOrderByName :one
+-- For the store's My pickup page: the customer types the order number ("#1042").
+SELECT * FROM orders WHERE organization_id = @organization_id AND name = @name;
+
+-- name: SetOrderPickupChanged :exec
+-- The customer moved the pickup to another slot.
+UPDATE orders
+SET pickup_date = @pickup_date, pickup_window = @pickup_window, pickup_problem = NULL, pickup_changed_at = @changed_at
 WHERE organization_id = @organization_id AND id = @id;

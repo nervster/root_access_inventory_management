@@ -517,6 +517,22 @@ func (q *Queries) PickupHoldByToken(ctx context.Context, arg PickupHoldByTokenPa
 	return i, err
 }
 
+const releaseOrderPickupBooking = `-- name: ReleaseOrderPickupBooking :exec
+UPDATE pickup_bookings SET status = 'released'
+WHERE organization_id = $1 AND id = $2 AND status = 'booked'
+`
+
+type ReleaseOrderPickupBookingParams struct {
+	OrganizationID int64
+	ID             int64
+}
+
+// The order moved to another slot: this one is free again.
+func (q *Queries) ReleaseOrderPickupBooking(ctx context.Context, arg ReleaseOrderPickupBookingParams) error {
+	_, err := q.db.Exec(ctx, releaseOrderPickupBooking, arg.OrganizationID, arg.ID)
+	return err
+}
+
 const releasePickupHold = `-- name: ReleasePickupHold :exec
 UPDATE pickup_bookings SET status = 'released'
 WHERE organization_id = $1 AND id = $2 AND status IN ('held', 'expired')

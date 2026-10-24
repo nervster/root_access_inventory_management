@@ -418,6 +418,8 @@ export interface OrderDto {
   pickupNote: string | null
   /** Why its pickup booking needs staff: a clash, or no valid slot. */
   pickupProblem: string | null
+  /** When the customer last changed the pickup time on the store's My pickup page. */
+  pickupChangedAt: string | null
   items: OrderItemDto[]
 }
 

@@ -40,7 +40,61 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&request)
 	var data any
+	findOrder := func() map[string]any {
+		var variables struct {
+			ID    string
+			Input struct{ ID string }
+		}
+		_ = json.Unmarshal(request.Variables, &variables)
+		for _, o := range f.orders {
+			if o["id"] == variables.ID || o["id"] == variables.Input.ID {
+				return o
+			}
+		}
+		return nil
+	}
 	switch {
+	case strings.Contains(request.Query, "OrderEmail"):
+		order := findOrder()
+		if order == nil {
+			data = map[string]any{"order": nil}
+			break
+		}
+		if f.emailWithheld { // like Shopify: the field comes back empty, with an error
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data":   map[string]any{"order": map[string]any{"email": nil}},
+				"errors": []map[string]string{{"message": "This app is not approved to access the Order object's email."}},
+			})
+			return
+		}
+		data = map[string]any{"order": map[string]any{"email": order["email"]}}
+	case strings.Contains(request.Query, "OrderAttributes"):
+		order := findOrder()
+		attributes := order["customAttributes"]
+		if attributes == nil {
+			attributes = []map[string]string{}
+		}
+		data = map[string]any{"order": map[string]any{"customAttributes": attributes}}
+	case strings.Contains(request.Query, "orderUpdate("):
+		var variables struct {
+			Input struct {
+				ID               string
+				CustomAttributes []map[string]string
+			}
+		}
+		_ = json.Unmarshal(request.Variables, &variables)
+		findOrder()["customAttributes"] = variables.Input.CustomAttributes // replaces them all, like Shopify
+		data = map[string]any{"orderUpdate": map[string]any{"userErrors": []gqlError{}}}
+	case strings.Contains(request.Query, "orderCancel("):
+		if f.cancelRefusal != "" {
+			data = map[string]any{"orderCancel": map[string]any{"orderCancelUserErrors": []gqlError{{Message: f.cancelRefusal}}}}
+			break
+		}
+		order := findOrder()
+		now := time.Now().UTC().Format(time.RFC3339)
+		order["cancelledAt"], order["updatedAt"] = now, now
+		order["refunded"] = strings.Contains(request.Query, "originalPaymentMethodsRefund: true")
+		data = map[string]any{"orderCancel": map[string]any{"orderCancelUserErrors": []gqlError{}}}
 	case strings.Contains(request.Query, "locations("):
 		data = map[string]any{"locations": map[string]any{"nodes": []map[string]string{
 			{"id": "gid://shopify/Location/1", "name": "Greenhouse"},

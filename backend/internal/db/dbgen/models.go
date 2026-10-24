@@ -405,6 +405,7 @@ type Order struct {
 	PickupWindow             *string
 	PickupNote               *string
 	PickupProblem            *string
+	PickupChangedAt          *time.Time
 }
 
 type OrderItem struct {

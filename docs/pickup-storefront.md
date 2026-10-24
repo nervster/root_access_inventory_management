@@ -14,7 +14,7 @@ cookies and no identity: Plant Stock knows which store a request came through, n
 | `GET pickup-slots` | Live on staging |
 | `POST pickup-holds`, `…/refresh`, `…/release` | Live on staging |
 | Hold → booking when the order is imported | Live on staging |
-| `POST my-pickup/lookup`, `my-pickup`, `…/change`, `…/cancel` (customers change or cancel) | This contract; to build |
+| `POST my-pickup/lookup`, `my-pickup`, `…/change`, `…/cancel` (customers change or cancel) | Built; on staging once merged (needs `write_orders`: deploy the app config and connect the store again) |
 
 ## Slots, holds, and bookings
 

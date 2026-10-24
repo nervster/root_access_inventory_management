@@ -30,7 +30,7 @@ var Scopes = []string{
 	"write_products",  // create and update products
 	"write_inventory", // set stock
 	"read_locations",  // choose the pickup location
-	"read_orders",     // see what sold
+	"write_orders",    // see what sold; update a customer's pickup time and cancel at their request
 	"write_merchant_managed_fulfillment_orders", // mark pickups as done
 	"write_publications",                        // put products on the online store
 	"read_returns",                              // see return requests, to receive the plants and track refunds

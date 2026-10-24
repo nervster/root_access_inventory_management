@@ -26,7 +26,7 @@ const callbackPath = "/api/shopify/callback"
 // callback, webhooks, and the storefront through the App Proxy); to signedIn, the Owner's settings.
 // slots answers the storefront's pickup questions.
 func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Store, slots *pickup.Store, appURL string) {
-	h := handler{orgs: orgs, store: store, slots: slots, appURL: strings.TrimSuffix(appURL, "/"), now: time.Now}
+	h := handler{orgs: orgs, store: store, slots: slots, appURL: strings.TrimSuffix(appURL, "/"), now: time.Now, lookups: newLookupLimiter()}
 	api.GET(strings.TrimPrefix(callbackPath, "/api"), h.callback)
 	api.POST("/shopify/webhooks", h.webhook)
 	proxyRoutes(api, h)
@@ -49,11 +49,12 @@ func Routes(api, signedIn *gin.RouterGroup, orgs *organization.Store, store *Sto
 }
 
 type handler struct {
-	orgs   *organization.Store
-	store  *Store
-	slots  *pickup.Store
-	appURL string
-	now    func() time.Time // tests set the clock
+	orgs    *organization.Store
+	store   *Store
+	slots   *pickup.Store
+	appURL  string
+	now     func() time.Time // tests set the clock
+	lookups *lookupLimiter   // My pickup lookups per visitor
 }
 
 type connectionResponse struct {
