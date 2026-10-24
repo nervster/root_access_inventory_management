@@ -99,9 +99,8 @@ func TestOrderTurnsItsHoldIntoABooking(t *testing.T) {
 	p := newPickupTest(t)
 	hold := p.hold("cart-a")
 	date := p.date.Format(time.DateOnly)
-	p.order("#1001", map[string]string{
-		"Pickup date": date, "Pickup window": p.morning.Name, "Pickup hold": hold.ID, "Pickup note": " Gate code 1234 ",
-	})
+	order := p.order("#1001", map[string]string{"Pickup date": date, "Pickup window": p.morning.Name, "Pickup hold": hold.ID})
+	order["note"] = " Gate code 1234 " // the cart note
 	p.importOrders()
 
 	got := p.ordersPickup("open")["#1001"]
@@ -180,7 +179,8 @@ func TestOrderWhoseHoldWasTakenByAnother(t *testing.T) {
 
 func TestPrivacyRequestsClearPickupNotes(t *testing.T) {
 	p := newPickupTest(t)
-	order := p.order("#1001", map[string]string{"Pickup date": p.date.Format(time.DateOnly), "Pickup window": p.morning.Name, "Pickup note": "Call me"})
+	order := p.order("#1001", map[string]string{"Pickup date": p.date.Format(time.DateOnly), "Pickup window": p.morning.Name})
+	order["note"] = "Call me"
 	p.importOrders()
 	orderID := strings.TrimPrefix(order["id"].(string), "gid://shopify/Order/")
 	if code := p.webhook("customers/redact", testShop, `{"orders_to_redact": [`+orderID+`]}`, true); code != 200 {
