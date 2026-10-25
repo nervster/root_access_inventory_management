@@ -30,6 +30,7 @@ func proxyRoutes(api *gin.RouterGroup, h handler) {
 	proxy.POST("/pickup-holds/refresh", h.refreshHold)
 	proxy.POST("/pickup-holds/release", h.releaseHold)
 	myPickupRoutes(proxy, h)
+	plantPickerRoutes(proxy, h)
 }
 
 // requireProxy lets through only requests Shopify signed, from a store a nursery has connected, and

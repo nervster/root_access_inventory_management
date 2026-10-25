@@ -19,8 +19,11 @@ UPDATE orders SET status = @status
 WHERE organization_id = @organization_id AND id = @id;
 
 -- name: CreateOrderItem :one
-INSERT INTO order_items (organization_id, order_id, shopify_line_item_id, variant_id, sku, title, quantity, price_cents)
-VALUES (@organization_id, @order_id, @shopify_line_item_id, @variant_id, @sku, @title, @quantity, @price_cents)
+-- chosen_plant_id comes from the storefront (the line's _plant): kept only if it's one of this nursery's plants.
+INSERT INTO order_items (organization_id, order_id, shopify_line_item_id, variant_id, sku, title, quantity, price_cents,
+                         chosen_plant_id)
+VALUES (@organization_id, @order_id, @shopify_line_item_id, @variant_id, @sku, @title, @quantity, @price_cents,
+        (SELECT p.id FROM plants p WHERE p.organization_id = @organization_id AND p.id = sqlc.narg(chosen_plant_id)))
 RETURNING id;
 
 -- name: VariantForOrderItem :one
@@ -57,6 +60,26 @@ SET status = 'held', order_item_id = @order_item_id, updated_at = now()
 FROM chosen
 WHERE p.id = chosen.id
 RETURNING p.barcode;
+
+-- name: HoldChosenPlant :many
+-- Holds the plant the shopper chose for an order item, if it's still for sale and is the item's SKU (its name,
+-- variegation and pot). Returns its barcode, or nothing when it can't be held.
+UPDATE plants p
+SET status = 'held', order_item_id = @order_item_id, updated_at = now()
+FROM product_variants v
+JOIN products pr ON pr.id = v.product_id
+WHERE v.id = @variant_id
+  AND p.organization_id = @organization_id AND p.id = @plant_id
+  AND p.status = 'for_sale'
+  AND p.plant_name_id = pr.plant_name_id
+  AND p.variegation_id IS NOT DISTINCT FROM pr.variegation_id
+  AND p.pot_size_id = v.pot_size_id
+RETURNING p.barcode;
+
+-- name: EndPlantHolds :exec
+-- The plant was ordered: its cart hold (whichever cart's it is now) has done its job.
+UPDATE plant_holds SET status = 'ordered'
+WHERE organization_id = @organization_id AND plant_id = @plant_id AND status = 'held';
 
 -- name: ReleaseOrder :many
 -- A cancelled order's held plants go back on sale.
@@ -116,14 +139,17 @@ LIMIT 200;
 
 -- name: ListOrderItems :many
 -- The orders' items, each with its pot size and the barcodes of its plants (held, or sold once picked up).
+-- chosen_barcode: the plant the shopper chose from its photo, if they chose one.
 SELECT i.id, i.order_id, i.title, i.sku, i.quantity, i.price_cents, i.variant_id, ps.name AS pot_size,
-       coalesce(array_agg(p.barcode ORDER BY p.barcode) FILTER (WHERE p.id IS NOT NULL), '{}')::text[] AS held_barcodes
+       coalesce(array_agg(p.barcode ORDER BY p.barcode) FILTER (WHERE p.id IS NOT NULL), '{}')::text[] AS held_barcodes,
+       chosen.barcode AS chosen_barcode
 FROM order_items i
 LEFT JOIN product_variants v ON v.id = i.variant_id
 LEFT JOIN pot_sizes ps ON ps.id = v.pot_size_id
 LEFT JOIN plants p ON p.order_item_id = i.id AND p.status IN ('held', 'sold')
+LEFT JOIN plants chosen ON chosen.organization_id = i.organization_id AND chosen.id = i.chosen_plant_id
 WHERE i.organization_id = @organization_id AND i.order_id = ANY(@order_ids::bigint[])
-GROUP BY i.id, ps.name
+GROUP BY i.id, ps.name, chosen.barcode
 ORDER BY i.order_id, i.id;
 
 -- name: SetOrdersChecked :exec

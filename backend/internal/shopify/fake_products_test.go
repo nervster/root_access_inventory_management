@@ -446,6 +446,10 @@ func (p *fakePhotos) Open(_ context.Context, key string) (io.ReadCloser, storage
 	return io.NopCloser(strings.NewReader(content)), storage.FileInfo{Size: int64(len(content)), ContentType: "image/jpeg"}, nil
 }
 
+func (p *fakePhotos) ViewURL(_ context.Context, key string) (string, error) {
+	return "https://photos.example/" + key + "?signed", nil
+}
+
 // productNodes answers the drift check: products by ID (null for deleted ones), with their variants'
 // SKU, price, and on-hand stock at the location (null where not stocked).
 func (f *fakeShopify) productNodes(raw json.RawMessage) []any {
