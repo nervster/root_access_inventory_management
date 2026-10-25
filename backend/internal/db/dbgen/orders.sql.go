@@ -175,7 +175,7 @@ func (q *Queries) GetOrderByName(ctx context.Context, arg GetOrderByNameParams) 
 
 const getOrderByShopifyID = `-- name: GetOrderByShopifyID :one
 
-SELECT id, status FROM orders
+SELECT id, status, cancelled_at FROM orders
 WHERE organization_id = $1 AND shopify_order_id = $2
 `
 
@@ -185,15 +185,16 @@ type GetOrderByShopifyIDParams struct {
 }
 
 type GetOrderByShopifyIDRow struct {
-	ID     int64
-	Status string
+	ID          int64
+	Status      string
+	CancelledAt *time.Time
 }
 
 // Inside one nursery (run through db.InTenant) --
 func (q *Queries) GetOrderByShopifyID(ctx context.Context, arg GetOrderByShopifyIDParams) (GetOrderByShopifyIDRow, error) {
 	row := q.db.QueryRow(ctx, getOrderByShopifyID, arg.OrganizationID, arg.ShopifyOrderID)
 	var i GetOrderByShopifyIDRow
-	err := row.Scan(&i.ID, &i.Status)
+	err := row.Scan(&i.ID, &i.Status, &i.CancelledAt)
 	return i, err
 }
 
@@ -509,6 +510,40 @@ func (q *Queries) MarkOrderReady(ctx context.Context, arg MarkOrderReadyParams) 
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const orderProductIDs = `-- name: OrderProductIDs :many
+SELECT DISTINCT v.product_id
+FROM order_items i
+JOIN product_variants v ON v.id = i.variant_id
+WHERE i.organization_id = $1 AND i.order_id = $2
+ORDER BY v.product_id
+`
+
+type OrderProductIDsParams struct {
+	OrganizationID int64
+	OrderID        int64
+}
+
+// The Plant Stock products an order's items are for.
+func (q *Queries) OrderProductIDs(ctx context.Context, arg OrderProductIDsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, orderProductIDs, arg.OrganizationID, arg.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var product_id int64
+		if err := rows.Scan(&product_id); err != nil {
+			return nil, err
+		}
+		items = append(items, product_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const organizationsWithOrdersFrom = `-- name: OrganizationsWithOrdersFrom :many
