@@ -91,9 +91,13 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		order := findOrder()
-		now := time.Now().UTC().Format(time.RFC3339)
-		order["cancelledAt"], order["updatedAt"] = now, now
 		order["refunded"] = strings.Contains(request.Query, "originalPaymentMethodsRefund: true")
+		if f.cancelLater {
+			f.pendingCancels = append(f.pendingCancels, order)
+		} else {
+			now := time.Now().UTC().Format(time.RFC3339)
+			order["cancelledAt"], order["updatedAt"] = now, now
+		}
 		data = map[string]any{"orderCancel": map[string]any{"orderCancelUserErrors": []gqlError{}}}
 	case strings.Contains(request.Query, "locations("):
 		data = map[string]any{"locations": map[string]any{"nodes": []map[string]string{

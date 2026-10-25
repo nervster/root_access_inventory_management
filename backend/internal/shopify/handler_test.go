@@ -55,6 +55,9 @@ type fakeShopify struct {
 
 	emailWithheld bool   // when set, order emails come back withheld, as for an app without the Email field
 	cancelRefusal string // when set, orderCancel refuses with this message
+	// cancelLater makes orderCancel work as Shopify's does: in the background. finishCancels completes them.
+	cancelLater    bool
+	pendingCancels []map[string]any
 
 	stocked     map[string]bool // "item@location" pairs an SKU is stocked at
 	onHand      map[string]int  // by "item@location"

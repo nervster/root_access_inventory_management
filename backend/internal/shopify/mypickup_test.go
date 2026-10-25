@@ -268,3 +268,68 @@ func TestMyPickupItemsAndAmounts(t *testing.T) {
 		t.Errorf("after cancelling: amounts = %+v, want 11366 refunded", got)
 	}
 }
+
+// finishCancels completes the cancels Shopify was processing in the background: each order is cancelled, and
+// its units, committed until now and not restocked (restock: false), leave on hand at the location.
+func (f *fakeShopify) finishCancels(location string) {
+	for _, order := range f.pendingCancels {
+		now := time.Now().UTC().Format(time.RFC3339)
+		order["cancelledAt"], order["updatedAt"] = now, now
+		for _, line := range order["lineItems"].(map[string]any)["nodes"].([]map[string]any) {
+			for _, product := range f.products {
+				for _, v := range product.Variants {
+					if v.ID == line["variant"].(map[string]string)["id"] {
+						f.onHand[v.InventoryItemID+"@"+location] -= line["quantity"].(int)
+					}
+				}
+			}
+		}
+	}
+	f.pendingCancels = nil
+}
+
+// A My pickup cancel puts the plants back on sale (and syncs stock) at once, but Shopify finishes the cancel
+// later, taking the order's units off on hand. Its cancelled webhook must sync stock again.
+func TestMyPickupCancelSyncsStockOnceShopifyIsDone(t *testing.T) {
+	p := newPickupTest(t)
+	p.chooseLocation(greenhouse)
+	var productID int64
+	if err := p.db.QueryRow(t.Context(), "SELECT id FROM products WHERE organization_id = $1", p.org.ID).Scan(&productID); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = p.bookedOrder("#1001")
+	if err := p.syncStock(productID); err != nil || p.onHand("Small Cup", greenhouse) != 6 {
+		t.Fatalf("before: %v, on hand %d; want 6 (5 for sale, 1 held)", err, p.onHand("Small Cup", greenhouse))
+	}
+
+	p.fake.cancelLater = true
+	p.myPickup("/my-pickup/cancel", fmt.Sprintf(`{"key":%q}`, p.lookup("1001").Key), 200)
+	if err := p.syncStock(productID); err != nil || p.onHand("Small Cup", greenhouse) != 6 {
+		t.Fatalf("after the cancel: %v, on hand %d; want 6, all for sale", err, p.onHand("Small Cup", greenhouse))
+	}
+
+	// Shopify finishes: the order's committed unit leaves on hand, and the cancelled webhook queues an import.
+	p.fake.finishCancels(greenhouse)
+	if p.onHand("Small Cup", greenhouse) != 5 {
+		t.Fatalf("Shopify's on hand %d after its cancel, want 5 (the fake should take the unit off)", p.onHand("Small Cup", greenhouse))
+	}
+	if _, err := p.db.Exec(t.Context(), "DELETE FROM jobs"); err != nil {
+		t.Fatal(err)
+	}
+	p.importOrders()
+	if p.waitingJobs(JobSyncStock, productID) != 1 {
+		t.Fatalf("%d stock syncs queued when Shopify reported the cancel, want 1", p.waitingJobs(JobSyncStock, productID))
+	}
+	if err := p.syncStock(productID); err != nil || p.onHand("Small Cup", greenhouse) != 6 {
+		t.Errorf("after the sync: %v, on hand %d; want 6 again", err, p.onHand("Small Cup", greenhouse))
+	}
+
+	// Later imports of the cancelled order don't queue more.
+	if _, err := p.db.Exec(t.Context(), "DELETE FROM jobs"); err != nil {
+		t.Fatal(err)
+	}
+	p.importOrders()
+	if n := p.waitingJobs(JobSyncStock, productID); n != 0 {
+		t.Errorf("%d stock syncs queued on re-reading the cancelled order, want 0", n)
+	}
+}

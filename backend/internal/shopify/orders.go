@@ -226,6 +226,12 @@ func (s *Store) importOrder(ctx context.Context, orgID int64, shop string, order
 			OrganizationID: orgID, ID: existing.ID, CancelledAt: order.CancelledAt,
 			ShopifyFulfillmentStatus: &order.DisplayFulfillmentStatus, ShopifyUpdatedAt: order.UpdatedAt,
 		})
+		if err == nil && order.CancelledAt != nil && existing.CancelledAt == nil {
+			// The first time Shopify shows it cancelled. Its own inventory change is done only now: a cancel
+			// Plant Stock asked for (My pickup) is processed by Shopify in the background, and drops the order's
+			// committed units after the stock sync Plant Stock queued then may already have run.
+			err = queueOrderStockSyncs(ctx, q, orgID, existing.ID)
+		}
 		if err != nil || (existing.Status != "open" && existing.Status != "ready_for_pickup") {
 			return err // picked up or cancelled already: nothing more to do
 		}
@@ -336,6 +342,23 @@ func cancelInPlantStock(ctx context.Context, q *dbgen.Queries, orgID, orderID in
 	}
 	slog.Info("order cancelled; plants back on sale", "organization", orgID, "order", name, "plants", len(released))
 	return q.SetOrderStatus(ctx, dbgen.SetOrderStatusParams{OrganizationID: orgID, ID: orderID, Status: "cancelled"})
+}
+
+// queueOrderStockSyncs queues a stock sync for each product the order has items of.
+func queueOrderStockSyncs(ctx context.Context, q *dbgen.Queries, orgID, orderID int64) error {
+	productIDs, err := q.OrderProductIDs(ctx, dbgen.OrderProductIDsParams{OrganizationID: orgID, OrderID: orderID})
+	if err != nil {
+		return err
+	}
+	for _, productID := range productIDs {
+		payload := struct {
+			ProductID int64 `json:"productId"`
+		}{productID}
+		if err := jobs.Enqueue(ctx, q, orgID, JobSyncStock, payload); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // orderHandedOver reports whether Shopify shows the order as fulfilled (picked up).

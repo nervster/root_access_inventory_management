@@ -1,7 +1,7 @@
 -- Inside one nursery (run through db.InTenant) --
 
 -- name: GetOrderByShopifyID :one
-SELECT id, status FROM orders
+SELECT id, status, cancelled_at FROM orders
 WHERE organization_id = @organization_id AND shopify_order_id = @shopify_order_id;
 
 -- name: CreateOrder :one
@@ -13,6 +13,14 @@ RETURNING id;
 UPDATE orders
 SET cancelled_at = @cancelled_at, shopify_fulfillment_status = @shopify_fulfillment_status, shopify_updated_at = @shopify_updated_at
 WHERE organization_id = @organization_id AND id = @id;
+
+-- name: OrderProductIDs :many
+-- The Plant Stock products an order's items are for.
+SELECT DISTINCT v.product_id
+FROM order_items i
+JOIN product_variants v ON v.id = i.variant_id
+WHERE i.organization_id = @organization_id AND i.order_id = @order_id
+ORDER BY v.product_id;
 
 -- name: SetOrderStatus :exec
 UPDATE orders SET status = @status
