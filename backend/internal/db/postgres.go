@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -18,17 +19,29 @@ import (
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-// Connect opens a connection pool and checks that the database is reachable.
+// Connect opens a connection pool and checks that the database is reachable. After a reboot Postgres
+// can refuse connections for a moment even once it reports healthy, so it tries for up to 30 seconds.
 func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
 	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("connect to database: %w", err)
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		err = pool.Ping(ctx)
+		if err == nil {
+			return pool, nil
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			pool.Close()
+			return nil, fmt.Errorf("connect to database: %w", err)
+		}
+		slog.Warn("database not ready, retrying", "error", err)
+		select {
+		case <-ctx.Done():
+		case <-time.After(2 * time.Second):
+		}
 	}
-	return pool, nil
 }
 
 // Migrate applies migrations that haven't run yet. A Postgres lock makes it safe for several

@@ -3,9 +3,14 @@ server {
     listen 8080;
     root /usr/share/nginx/html;
 
+    # Docker's DNS. Looking the API up per request (through a variable, below) means a restarted API
+    # container with a new IP is found again, instead of nginx keeping the IP it saw at startup.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     # API requests go to the Go backend (same domain, so no CORS).
     location /api/ {
-        proxy_pass ${API_UPSTREAM};
+        set $api ${API_UPSTREAM};
+        proxy_pass $api;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
