@@ -42,8 +42,10 @@ func (q *Queries) CreateOrder(ctx context.Context, arg CreateOrderParams) (int64
 }
 
 const createOrderItem = `-- name: CreateOrderItem :one
-INSERT INTO order_items (organization_id, order_id, shopify_line_item_id, variant_id, sku, title, quantity, price_cents)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO order_items (organization_id, order_id, shopify_line_item_id, variant_id, sku, title, quantity, price_cents,
+                         chosen_plant_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+        (SELECT p.id FROM plants p WHERE p.organization_id = $1 AND p.id = $9))
 RETURNING id
 `
 
@@ -56,8 +58,10 @@ type CreateOrderItemParams struct {
 	Title             string
 	Quantity          int32
 	PriceCents        *int32
+	ChosenPlantID     *int64
 }
 
+// chosen_plant_id comes from the storefront (the line's _plant): kept only if it's one of this nursery's plants.
 func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams) (int64, error) {
 	row := q.db.QueryRow(ctx, createOrderItem,
 		arg.OrganizationID,
@@ -68,10 +72,27 @@ func (q *Queries) CreateOrderItem(ctx context.Context, arg CreateOrderItemParams
 		arg.Title,
 		arg.Quantity,
 		arg.PriceCents,
+		arg.ChosenPlantID,
 	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const endPlantHolds = `-- name: EndPlantHolds :exec
+UPDATE plant_holds SET status = 'ordered'
+WHERE organization_id = $1 AND plant_id = $2 AND status = 'held'
+`
+
+type EndPlantHoldsParams struct {
+	OrganizationID int64
+	PlantID        int64
+}
+
+// The plant was ordered: its cart hold (whichever cart's it is now) has done its job.
+func (q *Queries) EndPlantHolds(ctx context.Context, arg EndPlantHoldsParams) error {
+	_, err := q.db.Exec(ctx, endPlantHolds, arg.OrganizationID, arg.PlantID)
+	return err
 }
 
 const getOrder = `-- name: GetOrder :one
@@ -154,7 +175,7 @@ func (q *Queries) GetOrderByName(ctx context.Context, arg GetOrderByNameParams) 
 
 const getOrderByShopifyID = `-- name: GetOrderByShopifyID :one
 
-SELECT id, status FROM orders
+SELECT id, status, cancelled_at FROM orders
 WHERE organization_id = $1 AND shopify_order_id = $2
 `
 
@@ -164,16 +185,65 @@ type GetOrderByShopifyIDParams struct {
 }
 
 type GetOrderByShopifyIDRow struct {
-	ID     int64
-	Status string
+	ID          int64
+	Status      string
+	CancelledAt *time.Time
 }
 
 // Inside one nursery (run through db.InTenant) --
 func (q *Queries) GetOrderByShopifyID(ctx context.Context, arg GetOrderByShopifyIDParams) (GetOrderByShopifyIDRow, error) {
 	row := q.db.QueryRow(ctx, getOrderByShopifyID, arg.OrganizationID, arg.ShopifyOrderID)
 	var i GetOrderByShopifyIDRow
-	err := row.Scan(&i.ID, &i.Status)
+	err := row.Scan(&i.ID, &i.Status, &i.CancelledAt)
 	return i, err
+}
+
+const holdChosenPlant = `-- name: HoldChosenPlant :many
+UPDATE plants p
+SET status = 'held', order_item_id = $1, updated_at = now()
+FROM product_variants v
+JOIN products pr ON pr.id = v.product_id
+WHERE v.id = $2
+  AND p.organization_id = $3 AND p.id = $4
+  AND p.status = 'for_sale'
+  AND p.plant_name_id = pr.plant_name_id
+  AND p.variegation_id IS NOT DISTINCT FROM pr.variegation_id
+  AND p.pot_size_id = v.pot_size_id
+RETURNING p.barcode
+`
+
+type HoldChosenPlantParams struct {
+	OrderItemID    *int64
+	VariantID      int64
+	OrganizationID int64
+	PlantID        int64
+}
+
+// Holds the plant the shopper chose for an order item, if it's still for sale and is the item's SKU (its name,
+// variegation and pot). Returns its barcode, or nothing when it can't be held.
+func (q *Queries) HoldChosenPlant(ctx context.Context, arg HoldChosenPlantParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, holdChosenPlant,
+		arg.OrderItemID,
+		arg.VariantID,
+		arg.OrganizationID,
+		arg.PlantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var barcode string
+		if err := rows.Scan(&barcode); err != nil {
+			return nil, err
+		}
+		items = append(items, barcode)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const holdPlants = `-- name: HoldPlants :many
@@ -236,13 +306,15 @@ func (q *Queries) HoldPlants(ctx context.Context, arg HoldPlantsParams) ([]strin
 
 const listOrderItems = `-- name: ListOrderItems :many
 SELECT i.id, i.order_id, i.title, i.sku, i.quantity, i.price_cents, i.variant_id, ps.name AS pot_size,
-       coalesce(array_agg(p.barcode ORDER BY p.barcode) FILTER (WHERE p.id IS NOT NULL), '{}')::text[] AS held_barcodes
+       coalesce(array_agg(p.barcode ORDER BY p.barcode) FILTER (WHERE p.id IS NOT NULL), '{}')::text[] AS held_barcodes,
+       chosen.barcode AS chosen_barcode
 FROM order_items i
 LEFT JOIN product_variants v ON v.id = i.variant_id
 LEFT JOIN pot_sizes ps ON ps.id = v.pot_size_id
 LEFT JOIN plants p ON p.order_item_id = i.id AND p.status IN ('held', 'sold')
+LEFT JOIN plants chosen ON chosen.organization_id = i.organization_id AND chosen.id = i.chosen_plant_id
 WHERE i.organization_id = $1 AND i.order_id = ANY($2::bigint[])
-GROUP BY i.id, ps.name
+GROUP BY i.id, ps.name, chosen.barcode
 ORDER BY i.order_id, i.id
 `
 
@@ -252,18 +324,20 @@ type ListOrderItemsParams struct {
 }
 
 type ListOrderItemsRow struct {
-	ID           int64
-	OrderID      int64
-	Title        string
-	Sku          *string
-	Quantity     int32
-	PriceCents   *int32
-	VariantID    *int64
-	PotSize      *string
-	HeldBarcodes []string
+	ID            int64
+	OrderID       int64
+	Title         string
+	Sku           *string
+	Quantity      int32
+	PriceCents    *int32
+	VariantID     *int64
+	PotSize       *string
+	HeldBarcodes  []string
+	ChosenBarcode *string
 }
 
 // The orders' items, each with its pot size and the barcodes of its plants (held, or sold once picked up).
+// chosen_barcode: the plant the shopper chose from its photo, if they chose one.
 func (q *Queries) ListOrderItems(ctx context.Context, arg ListOrderItemsParams) ([]ListOrderItemsRow, error) {
 	rows, err := q.db.Query(ctx, listOrderItems, arg.OrganizationID, arg.OrderIds)
 	if err != nil {
@@ -283,6 +357,7 @@ func (q *Queries) ListOrderItems(ctx context.Context, arg ListOrderItemsParams) 
 			&i.VariantID,
 			&i.PotSize,
 			&i.HeldBarcodes,
+			&i.ChosenBarcode,
 		); err != nil {
 			return nil, err
 		}
@@ -435,6 +510,40 @@ func (q *Queries) MarkOrderReady(ctx context.Context, arg MarkOrderReadyParams) 
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const orderProductIDs = `-- name: OrderProductIDs :many
+SELECT DISTINCT v.product_id
+FROM order_items i
+JOIN product_variants v ON v.id = i.variant_id
+WHERE i.organization_id = $1 AND i.order_id = $2
+ORDER BY v.product_id
+`
+
+type OrderProductIDsParams struct {
+	OrganizationID int64
+	OrderID        int64
+}
+
+// The Plant Stock products an order's items are for.
+func (q *Queries) OrderProductIDs(ctx context.Context, arg OrderProductIDsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, orderProductIDs, arg.OrganizationID, arg.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var product_id int64
+		if err := rows.Scan(&product_id); err != nil {
+			return nil, err
+		}
+		items = append(items, product_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const organizationsWithOrdersFrom = `-- name: OrganizationsWithOrdersFrom :many

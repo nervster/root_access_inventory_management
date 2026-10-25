@@ -62,14 +62,17 @@ WHERE shop = @shop
 -- Stock --
 
 -- name: StockToSync :many
--- The product's SKUs on the store, each with its stock: how many of its plants are for sale.
+-- The product's SKUs on the store, each with its stock: its plants for sale with a photo (shoppers choose
+-- plants by their photos), and held ones (ordered, still here until pickup).
 SELECT v.id, v.sku, sv.shopify_inventory_item_id, sv.stocked_location_id,
        (SELECT count(*) FROM plants p
         WHERE p.organization_id = pr.organization_id
           AND p.plant_name_id = pr.plant_name_id
           AND p.variegation_id IS NOT DISTINCT FROM pr.variegation_id
           AND p.pot_size_id = v.pot_size_id
-          AND p.status IN ('for_sale', 'held'))::integer AS stock -- held: ordered, still here until pickup
+          AND (p.status = 'held'
+               OR p.status = 'for_sale' AND EXISTS (SELECT 1 FROM plant_photos ph
+                                                    WHERE ph.organization_id = p.organization_id AND ph.plant_id = p.id)))::integer AS stock
 FROM product_variants v
 JOIN products pr ON pr.id = v.product_id
 JOIN shopify_variants sv ON sv.variant_id = v.id AND sv.shop = @shop

@@ -3,11 +3,13 @@ package shopify
 import (
 	"fmt"
 	"testing"
+	"time"
 )
 
 const greenhouse, marketStall = "gid://shopify/Location/1", "gid://shopify/Location/2"
 
-// addPlants adds count plants of the product (its name and variegation) in the pot, with status.
+// addPlants adds count plants of the product (its name and variegation) in the pot, with status. Each has a
+// photo from a month ago, as plants on sale must (removePhotos takes it away).
 func (s *shopTest) addPlants(productID int64, pot, status string, count int) []string {
 	s.t.Helper()
 	ctx := s.t.Context()
@@ -31,9 +33,18 @@ func (s *shopTest) addPlants(productID int64, pot, status string, count int) []s
 		if err != nil {
 			s.t.Fatal(err)
 		}
+		s.photographPlant(barcode, "listed", time.Now().AddDate(0, -1, 0))
 		barcodes = append(barcodes, barcode)
 	}
 	return barcodes
+}
+
+func (s *shopTest) removePhotos(barcode string) {
+	s.t.Helper()
+	_, err := s.db.Exec(s.t.Context(), "DELETE FROM plant_photos WHERE plant_id = (SELECT id FROM plants WHERE barcode = $1)", barcode)
+	if err != nil {
+		s.t.Fatal(err)
+	}
 }
 
 func (s *shopTest) setPlant(barcode, set string) {
@@ -171,5 +182,47 @@ func TestPlantChangesQueueStockSyncs(t *testing.T) {
 		if got := s.waitingJobs(JobSyncStock, product) == 1; got != change.wantSync {
 			t.Errorf("%s: stock sync queued = %v, want %v", change.name, got, change.wantSync)
 		}
+	}
+}
+
+// Shoppers choose plants by their photos, so a for-sale plant counts as stock only once it has one.
+func TestOnlyPhotographedPlantsAreStock(t *testing.T) {
+	s := newShopTest(t)
+	s.connect()
+	s.chooseLocation(greenhouse)
+	product, _ := s.addProduct(0, "Photographed", map[string]*int{"Small Cup": cents(1200)})
+	plants := s.addPlants(product, "Small Cup", "for_sale", 3)
+	growing := s.addPlants(product, "Small Cup", "growing", 1)[0]
+	s.removePhotos(plants[0])
+	s.sync(product)
+	if err := s.syncStock(product); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.onHand("Small Cup", greenhouse); got != 2 {
+		t.Errorf("on hand %d, want 2 (the plant without a photo isn't stock)", got)
+	}
+
+	for _, change := range []struct {
+		name     string
+		change   func()
+		wantSync bool
+	}{
+		{"for-sale plant's first photo", func() { s.photographPlant(plants[0], "first", time.Now()) }, true},
+		{"for-sale plant's last photo deleted", func() { s.removePhotos(plants[1]) }, true},
+		{"growing plant photographed", func() { s.photographPlant(growing, "more", time.Now()) }, false},
+	} {
+		if _, err := s.db.Exec(t.Context(), "DELETE FROM jobs"); err != nil {
+			t.Fatal(err)
+		}
+		change.change()
+		if got := s.waitingJobs(JobSyncStock, product) == 1; got != change.wantSync {
+			t.Errorf("%s: stock sync queued = %v, want %v", change.name, got, change.wantSync)
+		}
+	}
+	if err := s.syncStock(product); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.onHand("Small Cup", greenhouse); got != 2 {
+		t.Errorf("after photographing one and unphotographing another: on hand %d, want 2", got)
 	}
 }

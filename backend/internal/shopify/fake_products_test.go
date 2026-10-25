@@ -91,9 +91,13 @@ func (f *fakeShopify) graphQL(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		order := findOrder()
-		now := time.Now().UTC().Format(time.RFC3339)
-		order["cancelledAt"], order["updatedAt"] = now, now
 		order["refunded"] = strings.Contains(request.Query, "originalPaymentMethodsRefund: true")
+		if f.cancelLater {
+			f.pendingCancels = append(f.pendingCancels, order)
+		} else {
+			now := time.Now().UTC().Format(time.RFC3339)
+			order["cancelledAt"], order["updatedAt"] = now, now
+		}
 		data = map[string]any{"orderCancel": map[string]any{"orderCancelUserErrors": []gqlError{}}}
 	case strings.Contains(request.Query, "locations("):
 		data = map[string]any{"locations": map[string]any{"nodes": []map[string]string{
@@ -444,6 +448,10 @@ func (p *fakePhotos) Open(_ context.Context, key string) (io.ReadCloser, storage
 		return nil, storage.FileInfo{}, fmt.Errorf("no such photo %s", key)
 	}
 	return io.NopCloser(strings.NewReader(content)), storage.FileInfo{Size: int64(len(content)), ContentType: "image/jpeg"}, nil
+}
+
+func (p *fakePhotos) ViewURL(_ context.Context, key string) (string, error) {
+	return "https://photos.example/" + key + "?signed", nil
 }
 
 // productNodes answers the drift check: products by ID (null for deleted ones), with their variants'

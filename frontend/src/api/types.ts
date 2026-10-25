@@ -438,6 +438,8 @@ export interface OrderItemDto {
   inPlantStock: boolean
   /** The plants to pull. Fewer than quantity when it was oversold. */
   heldBarcodes: string[]
+  /** The plant the shopper chose from its photo, if they chose one. Not in heldBarcodes when it was no longer for sale. */
+  chosenBarcode: string | null
 }
 
 export interface OrdersStatusDto {

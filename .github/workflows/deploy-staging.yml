@@ -29,13 +29,19 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v3
 
-      # gcloud's IAP tunnel uploads several times faster with NumPy (it's slow without it).
+      # gcloud's IAP tunnel uploads several times faster with NumPy (it's slow without it). It has to go into the
+      # Python gcloud runs on, which isn't the system one (Google's docs: IAP TCP forwarding, upload bandwidth).
+      # --break-system-packages is the fallback for when that Python is the runner's own (pip refuses otherwise).
       - name: Install NumPy for the IAP tunnel
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-numpy
+        run: |
+          python="$(gcloud info --format='value(basic.python_location)')"
+          echo "gcloud runs on $python"
+          "$python" -m pip install --quiet numpy || "$python" -m pip install --quiet --user --break-system-packages numpy
+          "$python" -c 'import numpy; print("NumPy", numpy.__version__)'
 
       - name: Deploy
         run: deploy/deploy.sh staging
         env:
           VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
           CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
-          CLOUDSDK_PYTHON_SITEPACKAGES: "1" # lets gcloud use the NumPy installed above
+          CLOUDSDK_PYTHON_SITEPACKAGES: "1" # lets gcloud see NumPy if it went into the user site-packages

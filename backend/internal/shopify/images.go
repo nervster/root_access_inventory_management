@@ -17,6 +17,7 @@ import (
 // PhotoSource reads photos from storage (Google Cloud Storage, or SeaweedFS locally), or a fake in tests.
 type PhotoSource interface {
 	Open(ctx context.Context, key string) (io.ReadCloser, storage.FileInfo, error)
+	ViewURL(ctx context.Context, key string) (string, error) // a link a browser can load, for an hour
 }
 
 // maxImageBytes is the most Plant Stock uploads per image (Shopify takes up to 20 MB; the app

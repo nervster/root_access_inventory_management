@@ -193,6 +193,50 @@ func (ns NullPlantEventType) Value() (driver.Value, error) {
 	return string(ns.PlantEventType), nil
 }
 
+type PlantHoldStatus string
+
+const (
+	PlantHoldStatusHeld     PlantHoldStatus = "held"
+	PlantHoldStatusOrdered  PlantHoldStatus = "ordered"
+	PlantHoldStatusExpired  PlantHoldStatus = "expired"
+	PlantHoldStatusReleased PlantHoldStatus = "released"
+)
+
+func (e *PlantHoldStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = PlantHoldStatus(s)
+	case string:
+		*e = PlantHoldStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for PlantHoldStatus: %T", src)
+	}
+	return nil
+}
+
+type NullPlantHoldStatus struct {
+	PlantHoldStatus PlantHoldStatus
+	Valid           bool // Valid is true if PlantHoldStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullPlantHoldStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.PlantHoldStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.PlantHoldStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullPlantHoldStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.PlantHoldStatus), nil
+}
+
 type PlantRank string
 
 const (
@@ -419,6 +463,7 @@ type OrderItem struct {
 	Title             string
 	Quantity          int32
 	PriceCents        *int32
+	ChosenPlantID     *int64
 }
 
 type Organization struct {
@@ -507,6 +552,17 @@ type PlantEvent struct {
 	ChangedBy      *int64
 	OccurredAt     time.Time
 	ChangedByName  *string
+}
+
+type PlantHold struct {
+	ID             int64
+	OrganizationID int64
+	PlantID        int64
+	Status         PlantHoldStatus
+	CartToken      string
+	ClientIp       *string
+	ExpiresAt      time.Time
+	CreatedAt      time.Time
 }
 
 type PlantName struct {
