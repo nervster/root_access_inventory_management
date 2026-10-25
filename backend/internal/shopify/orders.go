@@ -54,7 +54,7 @@ const ordersQuery = `query Orders($query: String!, $after: String) {
       id name createdAt updatedAt cancelledAt displayFulfillmentStatus note
       customAttributes { key value }
       lineItems(first: 100) {
-        nodes { id title sku quantity variant { id } originalUnitPriceSet { shopMoney { amount } } }
+        nodes { id title sku quantity variant { id } customAttributes { key value } originalUnitPriceSet { shopMoney { amount } } }
       }
     }
     pageInfo { hasNextPage endCursor }
@@ -86,6 +86,10 @@ type shopifyLineItem struct {
 	Variant  *struct {
 		ID string `json:"id"`
 	} `json:"variant"`
+	CustomAttributes []struct {
+		Key   string  `json:"key"`
+		Value *string `json:"value"`
+	} `json:"customAttributes"` // the line's properties, e.g. _plant: the plant the shopper chose
 	OriginalUnitPriceSet struct {
 		ShopMoney struct {
 			Amount string `json:"amount"`
@@ -360,9 +364,11 @@ func (s *Store) createOrder(ctx context.Context, q *dbgen.Queries, orgID int64, 
 			return 0, err
 		}
 
+		chosen := item.chosenPlant()
 		itemID, err := q.CreateOrderItem(ctx, dbgen.CreateOrderItemParams{
 			OrganizationID: orgID, OrderID: orderID, ShopifyLineItemID: item.ID, VariantID: variantID,
 			Sku: item.SKU, Title: item.Title, Quantity: int32(item.Quantity), PriceCents: priceCents(item.OriginalUnitPriceSet.ShopMoney.Amount),
+			ChosenPlantID: chosen,
 		})
 		if err != nil {
 			return 0, err
@@ -370,17 +376,43 @@ func (s *Store) createOrder(ctx context.Context, q *dbgen.Queries, orgID int64, 
 		if variantID == nil {
 			continue // not one of Plant Stock's SKUs (e.g. a product made in Shopify): nothing to hold
 		}
-		held, err := q.HoldPlants(ctx, dbgen.HoldPlantsParams{OrderItemID: &itemID, VariantID: *variantID, OrganizationID: orgID, Quantity: int32(item.Quantity)})
+		var held []string
+		if chosen != nil {
+			// Exactly the plant the shopper chose, never another: if it's gone, the Orders page shows staff which
+			// one they chose, to contact the customer.
+			held, err = q.HoldChosenPlant(ctx, dbgen.HoldChosenPlantParams{OrganizationID: orgID, OrderItemID: &itemID, VariantID: *variantID, PlantID: *chosen})
+			if err == nil && len(held) > 0 {
+				err = q.EndPlantHolds(ctx, dbgen.EndPlantHoldsParams{OrganizationID: orgID, PlantID: *chosen})
+			}
+		} else {
+			held, err = q.HoldPlants(ctx, dbgen.HoldPlantsParams{OrderItemID: &itemID, VariantID: *variantID, OrganizationID: orgID, Quantity: int32(item.Quantity)})
+		}
 		if err != nil {
 			return 0, err
 		}
-		if len(held) < item.Quantity {
+		if chosen != nil && len(held) == 0 {
+			slog.Warn("order item's chosen plant isn't for sale", "organization", orgID, "order", order.Name, "plant", *chosen)
+		} else if len(held) < item.Quantity {
 			slog.Warn("order item oversold: not enough plants for sale", "organization", orgID, "order", order.Name,
 				"sku", item.SKU, "wanted", item.Quantity, "held", len(held))
 		}
 	}
 	slog.Info("order imported", "organization", orgID, "order", order.Name, "items", len(order.LineItems.Nodes))
 	return orderID, nil
+}
+
+// chosenPlant is the plant the shopper chose for this line, from its _plant property
+// (docs/plant-picker-storefront.md), or nil for a line without one.
+func (item shopifyLineItem) chosenPlant() *int64 {
+	for _, a := range item.CustomAttributes {
+		if a.Key != "_plant" || a.Value == nil {
+			continue
+		}
+		if id, err := strconv.ParseInt(strings.TrimSpace(*a.Value), 10, 64); err == nil && id > 0 {
+			return &id
+		}
+	}
+	return nil
 }
 
 // priceCents turns Shopify's "15.00" into 1500 (nil if it isn't a price).

@@ -50,12 +50,13 @@ func (s *shopTest) importOrders() {
 type orderJSON struct {
 	Name, Status string
 	Items        []struct {
-		Title        string
-		PotSize      *string
-		Quantity     int
-		PriceCents   *int
-		InPlantStock bool
-		HeldBarcodes []string
+		Title         string
+		PotSize       *string
+		Quantity      int
+		PriceCents    *int
+		InPlantStock  bool
+		HeldBarcodes  []string
+		ChosenBarcode *string
 	}
 }
 

@@ -24,7 +24,8 @@ WHERE organization_id = @organization_id;
 
 -- name: DriftExpected :many
 -- What the store should show: every product that's on it, or should be (it has a price), with each
--- SKU's price (NULL: should be off the store) and stock (for-sale and held plants).
+-- SKU's price (NULL: should be off the store) and stock (for-sale plants with a photo, and held ones), as
+-- StockToSync counts it.
 SELECT p.id AS product_id, p.title, sp.shopify_product_id,
        v.sku, v.price_cents, sv.stocked_location_id,
        (SELECT count(*) FROM plants pl
@@ -32,7 +33,9 @@ SELECT p.id AS product_id, p.title, sp.shopify_product_id,
           AND pl.plant_name_id = p.plant_name_id
           AND pl.variegation_id IS NOT DISTINCT FROM p.variegation_id
           AND pl.pot_size_id = v.pot_size_id
-          AND pl.status IN ('for_sale', 'held'))::integer AS stock
+          AND (pl.status = 'held'
+               OR pl.status = 'for_sale' AND EXISTS (SELECT 1 FROM plant_photos ph
+                                                     WHERE ph.organization_id = pl.organization_id AND ph.plant_id = pl.id)))::integer AS stock
 FROM products p
 JOIN product_variants v ON v.product_id = p.id
 LEFT JOIN shopify_products sp ON sp.product_id = p.id AND sp.shop = @shop

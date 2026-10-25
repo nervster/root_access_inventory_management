@@ -353,6 +353,7 @@ function OrderButtons({ orgId, order }: { orgId: number; order: OrderDto }) {
 
 function OrderItem({ orgId, item, open }: { orgId: number; item: OrderItemDto; open: boolean }) {
   const short = item.quantity - item.heldBarcodes.length
+  const chosenGone = item.chosenBarcode !== null && !item.heldBarcodes.includes(item.chosenBarcode)
   return (
     <div className="space-y-1 text-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -379,7 +380,16 @@ function OrderItem({ orgId, item, open }: { orgId: number; item: OrderItemDto; o
               ))}
             </p>
           )}
-          {open && short > 0 && (
+          {open && chosenGone && (
+            <p className="text-xs text-red-700 dark:text-red-400">
+              The customer chose{' '}
+              <Link to={`/orgs/${orgId}/plants/${item.chosenBarcode}`} className="font-mono underline">
+                {item.chosenBarcode}
+              </Link>{' '}
+              from its photo, but it was no longer for sale. Contact the customer to offer a similar plant, or refund it in Shopify.
+            </p>
+          )}
+          {open && !chosenGone && short > 0 && (
             <p className="text-xs text-red-700 dark:text-red-400">
               {short} more than were for sale: {item.heldBarcodes.length} of {item.quantity} held. Contact the customer or refund the rest in Shopify.
             </p>

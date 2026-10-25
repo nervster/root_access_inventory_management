@@ -161,6 +161,9 @@ type itemResponse struct {
 	PriceCents   *int32   `json:"priceCents"`
 	InPlantStock bool     `json:"inPlantStock"` // false: not one of Plant Stock's SKUs, so nothing is held
 	HeldBarcodes []string `json:"heldBarcodes"` // its plants (to pull, or sold); fewer than quantity when oversold
+	// The plant the shopper chose from its photo (none for items bought without choosing). Not among
+	// heldBarcodes when it couldn't be held: it was no longer for sale.
+	ChosenBarcode *string `json:"chosenBarcode"`
 }
 
 // markReady handles POST /orgs/:orgId/orders/:orderId/ready.
@@ -307,6 +310,7 @@ func (h handler) list(c *gin.Context) {
 			response[i].Items[j] = itemResponse{
 				ID: item.ID, Title: item.Title, SKU: item.Sku, PotSize: item.PotSize, Quantity: item.Quantity,
 				PriceCents: item.PriceCents, InPlantStock: item.VariantID != nil, HeldBarcodes: item.HeldBarcodes,
+				ChosenBarcode: item.ChosenBarcode,
 			}
 		}
 	}
