@@ -1,0 +1,45 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "ff2f261c0ef4bb40adaaa0fc2fe119aa"
+name = "Plant Stock Production"
+application_url = "https://stock.rootaccesshtx.com"
+embedded = false
+
+[webhooks]
+api_version = "2026-10" # keep in step with APIVersion in backend/internal/shopify/app.go
+
+# All go to the API's POST /api/shopify/webhooks (backend/internal/shopify/handler.go), which checks
+# Shopify's signature. Order changes queue an order import, as the worker's check each minute does
+# (returns update their order, so orders/updated covers them too).
+[[webhooks.subscriptions]]
+topics = ["orders/create", "orders/updated", "orders/cancelled", "refunds/create"]
+uri = "/api/shopify/webhooks"
+
+# The store needs connecting again.
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/api/shopify/webhooks"
+
+# Required by Shopify: customers asking for, or to delete, what Plant Stock keeps about them.
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "/api/shopify/webhooks"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_products,write_inventory,read_locations,write_orders,write_merchant_managed_fulfillment_orders,write_publications,read_returns"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://stock.rootaccesshtx.com/api/shopify/callback"
+]
+
+# The storefront calls Plant Stock through the store's own domain: /apps/plant-stock/… is forwarded,
+# signed by Shopify, to the API's /api/shopify/proxy/… (backend/internal/shopify/proxy.go), e.g. the
+# cart's GET /apps/plant-stock/pickup-slots.
+[app_proxy]
+url = "https://stock.rootaccesshtx.com/api/shopify/proxy"
+subpath = "plant-stock"
+prefix = "apps"
