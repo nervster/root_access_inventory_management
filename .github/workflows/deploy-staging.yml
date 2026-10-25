@@ -1,0 +1,41 @@
+# Deploys each merge into staging to https://stock-staging.rootaccesshtx.com (deploy/deploy.sh staging).
+# Signs in to Google without a stored key (set up once with deploy/setup-github-deploy.sh staging); the
+# variables below are in GitHub → Settings → Environments → staging. Secrets stay on the VM.
+name: Deploy staging
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch: # "Run workflow" button, for redeploying by hand
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false # let a running deploy finish; the next one waits
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write # lets the job ask GitHub for the token Google checks
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # gcloud's IAP tunnel uploads several times faster with NumPy (it's slow without it).
+      - name: Install NumPy for the IAP tunnel
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq python3-numpy
+
+      - name: Deploy
+        run: deploy/deploy.sh staging
+        env:
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
+          CLOUDSDK_CORE_DISABLE_PROMPTS: "1"
+          CLOUDSDK_PYTHON_SITEPACKAGES: "1" # lets gcloud use the NumPy installed above

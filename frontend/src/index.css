@@ -1,13 +1,29 @@
+@import "tailwindcss";
+
+/* Dark mode follows a `dark` class on <html> (src/theme.ts sets it, from the header's toggle or the
+   device's setting), not the device's setting directly, so people can choose. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-stone-50 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
+  }
+}
+
+/* Chart colors, checked for color-blind separation and contrast against the cards (white / stone-900).
+   Dark mode gets its own steps of the same hues, not an automatic flip. */
 :root {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
-  color-scheme: light dark;
+  --viz-growing: #2a78d6;
+  --viz-for-sale: #eb6834;
 }
-
-body {
-  margin: 0;
-}
-
-main {
-  padding: 16px;
+.dark {
+  --viz-growing: #3987e5;
+  --viz-for-sale: #d95926;
 }

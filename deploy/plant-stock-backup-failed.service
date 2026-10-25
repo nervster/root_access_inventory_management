@@ -1,0 +1,8 @@
+# Installed by deploy.sh into /etc/systemd/system (with @SITE@ filled in). Started by systemd when
+# plant-stock-backup.service fails (its OnFailure): emails ALERT_EMAIL (backup-failed.sh).
+[Unit]
+Description=Plant Stock: email that the database backup failed
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/plant-stock-backup-failed @SITE@

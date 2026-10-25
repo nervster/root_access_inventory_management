@@ -1,0 +1,11 @@
+{
+  "name": "plant-stock-shopify-app",
+  "private": true,
+  "description": "Plant Stock's Shopify app configuration (one shopify.app.<site>.toml per app), deployed with the Shopify CLI",
+  "scripts": {
+    "deploy:staging": "shopify app deploy --config staging"
+  },
+  "devDependencies": {
+    "@shopify/cli": "4.8.4"
+  }
+}

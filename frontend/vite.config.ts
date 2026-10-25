@@ -1,13 +1,14 @@
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     proxy: {
-      // API http port from backend/RootAccess.Inventory.Api/Properties/launchSettings.json
-      '/api': 'http://localhost:5030',
+      // Go API port (backend/cmd/api, PORT defaults to 8080)
+      '/api': 'http://localhost:8080',
     },
   },
 })

@@ -1,0 +1,38 @@
+-- Numbers for the nursery's dashboard (inside one nursery, run through db.InTenant).
+
+-- name: PlantStatusCounts :one
+SELECT count(*) FILTER (WHERE status = 'growing')   AS growing,
+       count(*) FILTER (WHERE status = 'for_sale')  AS for_sale,
+       count(*) FILTER (WHERE status = 'held')      AS held,
+       count(*) FILTER (WHERE status = 'returned')  AS returned,
+       count(*) FILTER (WHERE status = 'sold')      AS sold,
+       count(*) FILTER (WHERE status = 'discarded') AS discarded,
+       count(*) FILTER (WHERE created_at > now() - interval '30 days') AS received_last_30_days,
+       count(*) FILTER (WHERE discarded_at > now() - interval '30 days') AS discarded_last_30_days
+FROM plants
+WHERE organization_id = @organization_id;
+
+-- name: SaleReadiness :one
+-- Plants in a sellable pot: growing ones that could be marked for sale now, for-sale ones whose SKU
+-- still has no price, and the total price of everything for sale (priced ones only).
+SELECT count(*) FILTER (WHERE p.status = 'growing') AS ready_to_mark,
+       count(*) FILTER (WHERE p.status = 'for_sale' AND pv.price_cents IS NULL) AS needs_price,
+       coalesce(sum(pv.price_cents) FILTER (WHERE p.status = 'for_sale'), 0)::bigint AS for_sale_value_cents
+FROM plants p
+JOIN pot_sizes ps ON ps.id = p.pot_size_id AND ps.sellable
+LEFT JOIN products pr ON pr.organization_id = p.organization_id
+                     AND pr.plant_name_id = p.plant_name_id
+                     AND pr.variegation_id IS NOT DISTINCT FROM p.variegation_id
+LEFT JOIN product_variants pv ON pv.product_id = pr.id AND pv.pot_size_id = p.pot_size_id
+WHERE p.organization_id = @organization_id AND p.status IN ('growing', 'for_sale');
+
+-- name: PlantsPerPotSize :many
+-- The growth pipeline: living plants in each pot size, smallest first.
+SELECT ps.id, ps.name, ps.sellable,
+       count(p.id) FILTER (WHERE p.status = 'growing')  AS growing,
+       count(p.id) FILTER (WHERE p.status = 'for_sale') AS for_sale
+FROM pot_sizes ps
+LEFT JOIN plants p ON p.pot_size_id = ps.id
+WHERE ps.organization_id = @organization_id
+GROUP BY ps.id
+ORDER BY ps.sort_order, ps.name;

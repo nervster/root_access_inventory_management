@@ -1,0 +1,24 @@
+# Caddy gets the certificate for DOMAIN on its own and redirects http to https.
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		# Always https from now on (a year), for this site.
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		# Never inside another site's frame (clickjacking): Plant Stock isn't embedded anywhere.
+		X-Frame-Options "DENY"
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The camera is for scanning labels and taking photos, on this site only.
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+		-Server
+	}
+
+	reverse_proxy web:8080 {
+		# Caddy replaces X-Forwarded-For with whoever connected to it. For the store's App Proxy that's
+		# Shopify, not the shopper, so keep what Shopify sent: the per-visitor limits on holds and My
+		# pickup lookups use it (backend/internal/shopify/proxy.go, clientIP).
+		header_up X-Shopify-Forwarded-For {http.request.header.X-Forwarded-For}
+	}
+}

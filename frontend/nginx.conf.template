@@ -1,0 +1,30 @@
+# Rendered by the nginx image at startup; ${API_UPSTREAM} comes from the environment.
+server {
+    listen 8080;
+    root /usr/share/nginx/html;
+
+    # Docker's DNS. Looking the API up per request (through a variable, below) means a restarted API
+    # container with a new IP is found again, instead of nginx keeping the IP it saw at startup.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # API requests go to the Go backend (same domain, so no CORS).
+    location /api/ {
+        set $api ${API_UPSTREAM};
+        proxy_pass $api;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Built assets have content hashes in their names, so they can be cached for a long time.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # Everything else is a React route: serve index.html and let React Router handle it.
+    location / {
+        add_header Cache-Control "no-cache";
+        try_files $uri /index.html;
+    }
+}
